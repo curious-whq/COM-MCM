@@ -6,4 +6,15 @@ from umcm.solver.completion import (
     complete_trace,
 )
 
-__all__ = ["CompletionResult", "CompletionStatus", "complete_trace"]
+from umcm.solver.state import StateCheckResult, StateStep, check_state_semantics
+
+__all__ = [
+    "CompletionResult",
+    "CompletionStatus",
+    "StateCheckResult",
+    "StateStep",
+    "check_state_semantics",
+    "complete_trace",
+]
+
+from umcm.solver.state import StateCheckResult, StateStep, check_state_semantics

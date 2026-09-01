@@ -1,6 +1,18 @@
-# µMCM Foundation v0.2
+# µMCM Foundation v0.3
 
-这是第二轮底层基础设施代码。它仍然与 FM-Agent 完全无关，目标是先建立一个可运行的微架构 Trace 可行性检查内核。
+这是第三轮底层基础设施代码。项目仍然与 FM-Agent 完全无关：当前目标是先建立一套可手写、可执行、可测试的微架构 Trace 可行性语义，再逐步接入 Execution Graph 与内存模型公理。
+
+v0.3 在 v0.2 的有界事件补全之上加入了**持久状态语义**和最小的 **ready/valid 握手语义**，并把 BOOM 示例推进到：
+
+```text
+TLBMiss(L0)
+→ RetryEnqueue(L0)
+→ RetryIssue(L0)
+→ TLBHit(L0)
+→ DCacheReqValid(L0)
+∧ DCacheReqReady
+→ DCacheReqFire(L0)
+```
 
 当前版本已经实现：
 
@@ -9,120 +21,175 @@
 - 完整或部分观测的 `Trace`；
 - 有界候选隐藏事件 `EventSlot`；
 - 带输入/输出事件角色的 `Transformation`；
-- Transformation 在有限事件宇宙上的实例化；
+- `StateVariable / StateRequirement / StateUpdate`；
+- 基于 pre-state / atomic post-state 的状态执行语义；
+- 未更新状态自动 stutter；
+- 同周期冲突写检测；
+- ready/valid/fire 的事件级握手约束；
 - 依赖无关的有限域 Trace 补全器；
-- YAML / JSON 往返序列化；
+- 状态历史写入 completed Trace metadata；
 - `validate` 与 `complete` 命令行工具；
-- BOOM `TLBMiss → RetryEnqueue → RetryIssue` 的第一个可运行路径模型。
+- BOOM retry 到 DCache request fire 的正向 witness；
+- branch kill / exception 清空 retry queue 的防御路径；
+- v0.2 completion model 向后兼容。
 
-当前版本还没有实现 Execution Graph、`rf/co/fr/ppo/hb`、RVWMO 检查、层次抽象和完整状态机语义。
+当前版本尚未实现 Execution Graph、`rf/co/fr/ppo/hb`、RVWMO 检查和通用层次抽象。
 
-## 1. Transformation 语义
+## 1. 状态语义
 
-一个 Transformation 定义输入事件角色和输出事件角色。例如：
+### 1.1 StateVariable
 
-```text
-input : issue   : LSU.RetryIssue
-output: enqueue : LSU.RetryEnqueue
-```
-
-其语义是：
+一个状态变量表示在事件之间持久存在的标量状态。例如，当前 BOOM 单槽 retry queue 摘要使用：
 
 ```text
-对于每一个实际发生、且满足 when 的输入事件绑定，
-必须存在一组实际发生的输出事件绑定，使 ensure 成立。
+LSU.retry_queue.valid
+LSU.retry_queue.op_id
+LSU.retry_queue.ldq_idx
+LSU.retry_queue.vaddr
 ```
 
-形式上：
+这不是完整的八项硬件队列，而是针对当前 witness 的单槽抽象。它保留了判断该路径是否可行所需的身份字段。
+
+### 1.2 StateRequirement
+
+状态要求在锚定事件发生的**周期开始时**读取 pre-state。例如：
 
 ```text
-occurs(inputs) ∧ when(inputs)
-  ⇒ ∃ outputs. occurs(outputs) ∧ ensure(inputs, outputs)
+RetryIssue(L0) requires:
+  retry_queue.valid   == true
+  retry_queue.op_id   == L0
+  retry_queue.ldq_idx == L0.ldq_idx
+  retry_queue.vaddr   == L0.vaddr
 ```
 
-这里的 `output` 表示“存在量化的支撑事件”，**不天然表示时间上更晚**。时间方向必须由 `ensure` 中的 `< / <= / same_cycle` 等约束显式给出。因此同一套 IR 可以表达：
+因此，只有先前真正 enqueue 过同一个动态请求，`RetryIssue` 才可行。
+
+### 1.3 StateUpdate
+
+状态更新在该周期所有 requirement 通过后原子写入 post-state：
 
 ```text
-前向结果：Request → Response
-反向支撑：Response → 必须存在更早的 Request
+RetryEnqueue:
+  valid   := true
+  op_id   := enqueue.op_id
+  ldq_idx := enqueue.ldq_idx
+  vaddr   := enqueue.vaddr
+
+RetryIssue:
+  valid := false
 ```
 
-当前实现将规则在显式给定的有限 `EventSlot` 上展开，因此不存在无限事件生成问题。
+同一周期没有写入的状态自动保持原值。若两个 active update 在同一周期向同一状态写入不同值，当前后端将该执行判为不可行。
 
-## 2. `required` 是查询目标，不是活性公理
+当前 v0.3 只允许**没有 output role 的 input-only Transformation**携带状态读写。这避免了“一个规则实例选择哪一组存在量化输出事件”与状态副作用之间产生歧义。后续若需要，可以在语义明确后扩展。
 
-`EventSlot.required: true` 的含义是：
+## 2. ready / valid / fire
 
-> 当前这一次 witness 查询要求该事件出现。
-
-它不表示所有硬件执行最终都必须出现该事件，也不表示每次 TLB miss 都必须最终 retry。这个区分对微架构建模很重要：flush、exception、branch kill 或长期 backpressure 都可能终止或延迟一条路径。
-
-本轮将：
+v0.3 将握手表示为三个事件：
 
 ```text
-RetryIssue(L0)
+LSU.DCacheReqValid
+DCache.ReqReady
+LSU.DCacheReqFire
 ```
 
-设为 required query goal，再由 causal-support Transformation 向前补全：
+约束为：
 
 ```text
-RetryIssue(L0)
-  → 必须存在更早的 RetryEnqueue(L0)
-
-RetryEnqueue(L0)
-  → 必须存在更早的 TLBMiss(L0)
+Fire(op, port, cycle)
+→ Valid(op, port, cycle)
+∧ Ready(port, cycle)
 ```
 
-这表达的是：
-
-> 搜索一条确实走到 retry issue 的可行路径，并检查该目标所需的因果前置事件能否同时成立。
-
-它没有错误地加入：
+并且：
 
 ```text
-TLBMiss(L) → 最终一定 RetryIssue(L)
+Valid(op, port, cycle)
+∧ Ready(port, cycle)
+→ Fire(op, port, cycle)
 ```
 
-对应回归测试会取消 `RetryIssue` 的 required 标记；此时三个隐藏事件都可以不发生，证明 Transformation 本身没有引入无条件活性。
-
-## 3. BOOM 示例当前做了什么
-
-`partial_trace.yaml` 固定架构观测：
+同时保持：
 
 ```text
-L0、L1 是同一 Hart 上的两条同地址 load；
-最终观察 Commit(L0, 1) 和 Commit(L1, 0)。
+fire.op_id   = valid.op_id
+fire.ldq_idx = valid.ldq_idx
+fire.address = valid.address
+fire.port    = valid.port = ready.port
 ```
 
-`retry_completion.yaml` 声明三个有界隐藏事件槽：
+`DCacheReqFire(L0)` 是本轮的 required query goal。它不是活性公理；它只表示当前查询要寻找一条确实被 DCache 接受的 L0 retry 路径。
+
+## 3. BOOM 正向 witness
+
+运行：
+
+```bash
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/partial_trace.yaml \
+  --model examples/boom_load_load/retry_dcache_completion.yaml \
+  --output completed_retry_dcache.yaml
+```
+
+当前确定性后端输出：
 
 ```text
-l0_tlb_miss      : 可选因果前置事件
-retry_enqueue_0  : 可选因果前置事件
-retry_issue_0    : required query goal，op_id 固定为 L0
+FEASIBLE finite completion: 13 event(s), 7 hidden event(s) added, 27 instantiated constraint(s), 1358 search node(s)
+  + cycle 1: l0_tlb_miss [LSU.TLBMiss, ldq_idx=0, op_id='L0', vaddr='x']
+  + cycle 2: retry_enqueue_0 [LSU.RetryEnqueue, ldq_idx=0, op_id='L0', vaddr='x']
+  + cycle 4: retry_issue_0 [LSU.RetryIssue, ldq_idx=0, op_id='L0', vaddr='x']
+  + cycle 4: l0_tlb_hit [LSU.TLBHit, ldq_idx=0, op_id='L0', paddr='x', vaddr='x']
+  + cycle 4: dcache_req_valid_0 [LSU.DCacheReqValid, address='x', ldq_idx=0, op_id='L0', port=0]
+  + cycle 4: dcache_req_ready_0 [DCache.ReqReady, port=0]
+  + cycle 4: dcache_req_fire_0 [LSU.DCacheReqFire, address='x', ldq_idx=0, op_id='L0', port=0]
+STATE transitions:
+  @ cycle 2: LSU.retry_queue.op_id: 'EMPTY' -> 'L0', LSU.retry_queue.ldq_idx: 63 -> 0, LSU.retry_queue.vaddr: 'EMPTY_ADDR' -> 'x', LSU.retry_queue.valid: False -> True
+  @ cycle 4: LSU.retry_queue.valid: True -> False
 ```
 
-并要求选中的 witness 满足：
+关键点不是事件名字按顺序出现，而是：
 
 ```text
-Arch.Load(L0)
-  < TLBMiss(L0)
-  < RetryEnqueue(L0)
-  < Arch.Load(L1)
-  < RetryIssue(L0)
+enqueue 写入的 op_id / ldq_idx / vaddr
+=
+issue 从 pre-state 中读取的 op_id / ldq_idx / vaddr
+=
+TLB hit 与 DCache request 携带的身份
 ```
 
-其中 `op_id` 通过 Transformation 从查询目标向前传播，因此求解器会补全：
+## 4. 外部防御路径
+
+`retry_dcache_branch_kill.yaml` 强制在 enqueue 与 issue 之间出现匹配的 branch kill：
+
+```bash
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/partial_trace.yaml \
+  --model examples/boom_load_load/retry_dcache_branch_kill.yaml
+```
+
+结果应为：
 
 ```text
-TLBMiss.op_id = RetryEnqueue.op_id = RetryIssue.op_id = L0
+INFEASIBLE ...
+retry_issue ... requires LSU.retry_queue.valid == True,
+but pre-state is False
 ```
 
-这与 BOOM 源码中的局部机制对应：TLB miss 的 load 会按 LDQ age 被选择并写入 `retry_queue`，队列保留其 `uop` 和 `ldq_idx`；当调度条件成立时，同一 load 再次从队列发射。
+原因是：
 
-需要明确：当前版本只证明这段**有界、抽象路径约束可满足**。它还没有建模真实 retry queue 容量、ready/valid、branch kill、exception、TLB 状态更新或 DCache 接受条件。
+```text
+RetryEnqueue(L0) 使 valid := true
+BranchKill(L0)    使 valid := false
+RetryIssue(L0)    要求 valid == true
+```
 
-## 4. 安装与测试
+这正是组合语义需要表达的效果：局部 retry 路径并不预设“外面没有防御”；一旦外部 kill 被组合进同一 Trace，该 witness 会自然变为不可行。
+
+模型中也提供了 `Core.Exception`，它会清空 retry queue。默认正向查询中 kill 和 exception 都是可选事件，求解器为构造目标 witness 会选择它们不发生。
+
+## 5. 安装与测试
 
 ```bash
 python3 -m venv .venv
@@ -134,6 +201,18 @@ pytest -q
 无需安装也可以运行：
 
 ```bash
+PYTHONPATH=src pytest -q
+```
+
+本版本基线：
+
+```text
+31 passed
+```
+
+验证输入 Trace：
+
+```bash
 PYTHONPATH=src python3 -m umcm validate \
   --schema examples/boom_load_load/event_types.yaml \
   --trace examples/boom_load_load/partial_trace.yaml
@@ -142,86 +221,70 @@ PYTHONPATH=src python3 -m umcm validate \
 预期输出：
 
 ```text
-VALID partial trace: 6 event(s), 2 constraint(s), 10 event type(s)
+VALID partial trace: 6 event(s), 2 constraint(s), 16 event type(s)
 ```
 
-执行隐藏事件补全：
+## 6. v0.2 向后兼容
+
+原来的事件关系模型仍可运行：
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
   --trace examples/boom_load_load/partial_trace.yaml \
   --model examples/boom_load_load/retry_completion.yaml \
-  --output completed_retry.yaml
+  --output completed_retry_v02_compat.yaml
 ```
 
-当前确定性后端的输出为：
+它仍补全三个隐藏事件：
 
 ```text
-FEASIBLE finite completion: 9 event(s), 3 hidden event(s) added, 12 instantiated constraint(s), 128 search node(s)
-  + cycle 1: l0_tlb_miss [LSU.TLBMiss, op_id='L0']
-  + cycle 2: retry_enqueue_0 [LSU.RetryEnqueue, op_id='L0']
-  + cycle 4: retry_issue_0 [LSU.RetryIssue, op_id='L0']
-WROTE completed_retry.yaml
+TLBMiss(L0)
+→ RetryEnqueue(L0)
+→ RetryIssue(L0)
 ```
 
-求解器还会具体化：
+## 7. 有限域后端的边界
 
-```text
-cycle 0: Arch.Load(L0)
-cycle 3: Arch.Load(L1)
-```
-
-因此完整顺序是：
-
-```text
-L0 < TLBMiss(L0) < RetryEnqueue(L0) < L1 < RetryIssue(L0)
-```
-
-## 5. 有限域后端的边界
-
-当前 `finite` 后端是一个确定性的有界搜索器，而不是通用 SMT 求解器：
+当前 `finite` 后端是确定性的有界搜索器，不是通用 SMT 求解器：
 
 - `bool` 枚举 `false/true`；
-- `int` 与较大的 bit-vector 在 `0..horizon` 中搜索；
-- `op_id/address/value` 等领域 sort，只使用问题中已经出现的具体值作为有限域；
-- 在每次部分赋值后进行三值表达式求值，尽早剪枝；
-- `INFEASIBLE` 只表示在当前事件槽、字段域和时间界内不可行。
+- `int` 与小 bit-vector 在有限域内搜索；
+- `op_id/address/value` 等领域 sort 使用问题中已经出现的具体值；
+- 每次部分赋值后用三值求值提前剪枝；
+- 状态语义目前在完整候选 assignment 上执行；
+- `INFEASIBLE` 只表示在当前事件槽、字段域和 cycle horizon 内不可行。
 
-这种后端足以验证 IR、Transformation 和 witness query 的语义，并保持项目无需额外依赖。后续可以在不修改模型格式的情况下增加 Z3 后端。
+当前 retry queue 是单槽摘要；它不声称精确模拟 BOOM 的八项 `BranchKillableQueue`，也没有覆盖同时 enqueue/dequeue、多 entry 仲裁和所有 branch-mask 细节。
 
-## 6. 目录结构
+## 8. 目录结构
 
 ```text
-src/umcm/ir/sort.py              轻量 sort
-src/umcm/ir/expression.py        类型化表达式 AST
-src/umcm/ir/event.py             事件 schema 与动态事件
-src/umcm/ir/trace.py             完整/部分 Trace
-src/umcm/ir/transformation.py    输入/输出角色 Transformation
-src/umcm/ir/completion.py        EventSlot 与 CompletionSpec
-src/umcm/solver/problem.py       有界规则实例化
-src/umcm/solver/evaluator.py     三值表达式求值
+src/umcm/ir/state.py             状态变量、pre-state requirement、post-state update
+src/umcm/ir/transformation.py    事件规则与状态副作用
+src/umcm/ir/completion.py        EventSlot、CompletionSpec、状态声明
+src/umcm/solver/problem.py       有界规则与状态规则实例化
+src/umcm/solver/state.py         具体状态轨迹执行器
 src/umcm/solver/finite.py        有限域可行性后端
-src/umcm/solver/completion.py    补全 API 与 witness 物化
+src/umcm/solver/completion.py    witness 物化与状态 metadata
 src/umcm/cli.py                  validate / complete
-examples/boom_load_load/         BOOM 案例输入
+examples/boom_load_load/         BOOM 正向与防御路径模型
 ```
 
-## 7. 下一轮
+## 9. 下一轮建议
 
-下一轮在现有框架上加入最小状态语义，并把路径推进到：
+下一轮继续沿 BOOM bug 路径扩展，而不是立即接入 FM-Agent：
 
 ```text
-RetryIssue(L0)
-→ TLB hit
-→ DCache request accepted
+L1 DCache hit → Response(L1, 0) → LDQ[L1].executed/succeeded
+Probe → LSU Release → LDQ[L1].observed
 ```
 
-具体包括：
+届时需要加入：
 
-- `StateVar` 与版本化状态快照；
-- guarded state update；
-- retry queue 中 `op_id/ldq_idx/address` 的保持；
-- ready/valid fire 的最小语义；
-- branch kill / exception 作为路径守卫；
-- Transformation 同时产生事件约束和状态约束。
+- 每个 `op_id`/`ldq_idx` 的参数化 LDQ 状态；
+- DCache hit-response 摘要；
+- ProbeUnit 到 LSU release 的跨模块事件映射；
+- release 对同 cache block load 的 `observed := true` 更新。
+
+完成这一步后，再连接 L0 retry 的 LD–LD search 和被删除的 `order_fail` 恢复路径。

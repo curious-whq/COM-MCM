@@ -10,12 +10,13 @@ from umcm.errors import SchemaError, SerializationError, TraceValidationError
 from umcm.ir.event import EventCatalog, EventInstance
 from umcm.ir.expression import Expr, Symbol, iter_event_fields, expr_from_dict, expr_to_dict
 from umcm.ir.sort import BOOL, INT
+from umcm.ir.state import StateVariable
 from umcm.ir.trace import Trace
 from umcm.ir.transformation import Transformation
 from umcm.serialization import decode_value, dump_data, encode_value, load_data
 
 
-COMPLETION_SCHEMA_VERSION = "umcm.completion.v0.2"
+COMPLETION_SCHEMA_VERSION = "umcm.completion.v0.3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,11 +63,7 @@ class EventSlot:
                 )
 
     def materialize(self, catalog: EventCatalog) -> EventInstance:
-        """Create a symbolic EventInstance for this slot.
-
-        Missing required fields become typed symbols.  Missing optional fields
-        remain absent so that the solver does not invent irrelevant data.
-        """
+        """Create a symbolic EventInstance for this bounded slot."""
 
         event_type = catalog.resolve(self.event_type)
         values = dict(self.fields)
@@ -136,10 +133,11 @@ class EventSlot:
 
 @dataclass(slots=True)
 class CompletionSpec:
-    """A bounded universe and transformations used to complete one trace."""
+    """A bounded event universe, operational rules and persistent state."""
 
     slots: list[EventSlot] = field(default_factory=list)
     transformations: list[Transformation] = field(default_factory=list)
+    state_variables: list[StateVariable] = field(default_factory=list)
     constraints: list[Expr] = field(default_factory=list)
     horizon: int = 8
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -148,27 +146,30 @@ class CompletionSpec:
     def __post_init__(self) -> None:
         self.slots = list(self.slots)
         self.transformations = list(self.transformations)
+        self.state_variables = list(self.state_variables)
         self.constraints = list(self.constraints)
         self.metadata = dict(self.metadata)
         if self.horizon < 0:
             raise SchemaError("completion horizon must be non-negative")
-        ids = [slot.id for slot in self.slots]
-        duplicates = sorted({item for item in ids if ids.count(item) > 1})
-        if duplicates:
-            raise SchemaError(
-                f"completion spec contains duplicate slot id(s): "
-                f"{', '.join(duplicates)}"
-            )
-        names = [item.name for item in self.transformations]
-        duplicate_names = sorted({item for item in names if names.count(item) > 1})
-        if duplicate_names:
-            raise SchemaError(
-                f"completion spec contains duplicate transformation(s): "
-                f"{', '.join(duplicate_names)}"
-            )
+        _reject_duplicates(
+            [slot.id for slot in self.slots],
+            "completion spec contains duplicate slot id(s)",
+        )
+        _reject_duplicates(
+            [item.name for item in self.transformations],
+            "completion spec contains duplicate transformation(s)",
+        )
+        _reject_duplicates(
+            [item.name for item in self.state_variables],
+            "completion spec contains duplicate state variable(s)",
+        )
         for constraint in self.constraints:
             if not constraint.sort.is_bool:
                 raise SchemaError("completion constraints must be boolean")
+
+    @property
+    def state_map(self) -> dict[str, StateVariable]:
+        return {item.name: item for item in self.state_variables}
 
     def validate(self, catalog: EventCatalog, trace: Trace) -> None:
         observed_ids = {event.id for event in trace.events}
@@ -182,7 +183,7 @@ class CompletionSpec:
         for slot in self.slots:
             slot.validate(catalog)
         for transformation in self.transformations:
-            transformation.validate(catalog)
+            transformation.validate(catalog, self.state_map)
 
         event_types_by_id = {
             event.id: catalog.resolve(event.event_type) for event in trace.events
@@ -223,6 +224,7 @@ class CompletionSpec:
             "horizon": self.horizon,
             "metadata": encode_value(self.metadata),
             "slots": [slot.to_dict() for slot in self.slots],
+            "state_variables": [item.to_dict() for item in self.state_variables],
             "transformations": [item.to_dict() for item in self.transformations],
             "constraints": [expr_to_dict(item) for item in self.constraints],
         }
@@ -233,13 +235,16 @@ class CompletionSpec:
             raise SerializationError("completion spec must be a mapping")
         raw_slots = data.get("slots", [])
         raw_transformations = data.get("transformations", [])
+        raw_state_variables = data.get("state_variables", [])
         raw_constraints = data.get("constraints", [])
-        if not isinstance(raw_slots, list):
-            raise SerializationError("completion slots must be a list")
-        if not isinstance(raw_transformations, list):
-            raise SerializationError("completion transformations must be a list")
-        if not isinstance(raw_constraints, list):
-            raise SerializationError("completion constraints must be a list")
+        for name, value in (
+            ("slots", raw_slots),
+            ("transformations", raw_transformations),
+            ("state_variables", raw_state_variables),
+            ("constraints", raw_constraints),
+        ):
+            if not isinstance(value, list):
+                raise SerializationError(f"completion {name} must be a list")
         metadata = decode_value(data.get("metadata", {}))
         if not isinstance(metadata, dict):
             raise SerializationError("completion metadata must be a mapping")
@@ -247,6 +252,9 @@ class CompletionSpec:
             slots=[EventSlot.from_dict(item) for item in raw_slots],
             transformations=[
                 Transformation.from_dict(item) for item in raw_transformations
+            ],
+            state_variables=[
+                StateVariable.from_dict(item) for item in raw_state_variables
             ],
             constraints=[expr_from_dict(item) for item in raw_constraints],
             horizon=int(data.get("horizon", 8)),
@@ -262,3 +270,9 @@ class CompletionSpec:
 
     def dump(self, path: str | Path) -> None:
         dump_data(self.to_dict(), path)
+
+
+def _reject_duplicates(values: list[str], message: str) -> None:
+    duplicates = sorted({item for item in values if values.count(item) > 1})
+    if duplicates:
+        raise SchemaError(f"{message}: {', '.join(duplicates)}")

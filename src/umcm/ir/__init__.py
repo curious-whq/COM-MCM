@@ -35,6 +35,7 @@ from umcm.ir.expression import (
     unary,
 )
 from umcm.ir.sort import BOOL, INT, STRING, Sort, address, bitvec, identifier, value
+from umcm.ir.state import StateRequirement, StateUpdate, StateVariable
 from umcm.ir.trace import PartialObservation, Trace
 from umcm.ir.transformation import EventRole, Transformation
 
@@ -58,6 +59,9 @@ __all__ = [
     "Nary",
     "PartialObservation",
     "Sort",
+    "StateRequirement",
+    "StateUpdate",
+    "StateVariable",
     "Symbol",
     "Trace",
     "Transformation",

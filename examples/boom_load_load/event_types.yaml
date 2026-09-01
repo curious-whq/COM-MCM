@@ -2,8 +2,9 @@ schema_version: umcm.events.v0.1
 metadata:
   model: boom-v4-load-load-seed
   description: >-
-    First-iteration event catalog. It only names the architectural observations
-    and several future hidden-event slots needed by the BOOM Load–Load case.
+    BOOM Load-Load witness event catalog through LSU retry translation and the
+    LSU-to-DCache ready/valid handshake. Later iterations add probe, response,
+    order-failure and architectural execution-graph events.
 events:
   - name: Arch.InitWrite
     module: Architecture
@@ -72,6 +73,12 @@ events:
       - name: op_id
         sort: op_id
         identity: true
+      - name: ldq_idx
+        sort: {name: bv, width: 6}
+        required: false
+      - name: vaddr
+        sort: {name: address, width: 64}
+        required: false
 
   - name: LSU.RetryEnqueue
     module: LSU
@@ -84,6 +91,94 @@ events:
       - name: ldq_idx
         sort: {name: bv, width: 6}
         required: false
+      - name: vaddr
+        sort: {name: address, width: 64}
+        required: false
+
+  - name: LSU.RetryIssue
+    module: LSU
+    layer: lsu
+    visibility: internal
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: ldq_idx
+        sort: {name: bv, width: 6}
+        required: false
+      - name: vaddr
+        sort: {name: address, width: 64}
+        required: false
+
+  - name: LSU.TLBHit
+    module: LSU
+    layer: lsu
+    visibility: internal
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: ldq_idx
+        sort: {name: bv, width: 6}
+      - name: vaddr
+        sort: {name: address, width: 64}
+      - name: paddr
+        sort: {name: address, width: 64}
+
+  - name: LSU.DCacheReqValid
+    module: LSU
+    layer: lsu-dcache-interface
+    visibility: public
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: ldq_idx
+        sort: {name: bv, width: 6}
+      - name: address
+        sort: {name: address, width: 64}
+      - name: port
+        sort: int
+
+  - name: DCache.ReqReady
+    module: DCache
+    layer: lsu-dcache-interface
+    visibility: public
+    fields:
+      - name: port
+        sort: int
+
+  - name: LSU.DCacheReqFire
+    module: LSU+DCache
+    layer: lsu-dcache-interface
+    visibility: public
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: ldq_idx
+        sort: {name: bv, width: 6}
+      - name: address
+        sort: {name: address, width: 64}
+      - name: port
+        sort: int
+
+  - name: Core.BranchKill
+    module: Core
+    layer: control
+    visibility: public
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+
+  - name: Core.Exception
+    module: Core
+    layer: control
+    visibility: public
+    fields:
+      - name: hart
+        sort: int
 
   - name: DCache.LoadResponse
     module: DCache
@@ -116,15 +211,3 @@ events:
         identity: true
       - name: address
         sort: {name: address, width: 64}
-
-  - name: LSU.RetryIssue
-    module: LSU
-    layer: lsu
-    visibility: internal
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: ldq_idx
-        sort: {name: bv, width: 6}
-        required: false

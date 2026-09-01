@@ -31,6 +31,27 @@ class NamedConstraint:
     origin: str
 
 
+@dataclass(frozen=True, slots=True)
+class StateRequirementInstance:
+    name: str
+    state: str
+    cycle: Expr
+    activation: Expr
+    op: str
+    expected: Expr
+    origin: str
+
+
+@dataclass(frozen=True, slots=True)
+class StateUpdateInstance:
+    name: str
+    state: str
+    cycle: Expr
+    activation: Expr
+    value: Expr
+    origin: str
+
+
 @dataclass(slots=True)
 class BoundedProblem:
     catalog: EventCatalog
@@ -38,11 +59,20 @@ class BoundedProblem:
     spec: CompletionSpec
     events: list[EventInstance]
     constraints: list[NamedConstraint]
+    state_requirements: list[StateRequirementInstance]
+    state_updates: list[StateUpdateInstance]
     slot_ids: tuple[str, ...]
 
     @property
     def event_map(self) -> dict[str, EventInstance]:
         return {event.id: event for event in self.events}
+
+
+@dataclass(frozen=True, slots=True)
+class _TransformationInstantiation:
+    constraints: tuple[NamedConstraint, ...]
+    requirements: tuple[StateRequirementInstance, ...]
+    updates: tuple[StateUpdateInstance, ...]
 
 
 def build_problem(
@@ -59,6 +89,8 @@ def build_problem(
     slot_events = [slot.materialize(catalog) for slot in spec.slots]
     events = [*observed_events, *slot_events]
     constraints: list[NamedConstraint] = []
+    state_requirements: list[StateRequirementInstance] = []
+    state_updates: list[StateUpdateInstance] = []
     constraints.extend(
         NamedConstraint(
             name=f"trace.constraint.{index}",
@@ -96,9 +128,10 @@ def build_problem(
         )
 
     for transformation in spec.transformations:
-        constraints.extend(
-            _instantiate_transformation(transformation, events)
-        )
+        instantiated = _instantiate_transformation(transformation, events)
+        constraints.extend(instantiated.constraints)
+        state_requirements.extend(instantiated.requirements)
+        state_updates.extend(instantiated.updates)
 
     return BoundedProblem(
         catalog=catalog,
@@ -106,6 +139,8 @@ def build_problem(
         spec=spec,
         events=events,
         constraints=constraints,
+        state_requirements=state_requirements,
+        state_updates=state_updates,
         slot_ids=tuple(slot.id for slot in spec.slots),
     )
 
@@ -113,13 +148,16 @@ def build_problem(
 def _instantiate_transformation(
     transformation: Transformation,
     events: list[EventInstance],
-) -> list[NamedConstraint]:
+) -> _TransformationInstantiation:
     by_type: dict[str, list[EventInstance]] = {}
     for event in events:
         by_type.setdefault(event.event_type, []).append(event)
 
     input_bindings = list(_role_bindings(transformation.inputs, by_type))
-    result: list[NamedConstraint] = []
+    constraints: list[NamedConstraint] = []
+    requirements: list[StateRequirementInstance] = []
+    updates: list[StateUpdateInstance] = []
+
     for index, input_binding in enumerate(input_bindings):
         input_ids = tuple(input_binding.values())
         if len(input_ids) != len(set(input_ids)):
@@ -153,21 +191,55 @@ def _instantiate_transformation(
             )
             alternatives.append(conjunction((*output_occurs, *ensured)))
 
-        # An invariant-style transformation with no outputs has one empty
-        # output binding and therefore one ensure-only alternative.
         consequent = disjunction(alternatives)
         bound_inputs = ",".join(input_ids) if input_ids else "global"
-        result.append(
+        instance_name = (
+            f"transformation.{transformation.name}.{index}.{bound_inputs}"
+        )
+        constraints.append(
             NamedConstraint(
-                name=(
-                    f"transformation.{transformation.name}."
-                    f"{index}.{bound_inputs}"
-                ),
+                name=instance_name,
                 expression=Binary("implies", antecedent, consequent),
                 origin=f"transformation:{transformation.name}",
             )
         )
-    return result
+
+        if transformation.is_stateful:
+            for effect_index, requirement in enumerate(
+                transformation.state_requirements
+            ):
+                anchor_id = input_binding[requirement.at]
+                requirements.append(
+                    StateRequirementInstance(
+                        name=f"{instance_name}.requirement.{effect_index}",
+                        state=requirement.state,
+                        cycle=EventField(anchor_id, "cycle", INT),
+                        activation=antecedent,
+                        op=requirement.op,
+                        expected=substitute_event_ids(
+                            requirement.value, role_mapping
+                        ),
+                        origin=f"transformation:{transformation.name}",
+                    )
+                )
+            for effect_index, update in enumerate(transformation.state_updates):
+                anchor_id = input_binding[update.at]
+                updates.append(
+                    StateUpdateInstance(
+                        name=f"{instance_name}.update.{effect_index}",
+                        state=update.state,
+                        cycle=EventField(anchor_id, "cycle", INT),
+                        activation=antecedent,
+                        value=substitute_event_ids(update.value, role_mapping),
+                        origin=f"transformation:{transformation.name}",
+                    )
+                )
+
+    return _TransformationInstantiation(
+        constraints=tuple(constraints),
+        requirements=tuple(requirements),
+        updates=tuple(updates),
+    )
 
 
 def _role_bindings(

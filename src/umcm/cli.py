@@ -102,6 +102,18 @@ def main(argv: list[str] | None = None) -> int:
                         f"  + cycle {event.cycle}: {event.id} "
                         f"[{event.event_type}{suffix}]"
                     )
+                changed_steps = [
+                    step for step in result.state_steps if step.get("changes")
+                ]
+                if changed_steps:
+                    print("STATE transitions:")
+                    for step in changed_steps:
+                        rendered = ", ".join(
+                            f"{change['state']}: {change['before']!r} -> "
+                            f"{change['after']!r}"
+                            for change in step["changes"]
+                        )
+                        print(f"  @ cycle {step['cycle']}: {rendered}")
                 if args.output:
                     output = Path(args.output)
                     result.completed_trace.dump(output)

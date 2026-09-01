@@ -1,0 +1,272 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: boom-load-load-ordering
+  expected_architectural_outcome:
+    L0: 1
+    L1: 0
+  note: Architectural observations are fixed here. Bounded completion models add hidden
+    TLB, retry, probe, DCache and MSHR events in later iterations.
+  completion:
+    backend: finite
+    horizon: 6
+    model:
+      model: boom-lsu-retry-to-dcache-fire-v0.3
+      purpose: Query one accepted DCache request for L0. Complete the supporting TLB
+        miss, retry-queue enqueue/dequeue, successful retry translation, and ready/valid
+        handshake. Persistent state checks that RetryIssue consumes exactly the identity
+        retained by RetryEnqueue.
+    selected_slots:
+    - l0_tlb_miss
+    - retry_enqueue_0
+    - retry_issue_0
+    - l0_tlb_hit
+    - dcache_req_valid_0
+    - dcache_req_ready_0
+    - dcache_req_fire_0
+    state:
+      initial:
+        LSU.retry_queue.valid: false
+        LSU.retry_queue.op_id: EMPTY
+        LSU.retry_queue.ldq_idx: 63
+        LSU.retry_queue.vaddr: EMPTY_ADDR
+      final:
+        LSU.retry_queue.valid: false
+        LSU.retry_queue.op_id: L0
+        LSU.retry_queue.ldq_idx: 0
+        LSU.retry_queue.vaddr: x
+      steps:
+      - cycle: 2
+        before:
+          LSU.retry_queue.valid: false
+          LSU.retry_queue.op_id: EMPTY
+          LSU.retry_queue.ldq_idx: 63
+          LSU.retry_queue.vaddr: EMPTY_ADDR
+        after:
+          LSU.retry_queue.valid: true
+          LSU.retry_queue.op_id: L0
+          LSU.retry_queue.ldq_idx: 0
+          LSU.retry_queue.vaddr: x
+        active_requirements:
+        - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.requirement.0
+        active_updates:
+        - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.2
+        - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.1
+        - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.3
+        - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.0
+        changes:
+        - state: LSU.retry_queue.ldq_idx
+          before: 63
+          after: 0
+          origins:
+          - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.2
+        - state: LSU.retry_queue.op_id
+          before: EMPTY
+          after: L0
+          origins:
+          - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.1
+        - state: LSU.retry_queue.vaddr
+          before: EMPTY_ADDR
+          after: x
+          origins:
+          - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.3
+        - state: LSU.retry_queue.valid
+          before: false
+          after: true
+          origins:
+          - transformation.retry_enqueue_writes_state.0.retry_enqueue_0.update.0
+      - cycle: 4
+        before:
+          LSU.retry_queue.valid: true
+          LSU.retry_queue.op_id: L0
+          LSU.retry_queue.ldq_idx: 0
+          LSU.retry_queue.vaddr: x
+        after:
+          LSU.retry_queue.valid: false
+          LSU.retry_queue.op_id: L0
+          LSU.retry_queue.ldq_idx: 0
+          LSU.retry_queue.vaddr: x
+        active_requirements:
+        - transformation.retry_issue_reads_and_dequeues_state.0.retry_issue_0.requirement.0
+        - transformation.retry_issue_reads_and_dequeues_state.0.retry_issue_0.requirement.1
+        - transformation.retry_issue_reads_and_dequeues_state.0.retry_issue_0.requirement.2
+        - transformation.retry_issue_reads_and_dequeues_state.0.retry_issue_0.requirement.3
+        active_updates:
+        - transformation.retry_issue_reads_and_dequeues_state.0.retry_issue_0.update.0
+        changes:
+        - state: LSU.retry_queue.valid
+          before: true
+          after: false
+          origins:
+          - transformation.retry_issue_reads_and_dequeues_state.0.retry_issue_0.update.0
+events:
+- id: init_x
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitX
+    address: x
+    value: 0
+- id: load_l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+  cycle: 0
+- id: load_l1
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    address: x
+  cycle: 3
+- id: store_w1
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: W1
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+- id: commit_l0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L0
+    value: 1
+- id: commit_l1
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L1
+    value: 0
+- id: l0_tlb_miss
+  type: LSU.TLBMiss
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 1
+  annotations:
+    role: causal_predecessor
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retry_enqueue_0
+  type: LSU.RetryEnqueue
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 2
+  annotations:
+    role: state_write
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retry_issue_0
+  type: LSU.RetryIssue
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 4
+  annotations:
+    role: state_read_and_dequeue
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l0_tlb_hit
+  type: LSU.TLBHit
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+    paddr: x
+  cycle: 4
+  annotations:
+    role: translated_retry
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: dcache_req_valid_0
+  type: LSU.DCacheReqValid
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 4
+  annotations:
+    role: handshake_valid
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: dcache_req_ready_0
+  type: DCache.ReqReady
+  occurs: true
+  fields:
+    port: 0
+  cycle: 4
+  annotations:
+    role: handshake_ready
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: dcache_req_fire_0
+  type: LSU.DCacheReqFire
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 4
+  annotations:
+    role: query_goal
+    completion_slot: true
+    required_slot: true
+    completed: true
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+- node: call
+  function: same_address
+  arguments:
+  - node: event_field
+    event_id: load_l0
+    field: address
+    sort:
+      name: address
+      width: 64
+  - node: event_field
+    event_id: load_l1
+    field: address
+    sort:
+      name: address
+      width: 64
+  sort:
+    name: bool

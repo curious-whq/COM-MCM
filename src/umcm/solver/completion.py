@@ -32,6 +32,9 @@ class CompletionResult:
     explored_nodes: int = 0
     reason: str = ""
     instantiated_constraint_count: int = 0
+    initial_state: dict[str, Any] = field(default_factory=dict)
+    final_state: dict[str, Any] = field(default_factory=dict)
+    state_steps: tuple[dict[str, Any], ...] = ()
 
     @property
     def feasible(self) -> bool:
@@ -80,7 +83,11 @@ def complete_trace(
             instantiated_constraint_count=len(problem.constraints),
         )
 
-    completed = _materialize_trace(problem, solved.assignment)
+    completed = _materialize_trace(
+        problem,
+        solved.assignment,
+        state_result=solved.state_result,
+    )
     completed.validate(catalog, partial=False)
     selected_slot_ids = tuple(
         event.id
@@ -95,12 +102,28 @@ def complete_trace(
         added_event_ids=selected_slot_ids,
         explored_nodes=solved.explored_nodes,
         instantiated_constraint_count=len(problem.constraints),
+        initial_state=(
+            dict(solved.state_result.initial_state)
+            if solved.state_result is not None
+            else {}
+        ),
+        final_state=(
+            dict(solved.state_result.final_state)
+            if solved.state_result is not None
+            else {}
+        ),
+        state_steps=(
+            tuple(step.to_dict() for step in solved.state_result.steps)
+            if solved.state_result is not None
+            else ()
+        ),
     )
 
 
 def _materialize_trace(
     problem: BoundedProblem,
     assignment: dict[str, Any],
+    state_result: Any = None,
 ) -> Trace:
     context = EvaluationContext(events=problem.event_map, assignment=assignment)
     events: list[EventInstance] = []
@@ -148,6 +171,12 @@ def _materialize_trace(
             event.id for event in events if event.id in problem.slot_ids
         ],
     }
+    if state_result is not None:
+        metadata["completion"]["state"] = {
+            "initial": dict(state_result.initial_state),
+            "final": dict(state_result.final_state),
+            "steps": [step.to_dict() for step in state_result.steps],
+        }
     return Trace(
         events=events,
         constraints=list(problem.source_trace.constraints),

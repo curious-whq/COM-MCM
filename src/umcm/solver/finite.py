@@ -18,6 +18,7 @@ from umcm.ir.expression import Expr, Symbol, iter_literals, iter_symbols
 from umcm.ir.sort import BOOL, INT, Sort
 from umcm.solver.evaluator import EvaluationContext, UNKNOWN, evaluate
 from umcm.solver.problem import BoundedProblem
+from umcm.solver.state import StateCheckResult, check_state_semantics
 
 
 class FiniteStatus(str, Enum):
@@ -39,6 +40,7 @@ class FiniteSolveResult:
     assignment: dict[str, Any]
     explored_nodes: int
     reason: str = ""
+    state_result: StateCheckResult | None = None
 
 
 def solve_finite(
@@ -52,6 +54,8 @@ def solve_finite(
     assignment: dict[str, Any] = {}
     explored = 0
     hit_unknown_leaf = False
+    last_state_failure = ""
+    winning_state_result: StateCheckResult | None = None
 
     def constraints_consistent() -> bool:
         context = EvaluationContext(events=events, assignment=assignment)
@@ -62,7 +66,7 @@ def solve_finite(
         return True
 
     def search(index: int) -> dict[str, Any] | None:
-        nonlocal explored, hit_unknown_leaf
+        nonlocal explored, hit_unknown_leaf, last_state_failure, winning_state_result
         explored += 1
         if explored > node_limit:
             return None
@@ -72,7 +76,12 @@ def solve_finite(
             context = EvaluationContext(events=events, assignment=assignment)
             values = [evaluate(expression, context) for expression in constraints]
             if all(value is True for value in values):
-                return dict(assignment)
+                state_result = check_state_semantics(problem, assignment)
+                if state_result.feasible:
+                    winning_state_result = state_result
+                    return dict(assignment)
+                last_state_failure = state_result.reason
+                return None
             if any(value is UNKNOWN for value in values):
                 hit_unknown_leaf = True
             return None
@@ -94,6 +103,7 @@ def solve_finite(
             status=FiniteStatus.SAT,
             assignment=witness,
             explored_nodes=explored,
+            state_result=winning_state_result,
         )
     if explored > node_limit:
         return FiniteSolveResult(
@@ -109,14 +119,17 @@ def solve_finite(
             explored_nodes=explored,
             reason="some fully assigned constraints still contained unknown values",
         )
+    reason = (
+        f"no assignment within cycle horizon 0..{problem.spec.horizon} "
+        "and observed finite domains"
+    )
+    if last_state_failure:
+        reason += f"; last state rejection: {last_state_failure}"
     return FiniteSolveResult(
         status=FiniteStatus.UNSAT,
         assignment={},
         explored_nodes=explored,
-        reason=(
-            f"no assignment within cycle horizon 0..{problem.spec.horizon} "
-            "and observed finite domains"
-        ),
+        reason=reason,
     )
 
 
@@ -158,6 +171,19 @@ def _build_variables(problem: BoundedProblem) -> list[FiniteVariable]:
 
     for constraint in problem.constraints:
         record_expression(constraint.expression)
+    for variable in problem.spec.state_variables:
+        if isinstance(variable.initial, Expr):
+            record_expression(variable.initial)
+        else:
+            concrete.setdefault(variable.sort, set()).add(variable.initial)
+    for requirement in problem.state_requirements:
+        record_expression(requirement.activation)
+        record_expression(requirement.cycle)
+        record_expression(requirement.expected)
+    for update in problem.state_updates:
+        record_expression(update.activation)
+        record_expression(update.cycle)
+        record_expression(update.value)
 
     variables: list[FiniteVariable] = []
     for name, sort in symbols.items():

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+- 新增 `StateVariable / StateRequirement / StateUpdate`。
+- 新增 pre-state 检查、atomic post-state update、自动 stutter 和同周期冲突写检测。
+- 新增状态规则实例化及状态拒绝诊断。
+- completed Trace metadata 中保存初始状态、最终状态和逐周期状态历史。
+- 事件目录扩展到 16 种事件。
+- 新增 `TLBHit / DCacheReqValid / DCacheReqReady / DCacheReqFire` 路径。
+- 新增 ready/valid/fire 的双向约束及身份保持。
+- 新增 BOOM retry queue 单槽摘要，保持 `op_id/ldq_idx/vaddr`。
+- 新增 branch kill 与 exception 清空 retry queue 的防御路径。
+- 新增正向 `retry_dcache_completion.yaml` 和负向 `retry_dcache_branch_kill.yaml`。
+- 保持 v0.2 completion model 向后兼容。
+- 测试增至 31 项。
+
 ## 0.2.0
 
 - 新增有界候选隐藏事件 `EventSlot`。
