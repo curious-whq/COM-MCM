@@ -1,0 +1,91 @@
+schema_version: umcm.trace.v0.1
+partial: true
+metadata:
+  case: boom-load-load-ordering
+  expected_architectural_outcome:
+    L0: 1
+    L1: 0
+  note: >-
+    Only architectural observations are fixed in iteration 1. Hidden TLB,
+    retry, probe, DCache and MSHR events will be introduced by trace completion.
+events:
+  - id: init_x
+    type: Arch.InitWrite
+    fields:
+      op_id: InitX
+      address: x
+      value: 0
+
+  - id: load_l0
+    type: Arch.Load
+    cycle:
+      $expr:
+        node: symbol
+        name: c_load_l0
+        sort: {name: int}
+    fields:
+      op_id: L0
+      hart: 0
+      program_index: 0
+      address: x
+
+  - id: load_l1
+    type: Arch.Load
+    cycle:
+      $expr:
+        node: symbol
+        name: c_load_l1
+        sort: {name: int}
+    fields:
+      op_id: L1
+      hart: 0
+      program_index: 1
+      address: x
+
+  - id: store_w1
+    type: Arch.Store
+    fields:
+      op_id: W1
+      hart: 1
+      program_index: 0
+      address: x
+      value: 1
+
+  - id: commit_l0
+    type: Arch.CommitLoad
+    fields:
+      op_id: L0
+      value: 1
+
+  - id: commit_l1
+    type: Arch.CommitLoad
+    fields:
+      op_id: L1
+      value: 0
+
+constraints:
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: load_l0
+      field: cycle
+      sort: {name: int}
+    right:
+      node: event_field
+      event_id: load_l1
+      field: cycle
+      sort: {name: int}
+
+  - node: call
+    function: same_address
+    arguments:
+      - node: event_field
+        event_id: load_l0
+        field: address
+        sort: {name: address, width: 64}
+      - node: event_field
+        event_id: load_l1
+        field: address
+        sort: {name: address, width: 64}
+    sort: {name: bool}

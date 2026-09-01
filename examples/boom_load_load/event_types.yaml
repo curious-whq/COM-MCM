@@ -1,0 +1,118 @@
+schema_version: umcm.events.v0.1
+metadata:
+  model: boom-v4-load-load-seed
+  description: >-
+    First-iteration event catalog. It only names the architectural observations
+    and several future hidden-event slots needed by the BOOM Load–Load case.
+events:
+  - name: Arch.InitWrite
+    module: Architecture
+    layer: architectural
+    visibility: architectural
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: address
+        sort: {name: address, width: 64}
+      - name: value
+        sort: {name: value, width: 64}
+
+  - name: Arch.Load
+    module: Architecture
+    layer: architectural
+    visibility: architectural
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: hart
+        sort: int
+      - name: program_index
+        sort: int
+      - name: address
+        sort: {name: address, width: 64}
+      - name: value
+        sort: {name: value, width: 64}
+        required: false
+
+  - name: Arch.Store
+    module: Architecture
+    layer: architectural
+    visibility: architectural
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: hart
+        sort: int
+      - name: program_index
+        sort: int
+      - name: address
+        sort: {name: address, width: 64}
+      - name: value
+        sort: {name: value, width: 64}
+
+  - name: Arch.CommitLoad
+    module: ROB
+    layer: architectural-boundary
+    visibility: public
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: value
+        sort: {name: value, width: 64}
+
+  - name: LSU.TLBMiss
+    module: LSU
+    layer: lsu
+    visibility: internal
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+
+  - name: LSU.RetryEnqueue
+    module: LSU
+    layer: lsu
+    visibility: internal
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: ldq_idx
+        sort: {name: bv, width: 6}
+        required: false
+
+  - name: DCache.LoadResponse
+    module: DCache
+    layer: l1
+    visibility: public
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: address
+        sort: {name: address, width: 64}
+      - name: value
+        sort: {name: value, width: 64}
+
+  - name: DCache.ProbeRelease
+    module: DCache
+    layer: l1
+    visibility: public
+    fields:
+      - name: address
+        sort: {name: address, width: 64}
+
+  - name: LSU.LoadObserved
+    module: LSU
+    layer: lsu
+    visibility: internal
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: address
+        sort: {name: address, width: 64}
