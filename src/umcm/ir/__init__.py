@@ -1,5 +1,6 @@
 """Public IR surface."""
 
+from umcm.ir.completion import CompletionSpec, EventSlot
 from umcm.ir.event import (
     EventCatalog,
     EventInstance,
@@ -19,16 +20,23 @@ from umcm.ir.expression import (
     Unary,
     binary,
     call,
+    conjunction,
+    disjunction,
     event_field,
     expr_from_dict,
     expr_to_dict,
+    iter_event_fields,
+    iter_literals,
+    iter_symbols,
     literal,
     nary,
+    substitute_event_ids,
     symbol,
     unary,
 )
 from umcm.ir.sort import BOOL, INT, STRING, Sort, address, bitvec, identifier, value
 from umcm.ir.trace import PartialObservation, Trace
+from umcm.ir.transformation import EventRole, Transformation
 
 __all__ = [
     "BOOL",
@@ -36,9 +44,12 @@ __all__ = [
     "STRING",
     "Binary",
     "Call",
+    "CompletionSpec",
     "EventCatalog",
     "EventField",
     "EventInstance",
+    "EventRole",
+    "EventSlot",
     "EventType",
     "Expr",
     "FieldSpec",
@@ -49,18 +60,25 @@ __all__ = [
     "Sort",
     "Symbol",
     "Trace",
+    "Transformation",
     "Unary",
     "Visibility",
     "address",
     "binary",
     "bitvec",
     "call",
+    "conjunction",
+    "disjunction",
     "event_field",
     "expr_from_dict",
     "expr_to_dict",
     "identifier",
+    "iter_event_fields",
+    "iter_literals",
+    "iter_symbols",
     "literal",
     "nary",
+    "substitute_event_ids",
     "symbol",
     "unary",
     "value",

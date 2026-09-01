@@ -1,0 +1,152 @@
+schema_version: umcm.completion.v0.2
+horizon: 6
+metadata:
+  model: boom-lsu-tlb-retry-goal-v0.2
+  purpose: >-
+    Ask for one hidden RetryIssue(L0) witness and complete the causal BOOM LSU
+    prerequisites that support it. The required retry issue is a query goal,
+    not a claim that every TLB miss must eventually be reissued.
+
+slots:
+  - id: l0_tlb_miss
+    type: LSU.TLBMiss
+    annotations:
+      role: causal_predecessor
+
+  - id: retry_enqueue_0
+    type: LSU.RetryEnqueue
+    annotations:
+      role: causal_predecessor
+
+  - id: retry_issue_0
+    type: LSU.RetryIssue
+    required: true
+    fields:
+      op_id: L0
+    annotations:
+      role: query_goal
+
+transformations:
+  - name: retry_issue_requires_enqueue
+    description: >-
+      A selected retry issue must be supported by an earlier retry-queue
+      enqueue carrying the same logical load identity.
+    tags: [causal-support]
+    inputs:
+      - role: issue
+        type: LSU.RetryIssue
+    outputs:
+      - role: enqueue
+        type: LSU.RetryEnqueue
+    when:
+      node: literal
+      sort: {name: bool}
+      value: true
+    ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: issue
+          field: op_id
+          sort: {name: op_id}
+        right:
+          node: event_field
+          event_id: enqueue
+          field: op_id
+          sort: {name: op_id}
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: enqueue
+          field: cycle
+          sort: {name: int}
+        right:
+          node: event_field
+          event_id: issue
+          field: cycle
+          sort: {name: int}
+
+  - name: retry_enqueue_requires_tlb_miss
+    description: >-
+      A selected load retry enqueue must be supported by an earlier TLB miss
+      for the same logical load.
+    tags: [causal-support]
+    inputs:
+      - role: enqueue
+        type: LSU.RetryEnqueue
+    outputs:
+      - role: miss
+        type: LSU.TLBMiss
+    when:
+      node: literal
+      sort: {name: bool}
+      value: true
+    ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enqueue
+          field: op_id
+          sort: {name: op_id}
+        right:
+          node: event_field
+          event_id: miss
+          field: op_id
+          sort: {name: op_id}
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: miss
+          field: cycle
+          sort: {name: int}
+        right:
+          node: event_field
+          event_id: enqueue
+          field: cycle
+          sort: {name: int}
+
+constraints:
+  # The selected path is:
+  #   architectural L0 -> TLB miss -> retry enqueue -> younger L1 -> retry issue.
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: load_l0
+      field: cycle
+      sort: {name: int}
+    right:
+      node: event_field
+      event_id: l0_tlb_miss
+      field: cycle
+      sort: {name: int}
+
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: retry_enqueue_0
+      field: cycle
+      sort: {name: int}
+    right:
+      node: event_field
+      event_id: load_l1
+      field: cycle
+      sort: {name: int}
+
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: load_l1
+      field: cycle
+      sort: {name: int}
+    right:
+      node: event_field
+      event_id: retry_issue_0
+      field: cycle
+      sort: {name: int}

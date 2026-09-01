@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "umcm-foundation"
-version = "0.1.0"
+version = "0.2.0"
 description = "A small IR foundation for hierarchical microarchitectural memory-model traces"
 readme = "README.md"
 requires-python = ">=3.11"

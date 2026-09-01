@@ -116,3 +116,15 @@ events:
         identity: true
       - name: address
         sort: {name: address, width: 64}
+
+  - name: LSU.RetryIssue
+    module: LSU
+    layer: lsu
+    visibility: internal
+    fields:
+      - name: op_id
+        sort: op_id
+        identity: true
+      - name: ldq_idx
+        sort: {name: bv, width: 6}
+        required: false

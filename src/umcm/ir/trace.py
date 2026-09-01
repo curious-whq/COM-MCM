@@ -62,12 +62,34 @@ class Trace:
             self.events,
             partial=self.partial if partial is None else partial,
         )
-        event_ids = {event.id for event in self.events}
+        event_map = {event.id: event for event in self.events}
+        from umcm.ir.expression import iter_event_fields
+        from umcm.ir.sort import BOOL, INT
+
         for constraint in self.constraints:
-            for reference in _event_references(constraint):
-                if reference not in event_ids:
+            for reference in iter_event_fields(constraint):
+                event = event_map.get(reference.event_id)
+                if event is None:
                     raise TraceValidationError(
-                        f"constraint references unknown event id {reference!r}"
+                        f"constraint references unknown event id {reference.event_id!r}"
+                    )
+                if reference.field == "cycle":
+                    expected = INT
+                elif reference.field == "occurs":
+                    expected = BOOL
+                else:
+                    event_type = catalog.resolve(event.event_type)
+                    try:
+                        expected = event_type.field_map[reference.field].sort
+                    except KeyError as exc:
+                        raise TraceValidationError(
+                            f"constraint references unknown field "
+                            f"{reference.event_id}.{reference.field}"
+                        ) from exc
+                if not reference.sort.compatible_with(expected):
+                    raise TraceValidationError(
+                        f"constraint reference {reference.event_id}.{reference.field} "
+                        f"has sort {reference.sort}, expected {expected}"
                     )
 
     def get(self, event_id: str) -> EventInstance:

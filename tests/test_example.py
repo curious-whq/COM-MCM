@@ -12,7 +12,7 @@ def test_boom_example_validates_and_roundtrips(tmp_path: Path) -> None:
     trace = Trace.load(ROOT / "examples/boom_load_load/partial_trace.yaml")
     trace.validate(catalog)
 
-    assert len(catalog.event_types) == 9
+    assert len(catalog.event_types) == 10
     assert len(trace.events) == 6
     assert len(trace.constraints) == 2
     assert trace.get("commit_l0").fields["value"] == 1

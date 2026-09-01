@@ -19,3 +19,15 @@ class ExpressionTypeError(UMCMError):
 
 class SerializationError(UMCMError):
     """Raised when YAML/JSON content cannot be decoded into the IR."""
+
+
+class SolverError(UMCMError):
+    """Raised when a feasibility backend cannot encode or solve a problem."""
+
+
+class BackendUnavailableError(SolverError):
+    """Raised when a requested optional solver backend is not installed."""
+
+
+class CompletionError(UMCMError):
+    """Raised when a completion specification cannot be instantiated."""

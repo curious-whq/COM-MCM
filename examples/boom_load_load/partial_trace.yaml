@@ -6,8 +6,8 @@ metadata:
     L0: 1
     L1: 0
   note: >-
-    Only architectural observations are fixed in iteration 1. Hidden TLB,
-    retry, probe, DCache and MSHR events will be introduced by trace completion.
+    Architectural observations are fixed here. Bounded completion models add
+    hidden TLB, retry, probe, DCache and MSHR events in later iterations.
 events:
   - id: init_x
     type: Arch.InitWrite

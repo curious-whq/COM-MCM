@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence, TypeAlias
+from typing import Any, Iterable, Iterator, Mapping, Sequence, TypeAlias
 
 from umcm.errors import ExpressionTypeError, SerializationError
 from umcm.ir.sort import BOOL, INT, STRING, Sort
@@ -334,3 +334,124 @@ def _require_compatible(left: Expr, right: Expr, context: str) -> None:
         raise ExpressionTypeError(
             f"{context} requires matching sorts, got {left.sort} and {right.sort}"
         )
+
+
+def iter_event_fields(expr: Expr) -> Iterator[EventField]:
+    """Yield all event-field references contained in *expr*."""
+
+    if isinstance(expr, EventField):
+        yield expr
+    elif isinstance(expr, Unary):
+        yield from iter_event_fields(expr.operand)
+    elif isinstance(expr, Binary):
+        yield from iter_event_fields(expr.left)
+        yield from iter_event_fields(expr.right)
+    elif isinstance(expr, Nary):
+        for operand in expr.operands:
+            yield from iter_event_fields(operand)
+    elif isinstance(expr, Ite):
+        yield from iter_event_fields(expr.condition)
+        yield from iter_event_fields(expr.then_expr)
+        yield from iter_event_fields(expr.else_expr)
+    elif isinstance(expr, Call):
+        for argument in expr.arguments:
+            yield from iter_event_fields(argument)
+
+
+def iter_symbols(expr: Expr) -> Iterator[Symbol]:
+    """Yield all free symbols contained in *expr*."""
+
+    if isinstance(expr, Symbol):
+        yield expr
+    elif isinstance(expr, Unary):
+        yield from iter_symbols(expr.operand)
+    elif isinstance(expr, Binary):
+        yield from iter_symbols(expr.left)
+        yield from iter_symbols(expr.right)
+    elif isinstance(expr, Nary):
+        for operand in expr.operands:
+            yield from iter_symbols(operand)
+    elif isinstance(expr, Ite):
+        yield from iter_symbols(expr.condition)
+        yield from iter_symbols(expr.then_expr)
+        yield from iter_symbols(expr.else_expr)
+    elif isinstance(expr, Call):
+        for argument in expr.arguments:
+            yield from iter_symbols(argument)
+
+
+def iter_literals(expr: Expr) -> Iterator[Literal]:
+    """Yield all literal nodes contained in *expr*."""
+
+    if isinstance(expr, Literal):
+        yield expr
+    elif isinstance(expr, Unary):
+        yield from iter_literals(expr.operand)
+    elif isinstance(expr, Binary):
+        yield from iter_literals(expr.left)
+        yield from iter_literals(expr.right)
+    elif isinstance(expr, Nary):
+        for operand in expr.operands:
+            yield from iter_literals(operand)
+    elif isinstance(expr, Ite):
+        yield from iter_literals(expr.condition)
+        yield from iter_literals(expr.then_expr)
+        yield from iter_literals(expr.else_expr)
+    elif isinstance(expr, Call):
+        for argument in expr.arguments:
+            yield from iter_literals(argument)
+
+
+def substitute_event_ids(expr: Expr, mapping: Mapping[str, str]) -> Expr:
+    """Replace event/role identifiers while preserving the typed AST."""
+
+    if isinstance(expr, EventField):
+        return EventField(mapping.get(expr.event_id, expr.event_id), expr.field, expr.sort)
+    if isinstance(expr, Unary):
+        return Unary(expr.op, substitute_event_ids(expr.operand, mapping))
+    if isinstance(expr, Binary):
+        return Binary(
+            expr.op,
+            substitute_event_ids(expr.left, mapping),
+            substitute_event_ids(expr.right, mapping),
+        )
+    if isinstance(expr, Nary):
+        return Nary(
+            expr.op,
+            tuple(substitute_event_ids(item, mapping) for item in expr.operands),
+        )
+    if isinstance(expr, Ite):
+        return Ite(
+            substitute_event_ids(expr.condition, mapping),
+            substitute_event_ids(expr.then_expr, mapping),
+            substitute_event_ids(expr.else_expr, mapping),
+        )
+    if isinstance(expr, Call):
+        return Call(
+            expr.function,
+            tuple(substitute_event_ids(item, mapping) for item in expr.arguments),
+            expr.return_sort,
+        )
+    return expr
+
+
+def conjunction(expressions: Iterable[Expr]) -> Expr:
+    """Build a conjunction, using ``true`` for an empty sequence."""
+
+    items = tuple(expressions)
+    if not items:
+        return Literal(True, BOOL)
+    if len(items) == 1:
+        return items[0]
+    return Nary("and", items)
+
+
+def disjunction(expressions: Iterable[Expr]) -> Expr:
+    """Build a disjunction, using ``false`` for an empty sequence."""
+
+    items = tuple(expressions)
+    if not items:
+        return Literal(False, BOOL)
+    if len(items) == 1:
+        return items[0]
+    return Nary("or", items)
