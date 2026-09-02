@@ -1,11 +1,11 @@
-schema_version: umcm.completion.v0.3
+schema_version: umcm.completion.v0.3.1
 horizon: 6
 metadata:
-  model: boom-lsu-retry-to-dcache-fire-v0.3
+  model: boom-lsu-retry-to-dcache-fire-v0.3.1
   purpose: Query one accepted DCache request for L0. Complete the supporting TLB miss,
-    retry-queue enqueue/dequeue, successful retry translation, and ready/valid handshake.
-    Persistent state checks that RetryIssue consumes exactly the identity retained
-    by RetryEnqueue.
+    retry-queue state transitions, successful retry translation, and LSU-to-DCache
+    interface transition. valid/ready/fire are ordinary events constrained by
+    Transformation, not a separate semantics layer.
 state_variables:
 - name: LSU.retry_queue.valid
   sort: bool
@@ -65,13 +65,13 @@ slots:
     address: x
     port: 0
   annotations:
-    role: handshake_valid
+    role: interface_valid
 - id: dcache_req_ready_0
   type: DCache.ReqReady
   fields:
     port: 0
   annotations:
-    role: handshake_ready
+    role: interface_ready
 - id: dcache_req_fire_0
   type: LSU.DCacheReqFire
   required: true
@@ -97,18 +97,52 @@ slots:
   annotations:
     role: optional_defense
 transformations:
-- name: dcache_fire_requires_valid_and_ready
+- name: dcache_request_acceptance
+  exact: true
   tags:
-  - handshake
-  - causal-support
+  - interface-transition
+  - definition
+  description: >-
+    At one cycle and port, request valid plus receiver ready emits the accepted-request
+    event. exact=true also requires every observed fire to be justified by such a
+    valid/ready transition.
   inputs:
-  - role: fire
-    type: LSU.DCacheReqFire
-  outputs:
   - role: valid
     type: LSU.DCacheReqValid
   - role: ready
     type: DCache.ReqReady
+  outputs:
+  - role: fire
+    type: LSU.DCacheReqFire
+  when:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: cycle
+        sort: &id001
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: cycle
+        sort: *id001
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: port
+        sort: *id001
+      right:
+        node: event_field
+        event_id: ready
+        field: port
+        sort: *id001
   ensure:
   - node: binary
     op: eq
@@ -116,23 +150,10 @@ transformations:
       node: event_field
       event_id: fire
       field: cycle
-      sort: &id001
-        name: int
+      sort: *id001
     right:
       node: event_field
       event_id: valid
-      field: cycle
-      sort: *id001
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: fire
-      field: cycle
-      sort: *id001
-    right:
-      node: event_field
-      event_id: ready
       field: cycle
       sort: *id001
   - node: binary
@@ -171,119 +192,6 @@ transformations:
       sort: &id004
         name: address
         width: 64
-    right:
-      node: event_field
-      event_id: valid
-      field: address
-      sort: *id004
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: fire
-      field: port
-      sort: *id001
-    right:
-      node: event_field
-      event_id: valid
-      field: port
-      sort: *id001
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: fire
-      field: port
-      sort: *id001
-    right:
-      node: event_field
-      event_id: ready
-      field: port
-      sort: *id001
-- name: valid_and_ready_define_fire
-  tags:
-  - handshake
-  - definition
-  inputs:
-  - role: valid
-    type: LSU.DCacheReqValid
-  - role: ready
-    type: DCache.ReqReady
-  outputs:
-  - role: fire
-    type: LSU.DCacheReqFire
-  when:
-    node: nary
-    op: and
-    operands:
-    - node: binary
-      op: eq
-      left:
-        node: event_field
-        event_id: valid
-        field: cycle
-        sort: *id001
-      right:
-        node: event_field
-        event_id: ready
-        field: cycle
-        sort: *id001
-    - node: binary
-      op: eq
-      left:
-        node: event_field
-        event_id: valid
-        field: port
-        sort: *id001
-      right:
-        node: event_field
-        event_id: ready
-        field: port
-        sort: *id001
-  ensure:
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: fire
-      field: cycle
-      sort: *id001
-    right:
-      node: event_field
-      event_id: valid
-      field: cycle
-      sort: *id001
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: fire
-      field: op_id
-      sort: *id002
-    right:
-      node: event_field
-      event_id: valid
-      field: op_id
-      sort: *id002
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: fire
-      field: ldq_idx
-      sort: *id003
-    right:
-      node: event_field
-      event_id: valid
-      field: ldq_idx
-      sort: *id003
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: fire
-      field: address
-      sort: *id004
     right:
       node: event_field
       event_id: valid
@@ -848,15 +756,3 @@ constraints:
         field: cycle
         sort:
           name: int
-handshakes:
-- name: lsu_dcache_req
-  valid_type: LSU.DCacheReqValid
-  ready_type: DCache.ReqReady
-  fire_type: LSU.DCacheReqFire
-  payload_fields:
-  - op_id
-  - ldq_idx
-  - address
-  - port
-  description: Fire iff matching valid and ready observations occur on one port in
-    the same logical cycle.

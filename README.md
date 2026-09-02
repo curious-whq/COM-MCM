@@ -1,8 +1,8 @@
-# µMCM Foundation v0.3
+# µMCM Foundation v0.3.1
 
-这是第三轮底层基础设施代码。项目仍然与 FM-Agent 完全无关：当前目标是先建立一套可手写、可执行、可测试的微架构 Trace 可行性语义，再逐步接入 Execution Graph 与内存模型公理。
+这是第三轮底层基础设施的语义修正版。项目仍然与 FM-Agent 完全无关：当前目标是先建立一套可手写、可执行、可测试的微架构 Trace 可行性语义，再逐步接入 Execution Graph 与内存模型公理。
 
-v0.3 在 v0.2 的有界事件补全之上加入了**持久状态语义**和最小的 **ready/valid 握手语义**，并把 BOOM 示例推进到：
+v0.3.1 在 v0.2 的有界事件补全之上保留**持久状态语义**，并将 `valid/ready/fire` 明确归入普通的 **Transformation 状态转换语义**，不再把“握手”视为独立语义层。BOOM 示例推进到：
 
 ```text
 TLBMiss(L0)
@@ -25,7 +25,7 @@ TLBMiss(L0)
 - 基于 pre-state / atomic post-state 的状态执行语义；
 - 未更新状态自动 stutter；
 - 同周期冲突写检测；
-- ready/valid/fire 的事件级握手约束；
+- 由普通 `Transformation` 表达的接口转换 guard 与接受事件；
 - 依赖无关的有限域 Trace 补全器；
 - 状态历史写入 completed Trace metadata；
 - `validate` 与 `complete` 命令行工具；
@@ -81,11 +81,11 @@ RetryIssue:
 
 同一周期没有写入的状态自动保持原值。若两个 active update 在同一周期向同一状态写入不同值，当前后端将该执行判为不可行。
 
-当前 v0.3 只允许**没有 output role 的 input-only Transformation**携带状态读写。这避免了“一个规则实例选择哪一组存在量化输出事件”与状态副作用之间产生歧义。后续若需要，可以在语义明确后扩展。
+v0.3.1 允许同一条 `Transformation` 同时具有输入 guard、输出事件和状态读写。状态 requirement/update 可以锚定到输入或输出角色；只有某个完整的输入—输出绑定实际发生并满足 `when/ensure` 时，相应状态效果才会激活。这样接口接受事件与后续 FSM 更新可以写在同一套状态转换语义中。
 
-## 2. ready / valid / fire
+## 2. 接口状态转换中的 valid / ready / fire
 
-v0.3 将握手表示为三个事件：
+`valid/ready/fire` 不是独立于状态转换系统的另一套语义。v0.3.1 将它们解释为同一条接口转换中的三个观测：
 
 ```text
 LSU.DCacheReqValid
@@ -93,7 +93,7 @@ DCache.ReqReady
 LSU.DCacheReqFire
 ```
 
-约束为：
+其中 `valid` 和 `ready` 是当周期的组合 guard 观察，`fire` 是 guard 成立后发生的接受事件。它们全部通过普通 `Transformation` 约束：
 
 ```text
 Fire(op, port, cycle)
@@ -118,7 +118,18 @@ fire.address = valid.address
 fire.port    = valid.port = ready.port
 ```
 
-`DCacheReqFire(L0)` 是本轮的 required query goal。它不是活性公理；它只表示当前查询要寻找一条确实被 DCache 接受的 L0 retry 路径。
+`DCacheReqFire(L0)` 是本轮的 required query goal。这里的 `Fire` 只是沿用 Chisel 名称，语义上表示“请求被 DCache 接受”的转换事件；它不是独立的握手层，也不是活性公理。模型文件只包含 `transformations:`，不再包含单独的 `handshakes:` 段。
+
+对应的抽象形式是：
+
+```text
+Transformation {
+  guard: ReqValid(L0) ∧ ReqReady(port0)
+  emit:  DCacheReqFire(L0, port0)
+}
+```
+
+该转换使用 `exact: true`：正向表示 `valid ∧ ready → fire`，反向只要求每个已观测的 `fire` 必须由同周期、同端口的 `valid/ready` 支撑。它仍是一条普通 `Transformation` 的精确定义，而不是第二套语义。
 
 ## 3. BOOM 正向 witness
 
@@ -135,7 +146,7 @@ PYTHONPATH=src python3 -m umcm complete \
 当前确定性后端输出：
 
 ```text
-FEASIBLE finite completion: 13 event(s), 7 hidden event(s) added, 27 instantiated constraint(s), 1358 search node(s)
+FEASIBLE finite completion: 13 event(s), 7 hidden event(s) added, 27 instantiated constraint(s), 2142 search node(s)
   + cycle 1: l0_tlb_miss [LSU.TLBMiss, ldq_idx=0, op_id='L0', vaddr='x']
   + cycle 2: retry_enqueue_0 [LSU.RetryEnqueue, ldq_idx=0, op_id='L0', vaddr='x']
   + cycle 4: retry_issue_0 [LSU.RetryIssue, ldq_idx=0, op_id='L0', vaddr='x']
@@ -207,7 +218,7 @@ PYTHONPATH=src pytest -q
 本版本基线：
 
 ```text
-31 passed
+35 passed
 ```
 
 验证输入 Trace：

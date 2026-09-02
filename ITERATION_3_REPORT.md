@@ -1,4 +1,6 @@
-# Iteration 3 Report — Persistent State and DCache Handshake
+> **v0.3.1 语义修正：** 本报告最初把 ready/valid/fire 单列为“握手语义”。修正版明确：它们只是 `Transformation` 状态转换中的 guard 与接受事件；不存在独立的 Handshake IR。
+
+# Iteration 3 Report — Persistent State and DCache Interface Transition
 
 ## 目标
 
@@ -42,7 +44,7 @@ state_requirements
 state_updates
 ```
 
-v0.3 将状态副作用限制在 input-only transformation 中，避免存在量化 output 选择与副作用实例之间的歧义。
+v0.3.1 修正后允许 `Transformation` 同时包含 input guard、output event 与状态读写。状态效果按完整的输入—输出绑定实例化，并且只有该转换实例发生时才激活；requirement/update 可锚定输入或输出角色。
 
 ### 3. 有界问题实例化
 
@@ -65,7 +67,7 @@ v0.3 将状态副作用限制在 input-only transformation 中，避免存在量
 - 输出 `StateStep` 和 `StateChange`；
 - 返回首个状态拒绝原因。
 
-### 5. ready/valid/fire
+### 5. 接口状态转换中的 ready/valid/fire
 
 事件目录新增：
 
@@ -78,7 +80,7 @@ Core.BranchKill
 Core.Exception
 ```
 
-模型要求 `fire`、`valid` 和 `ready` 同周期、同端口，并保持 request 的 `op_id/ldq_idx/address`。
+模型把 `valid`、`ready` 作为普通 `Transformation` 的当周期 guard 观察，把 `fire` 作为请求接受事件；三者同周期、同端口，并保持 request 的 `op_id/ldq_idx/address`。这不是独立的握手语义层。
 
 ### 6. BOOM retry queue 摘要
 
@@ -104,7 +106,7 @@ vaddr
 ### 单元测试
 
 ```text
-31 passed
+35 passed
 ```
 
 覆盖：
@@ -124,7 +126,7 @@ FEASIBLE finite completion:
   13 events
   7 hidden events
   27 instantiated constraints
-  1358 search nodes
+  2142 search nodes
 ```
 
 补全事件：
@@ -174,4 +176,4 @@ but pre-state is false
 - Probe/observed；
 - LD–LD violation search。
 
-这些边界是有意保留的。v0.3 的目标仅是让“同一 retry 请求的状态保留和 DCache 接受”成为可执行语义，而不是继续使用纯事件顺序近似。
+这些边界是有意保留的。v0.3.1 的目标仍仅是让“同一 retry 请求的状态保留和 DCache 接受”成为可执行语义，而不是继续使用纯事件顺序近似。

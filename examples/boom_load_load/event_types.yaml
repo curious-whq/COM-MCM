@@ -3,8 +3,9 @@ metadata:
   model: boom-v4-load-load-seed
   description: >-
     BOOM Load-Load witness event catalog through LSU retry translation and the
-    LSU-to-DCache ready/valid handshake. Later iterations add probe, response,
-    order-failure and architectural execution-graph events.
+    LSU-to-DCache request-acceptance transition. valid, ready, and fire are
+    interface observations consumed by ordinary Transformation rules. Later
+    iterations add probe, response, order-failure and architectural execution-graph events.
 events:
   - name: Arch.InitWrite
     module: Architecture

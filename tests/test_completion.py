@@ -122,7 +122,7 @@ def _v03_inputs() -> tuple[EventCatalog, Trace, CompletionSpec]:
     )
 
 
-def test_retry_reaches_dcache_fire_with_stateful_identity() -> None:
+def test_retry_reaches_dcache_accept_transition_with_stateful_identity() -> None:
     catalog, trace, spec = _v03_inputs()
     result = complete_trace(catalog, trace, spec)
 
@@ -190,7 +190,7 @@ def test_required_branch_kill_blocks_retry_issue() -> None:
     assert "pre-state is False" in result.reason
 
 
-def test_dcache_fire_requires_ready() -> None:
+def test_dcache_accept_transition_requires_ready_guard() -> None:
     from umcm.ir.expression import EventField, Unary
     from umcm.ir.sort import BOOL
 
@@ -211,3 +211,32 @@ def test_v03_completion_spec_roundtrip(tmp_path: Path) -> None:
     assert loaded.to_dict() == spec.to_dict()
     assert len(loaded.state_variables) == 4
     assert any(item.is_stateful for item in loaded.transformations)
+
+
+def test_completion_spec_rejects_separate_handshake_section() -> None:
+    import pytest
+
+    from umcm.errors import SerializationError
+
+    with pytest.raises(SerializationError, match=r"unknown top-level key\(s\): handshakes"):
+        CompletionSpec.from_dict(
+            {
+                "schema_version": "umcm.completion.v0.3.1",
+                "handshakes": [],
+            }
+        )
+
+
+def test_exact_interface_transition_is_not_unconditional_liveness() -> None:
+    catalog, trace, spec = _v03_inputs()
+    spec.slots = [
+        replace(slot, required=False)
+        if slot.id == "dcache_req_fire_0"
+        else slot
+        for slot in spec.slots
+    ]
+
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.added_event_ids == ()

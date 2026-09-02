@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+- 修正概念划分：`valid/ready/fire` 统一归入普通 `Transformation` 状态转换语义，不再称为独立“握手语义”。
+- 删除示例模型中未被解析器消费的顶层 `handshakes:` 段。
+- 将相关 transformation/tag/annotation 重命名为 interface-state-transition。
+- CompletionSpec 与 Transformation 反序列化新增未知字段拒绝，防止模型段被静默忽略。
+- `Transformation` 现在可在同一规则中组合 input guard、output event、state requirement 与 state update；状态效果只在完整转换实例发生时激活。
+- 保留 v0.3 的 witness 行为和状态执行结果。
+- 测试增至 35 项。
+
 ## 0.3.0
 
 - 新增 `StateVariable / StateRequirement / StateUpdate`。

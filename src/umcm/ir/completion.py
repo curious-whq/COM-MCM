@@ -16,7 +16,7 @@ from umcm.ir.transformation import Transformation
 from umcm.serialization import decode_value, dump_data, encode_value, load_data
 
 
-COMPLETION_SCHEMA_VERSION = "umcm.completion.v0.3"
+COMPLETION_SCHEMA_VERSION = "umcm.completion.v0.3.1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +233,16 @@ class CompletionSpec:
     def from_dict(cls, data: Mapping[str, Any]) -> "CompletionSpec":
         if not isinstance(data, Mapping):
             raise SerializationError("completion spec must be a mapping")
+        allowed = {
+            "schema_version", "horizon", "metadata", "slots",
+            "state_variables", "transformations", "constraints",
+        }
+        unknown = set(data) - allowed
+        if unknown:
+            raise SerializationError(
+                "completion spec contains unknown top-level key(s): "
+                + ", ".join(sorted(str(item) for item in unknown))
+            )
         raw_slots = data.get("slots", [])
         raw_transformations = data.get("transformations", [])
         raw_state_variables = data.get("state_variables", [])

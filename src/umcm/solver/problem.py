@@ -149,91 +149,167 @@ def _instantiate_transformation(
     transformation: Transformation,
     events: list[EventInstance],
 ) -> _TransformationInstantiation:
+    """Instantiate one operational transition over the bounded event universe.
+
+    Normal transformations add the forward rule ``inputs && guard -> outputs``.
+    An ``exact`` transformation additionally requires every occurring output to
+    be justified by some matching input binding.  This is a general derived-
+    event facility; ready/valid/fire does not have a separate semantics layer.
+
+    State effects are attached to complete transition instances.  Therefore a
+    rule may read pre-state, emit output events, and update post-state as one
+    operational transition.
+    """
+
     by_type: dict[str, list[EventInstance]] = {}
     for event in events:
         by_type.setdefault(event.event_type, []).append(event)
 
     input_bindings = list(_role_bindings(transformation.inputs, by_type))
+    output_bindings = list(_role_bindings(transformation.outputs, by_type))
     constraints: list[NamedConstraint] = []
     requirements: list[StateRequirementInstance] = []
     updates: list[StateUpdateInstance] = []
 
-    for index, input_binding in enumerate(input_bindings):
+    for input_index, input_binding in enumerate(input_bindings):
         input_ids = tuple(input_binding.values())
         if len(input_ids) != len(set(input_ids)):
             continue
 
-        role_mapping = dict(input_binding)
-        input_occurs = (
+        input_mapping = dict(input_binding)
+        input_occurs = tuple(
             EventField(event_id, "occurs", BOOL)
             for event_id in input_binding.values()
         )
-        antecedent = conjunction(
-            (
-                *input_occurs,
-                substitute_event_ids(transformation.when, role_mapping),
-            )
-        )
+        guard = substitute_event_ids(transformation.when, input_mapping)
+        antecedent = conjunction((*input_occurs, guard))
 
         alternatives: list[Expr] = []
-        for output_binding in _role_bindings(transformation.outputs, by_type):
+        complete_instances: list[tuple[dict[str, str], Expr, str]] = []
+        for output_index, output_binding in enumerate(output_bindings):
             all_ids = (*input_binding.values(), *output_binding.values())
             if len(all_ids) != len(set(all_ids)):
                 continue
             complete_mapping = {**input_binding, **output_binding}
-            output_occurs = (
+            output_occurs = tuple(
                 EventField(event_id, "occurs", BOOL)
                 for event_id in output_binding.values()
             )
-            ensured = (
+            ensured = tuple(
                 substitute_event_ids(expression, complete_mapping)
                 for expression in transformation.ensure
             )
-            alternatives.append(conjunction((*output_occurs, *ensured)))
+            output_alternative = conjunction((*output_occurs, *ensured))
+            alternatives.append(output_alternative)
+            activation = conjunction(
+                (*input_occurs, guard, *output_occurs, *ensured)
+            )
+            bound_outputs = (
+                ",".join(output_binding.values())
+                if output_binding
+                else "no-output"
+            )
+            complete_instances.append(
+                (complete_mapping, activation, f"{output_index}.{bound_outputs}")
+            )
 
-        consequent = disjunction(alternatives)
         bound_inputs = ",".join(input_ids) if input_ids else "global"
-        instance_name = (
-            f"transformation.{transformation.name}.{index}.{bound_inputs}"
+        forward_name = (
+            f"transformation.{transformation.name}.forward."
+            f"{input_index}.{bound_inputs}"
         )
         constraints.append(
             NamedConstraint(
-                name=instance_name,
-                expression=Binary("implies", antecedent, consequent),
+                name=forward_name,
+                expression=Binary(
+                    "implies", antecedent, disjunction(alternatives)
+                ),
                 origin=f"transformation:{transformation.name}",
             )
         )
 
         if transformation.is_stateful:
-            for effect_index, requirement in enumerate(
-                transformation.state_requirements
-            ):
-                anchor_id = input_binding[requirement.at]
-                requirements.append(
-                    StateRequirementInstance(
-                        name=f"{instance_name}.requirement.{effect_index}",
-                        state=requirement.state,
-                        cycle=EventField(anchor_id, "cycle", INT),
-                        activation=antecedent,
-                        op=requirement.op,
-                        expected=substitute_event_ids(
-                            requirement.value, role_mapping
-                        ),
-                        origin=f"transformation:{transformation.name}",
+            for complete_mapping, activation, instance_suffix in complete_instances:
+                effect_prefix = f"{forward_name}.instance.{instance_suffix}"
+                for effect_index, requirement in enumerate(
+                    transformation.state_requirements
+                ):
+                    anchor_id = complete_mapping[requirement.at]
+                    requirements.append(
+                        StateRequirementInstance(
+                            name=(
+                                f"{effect_prefix}.requirement.{effect_index}"
+                            ),
+                            state=requirement.state,
+                            cycle=EventField(anchor_id, "cycle", INT),
+                            activation=activation,
+                            op=requirement.op,
+                            expected=substitute_event_ids(
+                                requirement.value, complete_mapping
+                            ),
+                            origin=f"transformation:{transformation.name}",
+                        )
                     )
-                )
-            for effect_index, update in enumerate(transformation.state_updates):
-                anchor_id = input_binding[update.at]
-                updates.append(
-                    StateUpdateInstance(
-                        name=f"{instance_name}.update.{effect_index}",
-                        state=update.state,
-                        cycle=EventField(anchor_id, "cycle", INT),
-                        activation=antecedent,
-                        value=substitute_event_ids(update.value, role_mapping),
-                        origin=f"transformation:{transformation.name}",
+                for effect_index, update in enumerate(
+                    transformation.state_updates
+                ):
+                    anchor_id = complete_mapping[update.at]
+                    updates.append(
+                        StateUpdateInstance(
+                            name=f"{effect_prefix}.update.{effect_index}",
+                            state=update.state,
+                            cycle=EventField(anchor_id, "cycle", INT),
+                            activation=activation,
+                            value=substitute_event_ids(
+                                update.value, complete_mapping
+                            ),
+                            origin=f"transformation:{transformation.name}",
+                        )
                     )
+
+    if transformation.exact:
+        for output_index, output_binding in enumerate(output_bindings):
+            output_ids = tuple(output_binding.values())
+            if len(output_ids) != len(set(output_ids)):
+                continue
+            output_occurs = conjunction(
+                EventField(event_id, "occurs", BOOL)
+                for event_id in output_binding.values()
+            )
+            supports: list[Expr] = []
+            for input_binding in input_bindings:
+                all_ids = (*input_binding.values(), *output_binding.values())
+                if len(all_ids) != len(set(all_ids)):
+                    continue
+                complete_mapping = {**input_binding, **output_binding}
+                input_occurs = tuple(
+                    EventField(event_id, "occurs", BOOL)
+                    for event_id in input_binding.values()
                 )
+                guarded = substitute_event_ids(
+                    transformation.when, complete_mapping
+                )
+                ensured = tuple(
+                    substitute_event_ids(expression, complete_mapping)
+                    for expression in transformation.ensure
+                )
+                supports.append(
+                    conjunction((*input_occurs, guarded, *ensured))
+                )
+
+            bound_outputs = ",".join(output_ids) if output_ids else "global"
+            constraints.append(
+                NamedConstraint(
+                    name=(
+                        f"transformation.{transformation.name}.support."
+                        f"{output_index}.{bound_outputs}"
+                    ),
+                    expression=Binary(
+                        "implies", output_occurs, disjunction(supports)
+                    ),
+                    origin=f"transformation:{transformation.name}",
+                )
+            )
 
     return _TransformationInstantiation(
         constraints=tuple(constraints),

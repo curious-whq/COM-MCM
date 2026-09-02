@@ -67,9 +67,14 @@ class Transformation:
           -> exists output binding o.
                occurs(o...) and ensure(i..., o...)
 
-    Stateful transformations are restricted to ``outputs=()`` in schema v0.3.
-    This gives each state effect an unambiguous concrete anchor event while
-    event-only transformations may continue to use existential support events.
+    When ``exact`` is true, the single output is a derived event: every
+    occurring output must also be supported by a matching enabled input
+    binding.  This expresses definitions such as ``fire iff valid && ready``
+    without introducing a separate handshake language.
+
+    State requirements and updates may be anchored to either input or output
+    roles.  When outputs are present, state effects activate only for a complete
+    input/output binding satisfying the guard and ``ensure`` relation.
     """
 
     name: str
@@ -79,6 +84,7 @@ class Transformation:
     ensure: tuple[Expr, ...] = ()
     state_requirements: tuple[StateRequirement, ...] = ()
     state_updates: tuple[StateUpdate, ...] = ()
+    exact: bool = False
     description: str = ""
     tags: tuple[str, ...] = ()
 
@@ -99,10 +105,9 @@ class Transformation:
                 raise SchemaError(
                     f"transformation {self.name!r} ensure expressions must be bool"
                 )
-        if (self.state_requirements or self.state_updates) and self.outputs:
+        if self.exact and len(self.outputs) != 1:
             raise SchemaError(
-                f"stateful transformation {self.name!r} cannot have output roles "
-                "in schema v0.3"
+                f"exact transformation {self.name!r} must have exactly one output role"
             )
 
     @property
@@ -120,6 +125,7 @@ class Transformation:
     ) -> None:
         roles = self.role_map
         input_names = {role.name for role in self.inputs}
+        all_role_names = set(roles)
         for role in roles.values():
             catalog.resolve(role.event_type)
 
@@ -140,9 +146,9 @@ class Transformation:
                 f"stateful transformation {self.name!r} requires declared state variables"
             )
         for requirement in self.state_requirements:
-            if requirement.at not in input_names:
+            if requirement.at not in all_role_names:
                 raise SchemaError(
-                    f"state requirement in {self.name!r} anchors to non-input role "
+                    f"state requirement in {self.name!r} anchors to unknown role "
                     f"{requirement.at!r}"
                 )
             variable = self._resolve_state(requirement.state, state_map)
@@ -154,9 +160,9 @@ class Transformation:
             self._validate_role_expression(requirement.value, roles, catalog)
 
         for update in self.state_updates:
-            if update.at not in input_names:
+            if update.at not in all_role_names:
                 raise SchemaError(
-                    f"state update in {self.name!r} anchors to non-input role "
+                    f"state update in {self.name!r} anchors to unknown role "
                     f"{update.at!r}"
                 )
             variable = self._resolve_state(update.state, state_map)
@@ -225,6 +231,8 @@ class Transformation:
             ]
         if self.state_updates:
             data["state_updates"] = [item.to_dict() for item in self.state_updates]
+        if self.exact:
+            data["exact"] = True
         if self.description:
             data["description"] = self.description
         if self.tags:
@@ -235,6 +243,17 @@ class Transformation:
     def from_dict(cls, data: Mapping[str, Any]) -> "Transformation":
         if not isinstance(data, Mapping):
             raise SerializationError("transformation must be a mapping")
+        allowed = {
+            "name", "inputs", "outputs", "when", "ensure",
+            "state_requirements", "state_updates", "exact",
+            "description", "tags",
+        }
+        unknown = set(data) - allowed
+        if unknown:
+            raise SerializationError(
+                "transformation contains unknown key(s): "
+                + ", ".join(sorted(str(item) for item in unknown))
+            )
         raw_inputs = data.get("inputs", [])
         raw_outputs = data.get("outputs", [])
         raw_ensure = data.get("ensure", [])
@@ -264,6 +283,7 @@ class Transformation:
                 state_updates=tuple(
                     StateUpdate.from_dict(item) for item in raw_updates
                 ),
+                exact=bool(data.get("exact", False)),
                 description=str(data.get("description", "")),
                 tags=tuple(str(item) for item in data.get("tags", [])),
             )

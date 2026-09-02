@@ -13,20 +13,51 @@ def test_state_variable_requires_qualified_name() -> None:
         StateVariable("valid", BOOL, False)
 
 
-def test_stateful_transformation_cannot_have_existential_outputs() -> None:
-    with pytest.raises(SchemaError):
-        Transformation(
-            name="bad",
-            inputs=(EventRole("input", "Test.Input"),),
-            outputs=(EventRole("output", "Test.Output"),),
-            state_updates=(
-                StateUpdate(
-                    state="Test.state.valid",
-                    at="input",
-                    value=Literal(True, BOOL),
-                ),
+def test_stateful_transformation_can_update_on_emitted_output() -> None:
+    from umcm.ir.completion import CompletionSpec, EventSlot
+    from umcm.ir.event import EventInstance
+    from umcm.ir.trace import Trace
+    from umcm.solver.completion import CompletionStatus, complete_trace
+
+    catalog = EventCatalog(
+        {
+            "Test.Input": EventType(
+                name="Test.Input", module="Test", layer="test"
             ),
-        )
+            "Test.Output": EventType(
+                name="Test.Output", module="Test", layer="test"
+            ),
+        }
+    )
+    variable = StateVariable("Test.state.valid", BOOL, False)
+    transition = Transformation(
+        name="emit_and_update",
+        inputs=(EventRole("input", "Test.Input"),),
+        outputs=(EventRole("output", "Test.Output"),),
+        state_updates=(
+            StateUpdate(
+                state=variable.name,
+                at="output",
+                value=Literal(True, BOOL),
+            ),
+        ),
+    )
+    trace = Trace(
+        events=[EventInstance("input_0", "Test.Input", cycle=0)],
+        partial=True,
+    )
+    spec = CompletionSpec(
+        slots=[EventSlot("output_0", "Test.Output")],
+        transformations=[transition],
+        state_variables=[variable],
+        horizon=2,
+    )
+
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.added_event_ids == ("output_0",)
+    assert result.final_state[variable.name] is True
 
 
 def test_state_requirement_and_update_validate_against_catalog() -> None:
@@ -60,3 +91,27 @@ def test_state_requirement_and_update_validate_against_catalog() -> None:
         ),
     )
     transformation.validate(catalog, {variable.name: variable})
+
+
+def test_exact_transformation_requires_one_derived_output() -> None:
+    with pytest.raises(SchemaError, match="exact transformation"):
+        Transformation(
+            name="bad_exact",
+            inputs=(EventRole("input", "Test.Input"),),
+            exact=True,
+        )
+
+
+def test_exact_transformation_roundtrip() -> None:
+    transition = Transformation(
+        name="accepted",
+        inputs=(
+            EventRole("valid", "Test.Valid"),
+            EventRole("ready", "Test.Ready"),
+        ),
+        outputs=(EventRole("fire", "Test.Fire"),),
+        exact=True,
+    )
+    loaded = Transformation.from_dict(transition.to_dict())
+    assert loaded == transition
+    assert loaded.exact is True
