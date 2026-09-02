@@ -1,5 +1,5 @@
-schema_version: umcm.graph_model.v0.1
-model: rvwmo-load-load-fragment-v0.7
+schema_version: umcm.graph_model.v0.2
+model: rvwmo-load-load-fragment-v0.8
 metadata:
   scope: Same-address committed scalar loads and writes for the BOOM witness.
   limitation: This is a deliberately small RVWMO fragment, not a complete RVWMO implementation.
@@ -20,6 +20,16 @@ projection:
     write_id_field: source_op_id
     address_field: address
     value_field: value
+  - event_type: Hierarchy.ReadFromEvidence
+    read_id_field: read_op_id
+    write_id_field: write_op_id
+    address_field: address
+    value_field: value
+  co_hints:
+  - event_type: Hierarchy.CoherenceOrderEvidence
+    before_write_id_field: before_write_id
+    after_write_id_field: after_write_id
+    address_field: address
 ppo_rules:
 - load_load_different_write
 derived_relations:
@@ -42,4 +52,5 @@ axioms:
   - rfe
   - fr
   - co
-  description: The witness must not contain an ordering cycle formed by preserved load-load order, external reads-from, coherence, and from-read.
+  description: The witness must not contain an ordering cycle formed by preserved
+    load-load order, external reads-from, coherence, and from-read.

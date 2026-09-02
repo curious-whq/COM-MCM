@@ -124,6 +124,10 @@ class _RFHintEvidence:
     value: Any
     event_id: str
 
+    @property
+    def semantic_key(self) -> tuple[str, Any, Any]:
+        return (self.write_id, self.address, self.value)
+
 
 def _rf_hints(trace: Trace, spec: GraphModelSpec) -> dict[str, _RFHintEvidence]:
     hints: dict[str, _RFHintEvidence] = {}
@@ -139,7 +143,7 @@ def _rf_hints(trace: Trace, spec: GraphModelSpec) -> dict[str, _RFHintEvidence]:
                 event_id=event.id,
             )
             previous = hints.get(read_id)
-            if previous is not None and previous != evidence:
+            if previous is not None and previous.semantic_key != evidence.semantic_key:
                 raise GraphError(
                     f"conflicting rf hints for read {read_id!r}: "
                     f"{previous.write_id!r}, {evidence.write_id!r}"
@@ -148,11 +152,40 @@ def _rf_hints(trace: Trace, spec: GraphModelSpec) -> dict[str, _RFHintEvidence]:
     return hints
 
 
+@dataclass(frozen=True, slots=True)
+class _COHintEvidence:
+    before_write_id: str
+    after_write_id: str
+    address: Any
+    event_id: str
+
+    @property
+    def semantic_key(self) -> tuple[str, str, Any]:
+        return (self.before_write_id, self.after_write_id, self.address)
+
+
+def _co_hints(trace: Trace, spec: GraphModelSpec) -> tuple[_COHintEvidence, ...]:
+    hints: dict[tuple[str, str, Any], _COHintEvidence] = {}
+    for hint_spec in spec.projection.co_hints:
+        for event in trace.events_of_type(hint_spec.event_type):
+            if not _concrete_event(event):
+                continue
+            evidence = _COHintEvidence(
+                before_write_id=str(_field(event, hint_spec.before_write_id_field)),
+                after_write_id=str(_field(event, hint_spec.after_write_id_field)),
+                address=_field(event, hint_spec.address_field),
+                event_id=event.id,
+            )
+            hints.setdefault(evidence.semantic_key, evidence)
+    return tuple(hints[key] for key in sorted(hints, key=repr))
+
+
 def build_candidate_space(trace: Trace, spec: GraphModelSpec) -> CandidateSpace:
     operations = project_operations(trace, spec.projection)
     writes = [item for item in operations.values() if item.is_write]
     reads = [item for item in operations.values() if item.is_read]
     hints = _rf_hints(trace, spec)
+    co_hints = _co_hints(trace, spec)
 
     rf_choices: dict[str, tuple[str, ...]] = {}
     for read in sorted(reads, key=lambda item: item.id):
@@ -204,7 +237,49 @@ def build_candidate_space(trace: Trace, spec: GraphModelSpec) -> CandidateSpace:
             item.id for item in address_writes if item.kind is OperationKind.WRITE
         )
         prefix = tuple(init_writes)
-        co_orders[address] = tuple(prefix + order for order in permutations(ordinary))
+        candidates = tuple(prefix + order for order in permutations(ordinary))
+        relevant_hints = tuple(hint for hint in co_hints if hint.address == address)
+        for hint in relevant_hints:
+            for write_id in (hint.before_write_id, hint.after_write_id):
+                operation = operations.get(write_id)
+                if operation is None or not operation.is_write:
+                    raise GraphError(
+                        f"co hint event {hint.event_id!r} names non-write {write_id!r}"
+                    )
+                if operation.address != address:
+                    raise GraphError(
+                        f"co hint event {hint.event_id!r} has inconsistent address"
+                    )
+            if hint.before_write_id == hint.after_write_id:
+                raise GraphError(
+                    f"co hint event {hint.event_id!r} orders a write before itself"
+                )
+        candidates = tuple(
+            order
+            for order in candidates
+            if all(
+                order.index(hint.before_write_id) < order.index(hint.after_write_id)
+                for hint in relevant_hints
+            )
+        )
+        if not candidates:
+            rendered = ", ".join(
+                f"{hint.before_write_id}->{hint.after_write_id}"
+                for hint in relevant_hints
+            )
+            raise GraphError(
+                f"co hints for address {address!r} are inconsistent: {rendered}"
+            )
+        co_orders[address] = candidates
+
+    unknown_hint_addresses = {
+        hint.address for hint in co_hints if hint.address not in writes_by_address
+    }
+    if unknown_hint_addresses:
+        raise GraphError(
+            "co hints reference address(es) without writes: "
+            + ", ".join(repr(item) for item in sorted(unknown_hint_addresses, key=repr))
+        )
 
     return CandidateSpace(
         operations=operations,

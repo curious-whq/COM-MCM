@@ -1,0 +1,280 @@
+schema_version: umcm.abstraction.v0.1
+name: boom-lsq-l1-mshr-witness-v0.8
+source_level: boom-cycle-events
+target_level: composed-memory-events
+default_action: hide
+metadata:
+  purpose: Hide cycle-level LSU, L1, ProbeUnit, and MSHR events while preserving architectural projection evidence.
+  limitation: This abstraction is scoped to the bounded BOOM load-load witness.
+retain:
+  event_types:
+  - Arch.InitWrite
+  - Arch.Load
+  - Arch.Store
+  - Arch.CommitLoad
+retain_metadata:
+- case
+- expected_architectural_outcome
+- note
+- stage
+summaries:
+- name: l1_hit_read_from
+  min_matches: 1
+  max_matches: 1
+  roles:
+  - name: init
+    event_type: Arch.InitWrite
+    fields:
+      op_id: $write
+      address: $address
+      value: $value
+  - name: load
+    event_type: Arch.Load
+    fields:
+      op_id: $read
+      address: $address
+  - name: hit
+    event_type: DCache.LoadHit
+    fields:
+      op_id: $read
+      address: $address
+      value: $value
+  - name: response
+    event_type: DCache.LoadResponse
+    fields:
+      op_id: $read
+      address: $address
+      value: $value
+  - name: succeeded
+    event_type: LSU.LoadSucceeded
+    fields:
+      op_id: $read
+      address: $address
+      value: $value
+  output:
+    event_type: Hierarchy.ReadFromEvidence
+    id: rf_{write}_{read}_l1_hit
+    cycle_from: succeeded
+    fields:
+      read_op_id: $read
+      write_op_id: $write
+      address: $address
+      value: $value
+      path:
+        literal: l1_hit
+- name: l0_mshr_read_from
+  min_matches: 1
+  max_matches: 1
+  roles:
+  - name: load
+    event_type: Arch.Load
+    fields:
+      op_id: $read
+      address: $address
+  - name: store
+    event_type: Arch.Store
+    fields:
+      op_id: $write
+      address: $address
+      value: $value
+  - name: miss
+    event_type: DCache.LoadMiss
+    fields:
+      op_id: $read
+      address: $address
+  - name: accept
+    event_type: MSHR.PrimaryMissAccept
+    fields:
+      op_id: $read
+      address: $address
+      mshr_id: $mshr
+  - name: acquire
+    event_type: MSHR.AcquireBlock
+    fields:
+      op_id: $read
+      address: $address
+      mshr_id: $mshr
+  - name: grant
+    event_type: MSHR.GrantData
+    fields:
+      op_id: $read
+      source_op_id: $write
+      address: $address
+      value: $value
+      mshr_id: $mshr
+  - name: drain
+    event_type: MSHR.DrainRPQLoad
+    fields:
+      op_id: $read
+      address: $address
+      value: $value
+      mshr_id: $mshr
+  - name: response
+    event_type: DCache.LongLatencyLoadResponse
+    fields:
+      op_id: $read
+      address: $address
+      value: $value
+      mshr_id: $mshr
+  - name: succeeded
+    event_type: LSU.LoadSucceeded
+    fields:
+      op_id: $read
+      address: $address
+      value: $value
+  output:
+    event_type: Hierarchy.ReadFromEvidence
+    id: rf_{write}_{read}_mshr
+    cycle_from: succeeded
+    fields:
+      read_op_id: $read
+      write_op_id: $write
+      address: $address
+      value: $value
+      path:
+        literal: mshr_refill
+- name: coherence_observation
+  min_matches: 1
+  max_matches: 1
+  roles:
+  - name: store
+    event_type: Arch.Store
+    fields:
+      op_id: $write
+      address: $address
+  - name: probe
+    event_type: DCache.ProbeReceive
+    fields:
+      source_op_id: $write
+      address: $address
+  - name: release
+    event_type: DCache.ProbeRelease
+    fields:
+      source_op_id: $write
+      address: $address
+  - name: observed
+    event_type: LSU.LoadObserved
+    fields:
+      op_id: $load
+      address: $address
+  output:
+    event_type: Hierarchy.CoherenceObservation
+    id: observed_{write}_{load}
+    cycle_from: observed
+    fields:
+      write_op_id: $write
+      load_op_id: $load
+      address: $address
+- name: coherence_order_init_before_store
+  min_matches: 1
+  max_matches: 1
+  roles:
+  - name: init
+    event_type: Arch.InitWrite
+    fields:
+      op_id: $before
+      address: $address
+  - name: store
+    event_type: Arch.Store
+    fields:
+      op_id: $after
+      address: $address
+  - name: probe
+    event_type: DCache.ProbeReceive
+    fields:
+      source_op_id: $after
+      address: $address
+  - name: grant
+    event_type: MSHR.GrantData
+    fields:
+      source_op_id: $after
+      address: $address
+  output:
+    event_type: Hierarchy.CoherenceOrderEvidence
+    id: co_{before}_{after}
+    cycle_from: grant
+    fields:
+      before_write_id: $before
+      after_write_id: $after
+      address: $address
+      path:
+        literal: probe_then_refill
+- name: buggy_load_load_resolution
+  min_matches: 0
+  max_matches: 1
+  roles:
+  - name: observed
+    event_type: LSU.LoadObserved
+    fields:
+      op_id: $younger
+      address: $address
+  - name: search
+    event_type: LSU.LDLDSearch
+    fields:
+      searcher_op_id: $older
+      address: $address
+  - name: conflict
+    event_type: LSU.LDLDConflict
+    fields:
+      older_op_id: $older
+      younger_op_id: $younger
+      address: $address
+  - name: assertion
+    event_type: LSU.AssertViolation
+    fields:
+      older_op_id: $older
+      younger_op_id: $younger
+      address: $address
+  output:
+    event_type: Hierarchy.LoadLoadResolution
+    id: ll_{older}_{younger}_assert_only
+    cycle_from: assertion
+    fields:
+      older_op_id: $older
+      younger_op_id: $younger
+      address: $address
+      outcome:
+        literal: assert_only
+- name: fixed_load_load_resolution
+  min_matches: 0
+  max_matches: 1
+  roles:
+  - name: observed
+    event_type: LSU.LoadObserved
+    fields:
+      op_id: $younger
+      address: $address
+  - name: search
+    event_type: LSU.LDLDSearch
+    fields:
+      searcher_op_id: $older
+      address: $address
+  - name: conflict
+    event_type: LSU.LDLDConflict
+    fields:
+      older_op_id: $older
+      younger_op_id: $younger
+      address: $address
+  - name: order_fail
+    event_type: LSU.LoadOrderFail
+    fields:
+      op_id: $younger
+      address: $address
+  - name: exception
+    event_type: Core.MemoryOrderingException
+    fields:
+      op_id: $younger
+  - name: squash
+    event_type: Core.SquashLoad
+    fields:
+      op_id: $younger
+  output:
+    event_type: Hierarchy.LoadLoadResolution
+    id: ll_{older}_{younger}_squash
+    cycle_from: squash
+    fields:
+      older_op_id: $older
+      younger_op_id: $younger
+      address: $address
+      outcome:
+        literal: squash

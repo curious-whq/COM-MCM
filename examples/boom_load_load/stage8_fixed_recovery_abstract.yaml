@@ -1,0 +1,310 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: boom-load-load-fixed-recovery-with-l0-refill
+  note: 'Fixed reference query: L0 still completes through MSHR and commits 1, while
+    L1 is squashed and does not commit.'
+  stage: 6
+  abstraction:
+    abstraction: boom-lsq-l1-mshr-witness-v0.8
+    source_level: boom-cycle-events
+    target_level: composed-memory-events
+    source_trace_sha256: f39e52b3a10ebfd2bcda05a27e1577ed648e8642c38720e6811319a9666f6f9f
+    source_event_count: 37
+    output_event_count: 10
+    retained_event_ids:
+    - commit_l0
+    - init_x
+    - load_l0
+    - load_l1
+    - store_w1
+    hidden_event_ids:
+    - dcache_req_fire_0
+    - dcache_req_ready_0
+    - dcache_req_valid_0
+    - l0_dcache_miss
+    - l0_l1_ldld_conflict
+    - l0_ldld_search
+    - l0_load_executed
+    - l0_load_succeeded
+    - l0_long_latency_response
+    - l0_mshr_acquire
+    - l0_mshr_drain_rpq
+    - l0_mshr_grant_data
+    - l0_mshr_primary_accept
+    - l0_mshr_refill_complete
+    - l0_mshr_rpq_enqueue
+    - l0_tlb_hit
+    - l0_tlb_miss
+    - l1_dcache_hit
+    - l1_dcache_req_fire
+    - l1_dcache_req_ready
+    - l1_dcache_req_valid
+    - l1_dcache_response
+    - l1_load_executed
+    - l1_load_observed
+    - l1_load_succeeded
+    - l1_mem_order_exception
+    - l1_order_fail
+    - l1_squash
+    - probe_receive_x
+    - probe_release_x
+    - retry_enqueue_0
+    - retry_issue_0
+    summaries:
+    - rule: coherence_order_init_before_store
+      output_event_id: co_InitX_W1
+      source_event_ids:
+      - init_x
+      - store_w1
+      - probe_receive_x
+      - l0_mshr_grant_data
+    - rule: fixed_load_load_resolution
+      output_event_id: ll_L0_L1_squash
+      source_event_ids:
+      - l1_load_observed
+      - l0_ldld_search
+      - l0_l1_ldld_conflict
+      - l1_order_fail
+      - l1_mem_order_exception
+      - l1_squash
+    - rule: coherence_observation
+      output_event_id: observed_W1_L1
+      source_event_ids:
+      - store_w1
+      - probe_receive_x
+      - probe_release_x
+      - l1_load_observed
+    - rule: l1_hit_read_from
+      output_event_id: rf_InitX_L1_l1_hit
+      source_event_ids:
+      - init_x
+      - load_l1
+      - l1_dcache_hit
+      - l1_dcache_response
+      - l1_load_succeeded
+    - rule: l0_mshr_read_from
+      output_event_id: rf_W1_L0_mshr
+      source_event_ids:
+      - load_l0
+      - store_w1
+      - l0_dcache_miss
+      - l0_mshr_primary_accept
+      - l0_mshr_acquire
+      - l0_mshr_grant_data
+      - l0_mshr_drain_rpq
+      - l0_long_latency_response
+      - l0_load_succeeded
+    preserved_constraint_count: 2
+    dropped_constraint_count: 0
+  abstraction_model:
+    purpose: Hide cycle-level LSU, L1, ProbeUnit, and MSHR events while preserving
+      architectural projection evidence.
+    limitation: This abstraction is scoped to the bounded BOOM load-load witness.
+events:
+- id: init_x
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitX
+    address: x
+    value: 0
+- id: load_l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+  cycle: 0
+- id: load_l1
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    address: x
+  cycle: 3
+- id: rf_InitX_L1_l1_hit
+  type: Hierarchy.ReadFromEvidence
+  occurs: true
+  fields:
+    read_op_id: L1
+    write_op_id: InitX
+    address: x
+    value: 0
+    path: l1_hit
+  cycle: 7
+  annotations:
+    abstraction:
+      spec: boom-lsq-l1-mshr-witness-v0.8
+      rule: l1_hit_read_from
+      source_event_ids:
+      - init_x
+      - load_l1
+      - l1_dcache_hit
+      - l1_dcache_response
+      - l1_load_succeeded
+      source_event_types:
+      - Arch.InitWrite
+      - Arch.Load
+      - DCache.LoadHit
+      - DCache.LoadResponse
+      - LSU.LoadSucceeded
+- id: store_w1
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: W1
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+  cycle: 8
+- id: observed_W1_L1
+  type: Hierarchy.CoherenceObservation
+  occurs: true
+  fields:
+    write_op_id: W1
+    load_op_id: L1
+    address: x
+  cycle: 11
+  annotations:
+    abstraction:
+      spec: boom-lsq-l1-mshr-witness-v0.8
+      rule: coherence_observation
+      source_event_ids:
+      - store_w1
+      - probe_receive_x
+      - probe_release_x
+      - l1_load_observed
+      source_event_types:
+      - Arch.Store
+      - DCache.ProbeReceive
+      - DCache.ProbeRelease
+      - LSU.LoadObserved
+- id: ll_L0_L1_squash
+  type: Hierarchy.LoadLoadResolution
+  occurs: true
+  fields:
+    older_op_id: L0
+    younger_op_id: L1
+    address: x
+    outcome: squash
+  cycle: 15
+  annotations:
+    abstraction:
+      spec: boom-lsq-l1-mshr-witness-v0.8
+      rule: fixed_load_load_resolution
+      source_event_ids:
+      - l1_load_observed
+      - l0_ldld_search
+      - l0_l1_ldld_conflict
+      - l1_order_fail
+      - l1_mem_order_exception
+      - l1_squash
+      source_event_types:
+      - LSU.LoadObserved
+      - LSU.LDLDSearch
+      - LSU.LDLDConflict
+      - LSU.LoadOrderFail
+      - Core.MemoryOrderingException
+      - Core.SquashLoad
+- id: co_InitX_W1
+  type: Hierarchy.CoherenceOrderEvidence
+  occurs: true
+  fields:
+    before_write_id: InitX
+    after_write_id: W1
+    address: x
+    path: probe_then_refill
+  cycle: 16
+  annotations:
+    abstraction:
+      spec: boom-lsq-l1-mshr-witness-v0.8
+      rule: coherence_order_init_before_store
+      source_event_ids:
+      - init_x
+      - store_w1
+      - probe_receive_x
+      - l0_mshr_grant_data
+      source_event_types:
+      - Arch.InitWrite
+      - Arch.Store
+      - DCache.ProbeReceive
+      - MSHR.GrantData
+- id: rf_W1_L0_mshr
+  type: Hierarchy.ReadFromEvidence
+  occurs: true
+  fields:
+    read_op_id: L0
+    write_op_id: W1
+    address: x
+    value: 1
+    path: mshr_refill
+  cycle: 17
+  annotations:
+    abstraction:
+      spec: boom-lsq-l1-mshr-witness-v0.8
+      rule: l0_mshr_read_from
+      source_event_ids:
+      - load_l0
+      - store_w1
+      - l0_dcache_miss
+      - l0_mshr_primary_accept
+      - l0_mshr_acquire
+      - l0_mshr_grant_data
+      - l0_mshr_drain_rpq
+      - l0_long_latency_response
+      - l0_load_succeeded
+      source_event_types:
+      - Arch.Load
+      - Arch.Store
+      - DCache.LoadMiss
+      - MSHR.PrimaryMissAccept
+      - MSHR.AcquireBlock
+      - MSHR.GrantData
+      - MSHR.DrainRPQLoad
+      - DCache.LongLatencyLoadResponse
+      - LSU.LoadSucceeded
+- id: commit_l0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L0
+    value: 1
+  cycle: 18
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+- node: call
+  function: same_address
+  arguments:
+  - node: event_field
+    event_id: load_l0
+    field: address
+    sort:
+      name: address
+      width: 64
+  - node: event_field
+    event_id: load_l1
+    field: address
+    sort:
+      name: address
+      width: 64
+  sort:
+    name: bool

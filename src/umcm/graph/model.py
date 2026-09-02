@@ -10,7 +10,7 @@ from umcm.errors import AxiomError, SerializationError
 from umcm.serialization import dump_data, load_data
 
 
-GRAPH_MODEL_SCHEMA_VERSION = "umcm.graph_model.v0.1"
+GRAPH_MODEL_SCHEMA_VERSION = "umcm.graph_model.v0.2"
 
 
 def _unknown_keys(data: Mapping[str, Any], allowed: set[str], context: str) -> None:
@@ -66,6 +66,52 @@ class RFHintSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class COHintSpec:
+    """A concrete trace event that fixes one coherence-order edge."""
+
+    event_type: str
+    before_write_id_field: str = "before_write_id"
+    after_write_id_field: str = "after_write_id"
+    address_field: str = "address"
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "COHintSpec":
+        if not isinstance(data, Mapping):
+            raise SerializationError("co hint must be a mapping")
+        _unknown_keys(
+            data,
+            {
+                "event_type",
+                "before_write_id_field",
+                "after_write_id_field",
+                "address_field",
+            },
+            "co hint",
+        )
+        try:
+            return cls(
+                event_type=str(data["event_type"]),
+                before_write_id_field=str(
+                    data.get("before_write_id_field", "before_write_id")
+                ),
+                after_write_id_field=str(
+                    data.get("after_write_id_field", "after_write_id")
+                ),
+                address_field=str(data.get("address_field", "address")),
+            )
+        except KeyError as exc:
+            raise SerializationError("co hint requires event_type") from exc
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "event_type": self.event_type,
+            "before_write_id_field": self.before_write_id_field,
+            "after_write_id_field": self.after_write_id_field,
+            "address_field": self.address_field,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectionSpec:
     init_write_event: str
     load_event: str
@@ -78,6 +124,7 @@ class ProjectionSpec:
     program_index_field: str = "program_index"
     require_committed_loads: bool = True
     rf_hints: tuple[RFHintSpec, ...] = ()
+    co_hints: tuple[COHintSpec, ...] = ()
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ProjectionSpec":
@@ -97,12 +144,16 @@ class ProjectionSpec:
                 "program_index_field",
                 "require_committed_loads",
                 "rf_hints",
+                "co_hints",
             },
             "projection",
         )
         raw_hints = data.get("rf_hints", [])
+        raw_co_hints = data.get("co_hints", [])
         if not isinstance(raw_hints, list):
             raise SerializationError("projection.rf_hints must be a list")
+        if not isinstance(raw_co_hints, list):
+            raise SerializationError("projection.co_hints must be a list")
         try:
             return cls(
                 init_write_event=str(data["init_write_event"]),
@@ -120,6 +171,7 @@ class ProjectionSpec:
                     data.get("require_committed_loads", True)
                 ),
                 rf_hints=tuple(RFHintSpec.from_dict(item) for item in raw_hints),
+                co_hints=tuple(COHintSpec.from_dict(item) for item in raw_co_hints),
             )
         except KeyError as exc:
             raise SerializationError(
@@ -139,6 +191,7 @@ class ProjectionSpec:
             "program_index_field": self.program_index_field,
             "require_committed_loads": self.require_committed_loads,
             "rf_hints": [item.to_dict() for item in self.rf_hints],
+            "co_hints": [item.to_dict() for item in self.co_hints],
         }
 
 

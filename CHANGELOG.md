@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0
+
+- 新增可加载 `AbstractionSpec`，支持角色匹配、字段统一、摘要事件、retain 与 hide。
+- 新增 `Hierarchy.ReadFromEvidence / CoherenceOrderEvidence / CoherenceObservation / LoadLoadResolution`。
+- 新增确定性抽象证书，记录 source trace digest、保留/隐藏事件及摘要来源。
+- 新增 `umcm abstract` 与 `umcm refine` CLI。
+- 新增 witness-level refinement 检查和抽象前后 memory-model preservation 检查。
+- graph projection 新增 `co_hints`，可由 trace evidence 收紧 coherence-order 候选。
+- 重复且语义相同的 `rf` hint 可共存；冲突 hint 会被拒绝。
+- BOOM buggy trace 从 36 个事件压缩到 11 个，仍产生同一 forbidden graph。
+- BOOM fixed trace 从 37 个事件压缩到 10 个，仍保持 allowed。
+- Package version 更新为 0.8.0，测试增至 76 项。
+
 ## 0.7.0
 
 - 新增 `MemoryOperation / ExecutionGraph / Relation`。

@@ -1,9 +1,9 @@
 schema_version: umcm.events.v0.1
 metadata:
-  model: boom-v4-load-load-stage7
-  description: BOOM Load-Load witness through MSHR response and architectural execution-graph
+  model: boom-v4-load-load-stage8
+  description: BOOM Load-Load witness through MSHR response, hierarchy abstraction, and architectural execution-graph
     checking.
-  iteration: 0.7.0
+  iteration: 0.8.0
 events:
 - name: Arch.CommitLoad
   module: ROB
@@ -832,3 +832,104 @@ events:
     required: true
   description: The MSHR response reaches the LSU through the long-latency response
     interface.
+- name: Hierarchy.ReadFromEvidence
+  module: Hierarchy
+  layer: abstraction-boundary
+  visibility: public
+  fields:
+  - name: read_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: write_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  - name: path
+    sort:
+      name: string
+    required: true
+  description: A hierarchy summary that preserves the concrete producer of a committed load value.
+- name: Hierarchy.CoherenceOrderEvidence
+  module: Hierarchy
+  layer: abstraction-boundary
+  visibility: public
+  fields:
+  - name: before_write_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: after_write_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: path
+    sort:
+      name: string
+    required: true
+  description: A hierarchy summary that preserves a concrete per-address coherence serialization edge.
+- name: Hierarchy.CoherenceObservation
+  module: Hierarchy
+  layer: abstraction-boundary
+  visibility: public
+  fields:
+  - name: write_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: load_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: A compressed Probe-to-LSU observation path connecting a write with the observed younger load.
+- name: Hierarchy.LoadLoadResolution
+  module: Hierarchy
+  layer: abstraction-boundary
+  visibility: public
+  fields:
+  - name: older_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: younger_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: outcome
+    sort:
+      name: string
+    required: true
+  description: A compressed load-load conflict and its functional recovery outcome.

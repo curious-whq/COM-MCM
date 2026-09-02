@@ -1,4 +1,4 @@
-"""Command-line entry points for trace, completion, and execution-graph checks."""
+"""Command-line entry points for traces, completion, abstraction, and axioms."""
 
 from __future__ import annotations
 
@@ -13,6 +13,12 @@ from umcm.graph.checker import (
     check_trace_memory_model,
 )
 from umcm.graph.model import GraphModelSpec
+from umcm.hierarchy import (
+    AbstractionSpec,
+    abstract_trace,
+    check_memory_model_preservation,
+    check_refinement,
+)
 from umcm.ir.completion import CompletionSpec
 from umcm.ir.event import EventCatalog
 from umcm.ir.trace import Trace
@@ -75,6 +81,46 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=10_000,
         help="maximum rf/co execution-graph candidates",
+    )
+
+    abstract = subparsers.add_parser(
+        "abstract",
+        help="hide concrete events and emit certified hierarchy summaries",
+    )
+    abstract.add_argument("--schema", required=True, help="event catalog YAML/JSON")
+    abstract.add_argument("--trace", required=True, help="completed concrete trace")
+    abstract.add_argument(
+        "--abstraction",
+        required=True,
+        help="hierarchy abstraction YAML/JSON",
+    )
+    abstract.add_argument("--output", help="write the abstract trace")
+    abstract.add_argument(
+        "--axioms",
+        help="also check that architectural candidates are preserved",
+    )
+    abstract.add_argument(
+        "--max-candidates",
+        type=int,
+        default=10_000,
+        help="maximum rf/co candidates during preservation checking",
+    )
+
+    refine = subparsers.add_parser(
+        "refine",
+        help="verify that an abstract trace is justified by a concrete trace",
+    )
+    refine.add_argument("--schema", required=True, help="event catalog YAML/JSON")
+    refine.add_argument("--concrete", required=True, help="completed concrete trace")
+    refine.add_argument(
+        "--abstract-trace",
+        required=True,
+        help="abstract trace to validate",
+    )
+    refine.add_argument(
+        "--abstraction",
+        required=True,
+        help="hierarchy abstraction YAML/JSON",
     )
     return parser
 
@@ -234,6 +280,71 @@ def main(argv: list[str] | None = None) -> int:
                 representative.graph.dump(output)
                 print(f"WROTE {output}")
             return exit_code
+
+        if args.command == "abstract":
+            catalog = EventCatalog.load(args.schema)
+            trace = Trace.load(args.trace)
+            abstraction = AbstractionSpec.load(args.abstraction)
+            result = abstract_trace(trace, catalog, abstraction)
+            certificate = result.certificate
+            print(
+                f"ABSTRACTED {certificate.source_level} -> "
+                f"{certificate.target_level}: "
+                f"{certificate.source_event_count} concrete event(s), "
+                f"{certificate.output_event_count} output event(s), "
+                f"{len(certificate.hidden_event_ids)} hidden event(s), "
+                f"{len(certificate.summaries)} summary event(s)"
+            )
+            for summary in certificate.summaries:
+                sources = ", ".join(summary.source_event_ids)
+                print(
+                    f"  + {summary.output_event_id} [{summary.rule}] <- {sources}"
+                )
+
+            exit_code = 0
+            if args.axioms:
+                graph_model = GraphModelSpec.load(args.axioms)
+                preservation = check_memory_model_preservation(
+                    trace,
+                    result.trace,
+                    graph_model,
+                    max_candidates=args.max_candidates,
+                )
+                print(
+                    "MEMORY-MODEL PRESERVATION: "
+                    f"concrete={preservation.concrete.status.value}, "
+                    f"abstract={preservation.abstract.status.value}"
+                )
+                print(
+                    "  "
+                    + ("PRESERVED: " if preservation.preserved else "CHANGED: ")
+                    + preservation.reason
+                )
+                exit_code = 0 if preservation.preserved else 1
+
+            if args.output:
+                output = Path(args.output)
+                result.trace.dump(output)
+                print(f"WROTE {output}")
+            return exit_code
+
+        if args.command == "refine":
+            catalog = EventCatalog.load(args.schema)
+            concrete = Trace.load(args.concrete)
+            abstracted = Trace.load(args.abstract_trace)
+            abstraction = AbstractionSpec.load(args.abstraction)
+            result = check_refinement(concrete, abstracted, catalog, abstraction)
+            if result.valid:
+                print(f"REFINEMENT VALID: {result.reason}")
+                return 0
+            print(f"REFINEMENT INVALID: {result.reason}")
+            if result.missing_event_ids:
+                print("  missing: " + ", ".join(result.missing_event_ids))
+            if result.extra_event_ids:
+                print("  extra: " + ", ".join(result.extra_event_ids))
+            if result.changed_event_ids:
+                print("  changed: " + ", ".join(result.changed_event_ids))
+            return 1
     except UMCMError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

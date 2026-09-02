@@ -171,3 +171,63 @@ def test_check_cli_reports_fixed_recovery_allowed(capsys, tmp_path) -> None:
     assert code == 0
     assert "MEMORY MODEL ALLOWED" in captured.out
     assert "L1: read" not in captured.out
+
+
+def test_abstract_cli_preserves_boom_violation(capsys, tmp_path) -> None:
+    output = tmp_path / "abstract.yaml"
+    code = main(
+        [
+            "abstract",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--trace",
+            str(ROOT / "examples/boom_load_load/stage7_buggy_completed.yaml"),
+            "--abstraction",
+            str(ROOT / "examples/boom_load_load/hierarchy_abstraction.yaml"),
+            "--axioms",
+            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "36 concrete event(s), 11 output event(s)" in captured.out
+    assert "concrete=forbidden, abstract=forbidden" in captured.out
+    assert "PRESERVED" in captured.out
+    assert output.exists()
+
+
+def test_refine_cli_accepts_generated_abstraction(capsys, tmp_path) -> None:
+    abstract_path = tmp_path / "abstract.yaml"
+    assert main(
+        [
+            "abstract",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--trace",
+            str(ROOT / "examples/boom_load_load/stage7_buggy_completed.yaml"),
+            "--abstraction",
+            str(ROOT / "examples/boom_load_load/hierarchy_abstraction.yaml"),
+            "--output",
+            str(abstract_path),
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    code = main(
+        [
+            "refine",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--concrete",
+            str(ROOT / "examples/boom_load_load/stage7_buggy_completed.yaml"),
+            "--abstract-trace",
+            str(abstract_path),
+            "--abstraction",
+            str(ROOT / "examples/boom_load_load/hierarchy_abstraction.yaml"),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "REFINEMENT VALID" in captured.out

@@ -39,3 +39,7 @@ class GraphError(UMCMError):
 
 class AxiomError(UMCMError):
     """Raised when an axiom or relation specification is malformed."""
+
+
+class AbstractionError(UMCMError):
+    """Raised when a hierarchy/abstraction model cannot be applied."""

@@ -14,6 +14,7 @@ from umcm.graph.checker import (
 from umcm.graph.execution import ExecutionGraph, MemoryOperation, OperationKind
 from umcm.graph.model import (
     AxiomSpec,
+    COHintSpec,
     DerivedRelationSpec,
     GraphModelSpec,
     ProjectionSpec,
@@ -33,6 +34,7 @@ __all__ = [
     "AxiomStatus",
     "CandidateCheck",
     "CandidateSpace",
+    "COHintSpec",
     "DerivedRelationSpec",
     "Edge",
     "ExecutionGraph",
