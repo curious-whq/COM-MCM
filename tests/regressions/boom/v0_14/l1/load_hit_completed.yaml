@@ -1,0 +1,186 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: load_hit
+  expected: FEASIBLE
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.14.0
+      purpose: Standalone formal BOOM L1/DCache/Probe/Writeback regression model.
+      composition:
+        name: boom-l1-standalone
+        resolved_roles:
+          l1_loads:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            ldq_idx: 2
+          l1_load_hits:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            ldq_idx: 2
+            value: 42
+          l1_load_misses: []
+          l1_load_nacks: []
+          l1_stores: []
+          l1_store_hits: []
+          l1_store_misses: []
+          mshr_requests: []
+          mshr_load_requests: []
+          mshr_store_requests: []
+          dirty_mshr_requests: []
+          probe_sources: []
+          probe_clean_sources: []
+          probe_dirty_sources: []
+          probe_miss_sources: []
+          lr_loads: []
+          sc_stores: []
+        modules:
+        - dcache
+        connections: []
+        generated_transformations: []
+    selected_slots:
+    - l1_ready_load_0
+    - l1_fire_load_0
+    - l1_meta_data_read_load_0
+    - l1_s1_load_0
+    - l1_s2_load_0
+    - l1_hit_0
+    state:
+      initial:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      final:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      steps: []
+events:
+- id: l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      ldq_idx: 2
+      l1_path: hit
+      l1_value: 42
+      uses_mshr: false
+- id: valid_L0
+  type: LSU.DCacheReqValid
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    port: 0
+  cycle: 1
+- id: resp
+  type: DCache.LoadResponse
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    value: 42
+    port: 0
+  cycle: 3
+- id: l1_ready_load_0
+  type: DCache.ReqReady
+  occurs: true
+  fields:
+    port: 0
+  cycle: 1
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_fire_load_0
+  type: LSU.DCacheReqFire
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    port: 0
+  cycle: 1
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_meta_data_read_load_0
+  type: L1.MetaDataRead
+  occurs: true
+  fields:
+    op_id: L0
+    address: x
+    port: 0
+    source: lsu
+  cycle: 1
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_s1_load_0
+  type: L1.PipelineS1
+  occurs: true
+  fields:
+    op_id: L0
+    address: x
+    port: 0
+    kind: load
+  cycle: 2
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_s2_load_0
+  type: L1.PipelineS2
+  occurs: true
+  fields:
+    op_id: L0
+    address: x
+    port: 0
+    kind: load
+  cycle: 3
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_hit_0
+  type: DCache.LoadHit
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    value: 42
+    port: 0
+  cycle: 3
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

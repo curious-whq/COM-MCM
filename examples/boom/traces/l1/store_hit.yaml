@@ -1,0 +1,40 @@
+schema_version: umcm.trace.v0.14.0
+partial: true
+metadata:
+  case: store_hit
+  expected: FEASIBLE
+events:
+- id: s0
+  type: Arch.Store
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: S0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 9
+    byte_mask: 255
+  annotations:
+    microarch:
+      local_l1: true
+      stq_idx: 3
+      l1_path: hit
+- id: drain
+  type: LSU.StoreDrainIssue
+  occurs: true
+  cycle: 1
+  fields:
+    op_id: S0
+    stq_idx: 3
+    address: x
+    value: 9
+- id: ack
+  type: DCache.StoreAck
+  occurs: true
+  cycle: 3
+  fields:
+    op_id: S0
+    stq_idx: 3
+    address: x
+constraints: []

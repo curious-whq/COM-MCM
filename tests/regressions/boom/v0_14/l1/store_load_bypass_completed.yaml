@@ -1,0 +1,306 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: store_load_bypass
+  expected: FEASIBLE
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.14.0
+      purpose: Standalone formal BOOM L1/DCache/Probe/Writeback regression model.
+      composition:
+        name: boom-l1-standalone
+        resolved_roles:
+          l1_loads:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            ldq_idx: 2
+          l1_load_hits:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            ldq_idx: 2
+            value: 9
+          l1_load_misses: []
+          l1_load_nacks: []
+          l1_stores:
+          - event_id: s0
+            event_type: Arch.Store
+            op_id: S0
+            address: x
+            value: 9
+            stq_idx: 3
+          l1_store_hits:
+          - event_id: s0
+            event_type: Arch.Store
+            op_id: S0
+            address: x
+            value: 9
+            stq_idx: 3
+          l1_store_misses: []
+          mshr_requests: []
+          mshr_load_requests: []
+          mshr_store_requests: []
+          dirty_mshr_requests: []
+          probe_sources: []
+          probe_clean_sources: []
+          probe_dirty_sources: []
+          probe_miss_sources: []
+          lr_loads: []
+          sc_stores: []
+        modules:
+        - dcache
+        connections: []
+        generated_transformations: []
+    selected_slots:
+    - l1_ready_load_0
+    - l1_fire_load_0
+    - l1_meta_data_read_load_0
+    - l1_s1_load_0
+    - l1_s2_load_0
+    - l1_hit_0
+    - l1_hit_resp_0
+    - l1_s1_store_0
+    - l1_s2_store_0
+    - l1_store_hit_0
+    - l1_store_write_0
+    state:
+      initial:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      final:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      steps: []
+events:
+- id: s0
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: S0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 9
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      local_l1: true
+      stq_idx: 3
+      l1_path: hit
+- id: drain
+  type: LSU.StoreDrainIssue
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 3
+    address: x
+    value: 9
+  cycle: 1
+- id: ack
+  type: DCache.StoreAck
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 3
+    address: x
+  cycle: 3
+- id: l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+    byte_mask: 255
+  cycle: 4
+  annotations:
+    microarch:
+      ldq_idx: 2
+      l1_path: hit
+      l1_value: 9
+      uses_mshr: false
+- id: valid_L0
+  type: LSU.DCacheReqValid
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    port: 0
+  cycle: 5
+- id: bypass
+  type: L1.StoreLoadBypass
+  occurs: true
+  fields:
+    store_op_id: S0
+    load_op_id: L0
+    address: x
+    value: 9
+    stage: 3
+  cycle: 7
+- id: l1_ready_load_0
+  type: DCache.ReqReady
+  occurs: true
+  fields:
+    port: 0
+  cycle: 5
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_fire_load_0
+  type: LSU.DCacheReqFire
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    port: 0
+  cycle: 5
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_meta_data_read_load_0
+  type: L1.MetaDataRead
+  occurs: true
+  fields:
+    op_id: L0
+    address: x
+    port: 0
+    source: lsu
+  cycle: 5
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_s1_load_0
+  type: L1.PipelineS1
+  occurs: true
+  fields:
+    op_id: L0
+    address: x
+    port: 0
+    kind: load
+  cycle: 6
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_s2_load_0
+  type: L1.PipelineS2
+  occurs: true
+  fields:
+    op_id: L0
+    address: x
+    port: 0
+    kind: load
+  cycle: 7
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_hit_0
+  type: DCache.LoadHit
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    value: 9
+    port: 0
+  cycle: 7
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_hit_resp_0
+  type: DCache.LoadResponse
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    value: 9
+    port: 0
+  cycle: 7
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_s1_store_0
+  type: L1.PipelineS1
+  occurs: true
+  fields:
+    op_id: S0
+    address: x
+    port: 0
+    kind: store
+  cycle: 2
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_s2_store_0
+  type: L1.PipelineS2
+  occurs: true
+  fields:
+    op_id: S0
+    address: x
+    port: 0
+    kind: store
+  cycle: 3
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_store_hit_0
+  type: L1.StoreHit
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 3
+    address: x
+    value: 9
+  cycle: 3
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_store_write_0
+  type: L1.StoreDataWrite
+  occurs: true
+  fields:
+    op_id: S0
+    address: x
+    value: 9
+  cycle: 4
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

@@ -1,12 +1,12 @@
 schema_version: umcm.abstraction.v0.1
-name: boom-lsq-l1-mshr-v0.13
+name: boom-lsq-l1-mshr-v0.14
 source_level: boom-cycle-events
 target_level: composed-memory-events
 default_action: hide
 metadata:
   purpose: Hide cycle-level LSU, L1, ProbeUnit, and MSHR events while preserving architectural projection evidence.
-  limitation: Current summaries cover the bounded BOOM load-load witness while using the reusable v0.13 MSHR event vocabulary.
-  version: 0.13.0
+  limitation: Current summaries cover the bounded BOOM load-load witness while using the formal v0.14 L1 and reusable v0.13 MSHR event vocabularies.
+  version: 0.14.0
 retain:
   event_types:
   - Arch.InitWrite

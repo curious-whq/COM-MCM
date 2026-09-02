@@ -1,0 +1,218 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: mshr_eviction_writeback
+  expected: FEASIBLE
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.14.0
+      purpose: Standalone formal BOOM L1/DCache/Probe/Writeback regression model.
+      composition:
+        name: boom-l1-standalone
+        resolved_roles:
+          l1_loads:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            ldq_idx: 2
+          l1_load_hits: []
+          l1_load_misses:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            ldq_idx: 2
+            value: 0
+            mshr_id: 2
+            tag_match: false
+            old_line_dirty: true
+            needs_acquire: true
+            grant_has_data: true
+            secondary: false
+            requires_second_acquire: false
+            is_hit_again: false
+            sdq_id: 0
+          l1_load_nacks: []
+          l1_stores: []
+          l1_store_hits: []
+          l1_store_misses: []
+          mshr_requests:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            queue_kind: ldq
+            queue_idx: 2
+            address: x
+            value: 0
+            mem_kind: load
+            mshr_id: 2
+            tag_match: false
+            old_line_dirty: true
+            needs_acquire: true
+            grant_has_data: true
+            secondary: false
+            requires_second_acquire: false
+            is_hit_again: false
+            is_probe: false
+            sdq_id: 0
+          mshr_load_requests:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            queue_idx: 2
+            queue_kind: ldq
+            value: 0
+            mshr_id: 2
+          mshr_store_requests: []
+          dirty_mshr_requests:
+          - event_id: l0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            mshr_id: 2
+          probe_sources: []
+          probe_clean_sources: []
+          probe_dirty_sources: []
+          probe_miss_sources: []
+          lr_loads: []
+          sc_stores: []
+        modules:
+        - dcache
+        connections: []
+        generated_transformations: []
+    selected_slots:
+    - l1_wb_accept_mshr_0
+    - l1_wb_fill_mshr_0
+    - l1_wb_lsu_release_mshr_0
+    - l1_wb_probe_release_mshr_0
+    - l1_wb_tl_release_mshr_0
+    state:
+      initial:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      final:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      steps: []
+events:
+- id: l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      ldq_idx: 2
+      l1_path: miss
+      l1_value: 0
+      uses_mshr: true
+      queue_kind: ldq
+      queue_idx: 2
+      mem_kind: load
+      mshr_id: 2
+      value: 0
+      tag_match: false
+      old_line_dirty: true
+      needs_acquire: true
+      grant_has_data: true
+      secondary: false
+      requires_second_acquire: false
+      is_hit_again: false
+      is_probe: false
+      sdq_id: 0
+- id: wb
+  type: MSHR.WritebackRequest
+  occurs: true
+  fields:
+    mshr_id: 2
+    address: x
+  cycle: 4
+- id: done
+  type: L1.WritebackDone
+  occurs: true
+  fields:
+    source_op_id: L0
+    address: x
+    mshr_id: 2
+  cycle: 10
+- id: l1_wb_accept_mshr_0
+  type: L1.WritebackAccept
+  occurs: true
+  fields:
+    source_op_id: L0
+    address: x
+    source_kind: mshr
+    mshr_id: 2
+  cycle: 4
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_wb_fill_mshr_0
+  type: L1.WritebackFill
+  occurs: true
+  fields:
+    source_op_id: L0
+    address: x
+    mshr_id: 2
+  cycle: 5
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_wb_lsu_release_mshr_0
+  type: L1.WritebackLSURelease
+  occurs: true
+  fields:
+    source_op_id: L0
+    address: x
+    mshr_id: 2
+  cycle: 6
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_wb_probe_release_mshr_0
+  type: DCache.ProbeRelease
+  occurs: true
+  fields:
+    source_op_id: L0
+    address: x
+  cycle: 6
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_wb_tl_release_mshr_0
+  type: L1.WritebackTLRelease
+  occurs: true
+  fields:
+    source_op_id: L0
+    address: x
+    mshr_id: 2
+  cycle: 7
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

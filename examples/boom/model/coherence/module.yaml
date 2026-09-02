@@ -1,4 +1,4 @@
-schema_version: umcm.module.v0.12.0
+schema_version: umcm.module.v0.14.0
 name: coherence
 metadata:
   variant: shared
@@ -14,13 +14,13 @@ metadata:
   - visible_store.op_id
   - visible_store.value
   - init_write.value
-  version: 0.12.0
+  version: 0.14.0
 ports:
 - name: visible_store
   direction: input
   event_type: Arch.Store
 - name: probe_receive
-  direction: input
+  direction: output
   event_type: DCache.ProbeReceive
 - name: grant_data
   direction: input

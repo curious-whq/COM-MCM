@@ -1,0 +1,225 @@
+schema_version: umcm.composition.v0.14.0
+name: boom-l1-standalone
+horizon: 32
+metadata:
+  version: 0.14.0
+  purpose: Standalone formal BOOM L1/DCache/Probe/Writeback regression model.
+modules:
+- name: dcache
+  path: ../model/l1/module.yaml
+connections: []
+constraints: []
+roles:
+- name: l1_loads
+  event_type: Arch.Load
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    ldq_idx: annotations.microarch.ldq_idx
+- name: l1_load_hits
+  event_type: Arch.Load
+  where:
+    annotations.microarch.l1_path: hit
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    ldq_idx: annotations.microarch.ldq_idx
+    value: annotations.microarch.l1_value
+- name: l1_load_misses
+  event_type: Arch.Load
+  where:
+    annotations.microarch.l1_path: miss
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    ldq_idx: annotations.microarch.ldq_idx
+    value: annotations.microarch.value
+    mshr_id: annotations.microarch.mshr_id
+    tag_match: annotations.microarch.tag_match
+    old_line_dirty: annotations.microarch.old_line_dirty
+    needs_acquire: annotations.microarch.needs_acquire
+    grant_has_data: annotations.microarch.grant_has_data
+    secondary: annotations.microarch.secondary
+    requires_second_acquire: annotations.microarch.requires_second_acquire
+    is_hit_again: annotations.microarch.is_hit_again
+    sdq_id: annotations.microarch.sdq_id
+- name: l1_load_nacks
+  event_type: Arch.Load
+  where:
+    annotations.microarch.l1_path: nack
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    ldq_idx: annotations.microarch.ldq_idx
+    nack_cause: annotations.microarch.nack_cause
+- name: l1_stores
+  event_type: Arch.Store
+  where:
+    annotations.microarch.local_l1: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+    stq_idx: annotations.microarch.stq_idx
+- name: l1_store_hits
+  event_type: Arch.Store
+  where:
+    annotations.microarch.l1_path: hit
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+    stq_idx: annotations.microarch.stq_idx
+- name: l1_store_misses
+  event_type: Arch.Store
+  where:
+    annotations.microarch.l1_path: miss
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+    stq_idx: annotations.microarch.stq_idx
+    mshr_id: annotations.microarch.mshr_id
+    tag_match: annotations.microarch.tag_match
+    old_line_dirty: annotations.microarch.old_line_dirty
+    needs_acquire: annotations.microarch.needs_acquire
+    grant_has_data: annotations.microarch.grant_has_data
+    secondary: annotations.microarch.secondary
+    requires_second_acquire: annotations.microarch.requires_second_acquire
+    is_hit_again: annotations.microarch.is_hit_again
+    sdq_id: annotations.microarch.sdq_id
+- name: mshr_requests
+  event_type:
+  - Arch.Load
+  - Arch.Store
+  where:
+    annotations.microarch.uses_mshr: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    queue_kind: annotations.microarch.queue_kind
+    queue_idx: annotations.microarch.queue_idx
+    address: fields.address
+    value: annotations.microarch.value
+    mem_kind: annotations.microarch.mem_kind
+    mshr_id: annotations.microarch.mshr_id
+    tag_match: annotations.microarch.tag_match
+    old_line_dirty: annotations.microarch.old_line_dirty
+    needs_acquire: annotations.microarch.needs_acquire
+    grant_has_data: annotations.microarch.grant_has_data
+    secondary: annotations.microarch.secondary
+    requires_second_acquire: annotations.microarch.requires_second_acquire
+    is_hit_again: annotations.microarch.is_hit_again
+    is_probe: annotations.microarch.is_probe
+    sdq_id: annotations.microarch.sdq_id
+- name: mshr_load_requests
+  event_type: Arch.Load
+  where:
+    annotations.microarch.uses_mshr: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    queue_idx: annotations.microarch.queue_idx
+    queue_kind: annotations.microarch.queue_kind
+    value: annotations.microarch.value
+    mshr_id: annotations.microarch.mshr_id
+- name: mshr_store_requests
+  event_type: Arch.Store
+  where:
+    annotations.microarch.uses_mshr: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    queue_idx: annotations.microarch.queue_idx
+    queue_kind: annotations.microarch.queue_kind
+    value: fields.value
+    mshr_id: annotations.microarch.mshr_id
+- name: dirty_mshr_requests
+  event_type:
+  - Arch.Load
+  - Arch.Store
+  where:
+    annotations.microarch.uses_mshr: true
+    annotations.microarch.old_line_dirty: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    mshr_id: annotations.microarch.mshr_id
+- name: probe_sources
+  event_type: Arch.Store
+  where:
+    annotations.microarch.causes_probe: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+- name: probe_clean_sources
+  event_type: Arch.Store
+  where:
+    annotations.microarch.causes_probe: true
+    annotations.microarch.probe_path: clean
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+- name: probe_dirty_sources
+  event_type: Arch.Store
+  where:
+    annotations.microarch.causes_probe: true
+    annotations.microarch.probe_path: dirty
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+- name: probe_miss_sources
+  event_type: Arch.Store
+  where:
+    annotations.microarch.causes_probe: true
+    annotations.microarch.probe_path: miss
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+- name: lr_loads
+  event_type: Arch.Load
+  where:
+    annotations.microarch.is_lr: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+- name: sc_stores
+  event_type: Arch.Store
+  where:
+    annotations.microarch.is_sc: true
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address

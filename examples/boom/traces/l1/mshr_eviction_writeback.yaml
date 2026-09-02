@@ -1,0 +1,52 @@
+schema_version: umcm.trace.v0.14.0
+partial: true
+metadata:
+  case: mshr_eviction_writeback
+  expected: FEASIBLE
+events:
+- id: l0
+  type: Arch.Load
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+    byte_mask: 255
+  annotations:
+    microarch:
+      ldq_idx: 2
+      l1_path: miss
+      l1_value: 0
+      uses_mshr: true
+      queue_kind: ldq
+      queue_idx: 2
+      mem_kind: load
+      mshr_id: 2
+      value: 0
+      tag_match: false
+      old_line_dirty: true
+      needs_acquire: true
+      grant_has_data: true
+      secondary: false
+      requires_second_acquire: false
+      is_hit_again: false
+      is_probe: false
+      sdq_id: 0
+- id: wb
+  type: MSHR.WritebackRequest
+  occurs: true
+  cycle: 4
+  fields:
+    mshr_id: 2
+    address: x
+- id: done
+  type: L1.WritebackDone
+  occurs: true
+  cycle: 10
+  fields:
+    source_op_id: L0
+    address: x
+    mshr_id: 2
+constraints: []

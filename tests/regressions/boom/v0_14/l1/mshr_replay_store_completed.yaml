@@ -1,0 +1,183 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: mshr_replay_store
+  expected: FEASIBLE
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.14.0
+      purpose: Standalone formal BOOM L1/DCache/Probe/Writeback regression model.
+      composition:
+        name: boom-l1-standalone
+        resolved_roles:
+          l1_loads: []
+          l1_load_hits: []
+          l1_load_misses: []
+          l1_load_nacks: []
+          l1_stores:
+          - event_id: s0
+            event_type: Arch.Store
+            op_id: S0
+            address: x
+            value: 9
+            stq_idx: 3
+          l1_store_hits: []
+          l1_store_misses:
+          - event_id: s0
+            event_type: Arch.Store
+            op_id: S0
+            address: x
+            value: 9
+            stq_idx: 3
+            mshr_id: 1
+            tag_match: false
+            old_line_dirty: false
+            needs_acquire: true
+            grant_has_data: false
+            secondary: false
+            requires_second_acquire: false
+            is_hit_again: false
+            sdq_id: 1
+          mshr_requests:
+          - event_id: s0
+            event_type: Arch.Store
+            op_id: S0
+            queue_kind: stq
+            queue_idx: 3
+            address: x
+            value: 9
+            mem_kind: store
+            mshr_id: 1
+            tag_match: false
+            old_line_dirty: false
+            needs_acquire: true
+            grant_has_data: false
+            secondary: false
+            requires_second_acquire: false
+            is_hit_again: false
+            is_probe: false
+            sdq_id: 1
+          mshr_load_requests: []
+          mshr_store_requests:
+          - event_id: s0
+            event_type: Arch.Store
+            op_id: S0
+            address: x
+            queue_idx: 3
+            queue_kind: stq
+            value: 9
+            mshr_id: 1
+          dirty_mshr_requests: []
+          probe_sources: []
+          probe_clean_sources: []
+          probe_dirty_sources: []
+          probe_miss_sources: []
+          lr_loads: []
+          sc_stores: []
+        modules:
+        - dcache
+        connections: []
+        generated_transformations: []
+    selected_slots:
+    - l1_replay_s1_0
+    - l1_replay_s2_0
+    state:
+      initial:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      final:
+        L1.probe.busy: false
+        L1.probe.address: EMPTY_ADDR
+        L1.writeback.busy: false
+        L1.lrsc.valid: false
+        L1.lrsc.address: EMPTY_ADDR
+      steps: []
+events:
+- id: s0
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: S0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 9
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      local_l1: true
+      stq_idx: 3
+      l1_path: miss
+      uses_mshr: true
+      queue_kind: stq
+      queue_idx: 3
+      mem_kind: store
+      mshr_id: 1
+      value: 9
+      tag_match: false
+      old_line_dirty: false
+      needs_acquire: true
+      grant_has_data: false
+      secondary: false
+      requires_second_acquire: false
+      is_hit_again: false
+      is_probe: false
+      sdq_id: 1
+- id: replay
+  type: MSHR.Replay
+  occurs: true
+  fields:
+    mshr_id: 1
+    op_id: S0
+    queue_kind: stq
+    queue_idx: 3
+    address: x
+    value: 9
+  cycle: 5
+- id: write
+  type: L1.StoreDataWrite
+  occurs: true
+  fields:
+    op_id: S0
+    address: x
+    value: 9
+  cycle: 8
+- id: l1_replay_s1_0
+  type: L1.MSHRReplayS1
+  occurs: true
+  fields:
+    mshr_id: 1
+    op_id: S0
+    queue_kind: stq
+    queue_idx: 3
+    address: x
+    value: 9
+  cycle: 5
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_replay_s2_0
+  type: L1.MSHRReplayS2
+  occurs: true
+  fields:
+    mshr_id: 1
+    op_id: S0
+    queue_kind: stq
+    queue_idx: 3
+    address: x
+    value: 9
+  cycle: 7
+  annotations:
+    module_spec: dcache
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

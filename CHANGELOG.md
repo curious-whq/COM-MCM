@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.14.0
+
+- Replaced the witness-era L1 bridge with a reusable BOOM L1/DCache/ProbeUnit/WritebackUnit operational model.
+- Added demand-driven finite instantiation for L1 hit/miss/nack/probe/writeback path classes.
+- Added s0/s1/s2 pipeline events, nack causes, MSHR replay/refill integration, store write/bypass, and minimal LR/SC reservation semantics.
+- Added clean/miss/dirty ProbeUnit paths and WritebackUnit fill→LSU release→TL release lifecycle.
+- Generalized Trace roles to accept multiple event types and made missing optional `where` paths non-matches.
+- Corrected replayed-store semantics: replay performs the data-array write and does not emit a second StoreAck.
+- Added temporal guard to Store→Load bypass so a younger store cannot be forced to bypass an older load.
+- Tightened fixed-reference recovery timing/prohibition of retirement after a matching memory-ordering exception.
+- End-to-end BOOM buggy composition remains `FORBIDDEN`; fixed reference remains `ALLOWED` and rejects the bad younger commit.
+- Hierarchy abstraction preserves the v0.14 formal-L1 forbidden graph.
+- Release regression total: 136 passing tests.
+
+## 0.13.0
+
+- Added the reusable BOOM MSHR/RPQ/SDQ/IOMSHR model.
+- Added primary/secondary miss admission, RPQ kill/drain, Acquire/Grant, direct-load response, replay, dirty writeback/refill/finish, SDQ lifetime, response queue and IOMSHR paths.
+- Updated hierarchy abstraction to the formal MSHR event vocabulary.
+- Full BOOM Load–Load witness remains forbidden using the formal MSHR model.
+- Test suite: 120 passing tests.
+
 ## 0.12.0
 
 - Reorganized the active BOOM model under `examples/boom/`; stage-by-stage artifacts moved to regression storage.

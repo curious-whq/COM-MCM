@@ -1,7 +1,7 @@
-schema_version: umcm.events.v0.13.0
+schema_version: umcm.events.v0.14.0
 metadata:
   model: boom-v4-memory
-  version: 0.13.0
+  version: 0.14.0
   scope: formal BOOM LSQ/L1/MSHR composition examples
 events:
 - name: Arch.CommitLoad
@@ -2244,4 +2244,509 @@ events:
   - name: admission
     sort:
       name: string
+    required: true
+- name: L1.MetaDataRead
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  - name: source
+    sort:
+      name: string
+    required: true
+- name: L1.PipelineS1
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  - name: kind
+    sort:
+      name: string
+    required: true
+- name: L1.PipelineS2
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  - name: kind
+    sort:
+      name: string
+    required: true
+- name: L1.NackCause
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  - name: cause
+    sort:
+      name: string
+    required: true
+- name: L1.StoreHit
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: stq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: L1.StoreDataWrite
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: L1.StoreLoadBypass
+  module: L1D
+  layer: microarchitectural
+  visibility: public
+  fields:
+  - name: store_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: load_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  - name: stage
+    sort:
+      name: int
+    required: true
+- name: L1.MSHRReplayS1
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: L1.MSHRReplayS2
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: L1.RefillDataWrite
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.RefillMetaWrite
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.IncomingBlocked
+  module: L1D
+  layer: microarchitectural
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: reason
+    sort:
+      name: string
+    required: true
+- name: L1.PipelineKilled
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: reason
+    sort:
+      name: string
+    required: true
+- name: L1.ProbeMetaRead
+  module: ProbeUnit
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.ProbeMSHRCheck
+  module: ProbeUnit
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.ProbeWritebackRequest
+  module: ProbeUnit
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.ProbeAck
+  module: ProbeUnit
+  layer: microarchitectural
+  visibility: public
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.ProbeMetaWrite
+  module: ProbeUnit
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.WritebackAccept
+  module: WritebackUnit
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: source_kind
+    sort:
+      name: string
+    required: true
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+- name: L1.WritebackFill
+  module: WritebackUnit
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+- name: L1.WritebackLSURelease
+  module: WritebackUnit
+  layer: microarchitectural
+  visibility: public
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+- name: L1.WritebackTLRelease
+  module: WritebackUnit
+  layer: microarchitectural
+  visibility: public
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+- name: L1.WritebackDone
+  module: WritebackUnit
+  layer: microarchitectural
+  visibility: public
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+- name: L1.LRReservationSet
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: L1.LRReservationClear
+  module: L1D
+  layer: microarchitectural
+  visibility: internal
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: reason
+    sort:
+      name: string
+    required: true
+- name: L1.SCResult
+  module: L1D
+  layer: microarchitectural
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: success
+    sort:
+      name: bool
     required: true

@@ -38,7 +38,7 @@ class TraceRoleSpec:
     """Select one observed trace event and export values for templating."""
 
     name: str
-    event_type: str
+    event_type: str | tuple[str, ...]
     where: Mapping[str, Any] = field(default_factory=dict)
     exports: Mapping[str, str] = field(default_factory=dict)
     event_id: str | None = None
@@ -51,8 +51,14 @@ class TraceRoleSpec:
     def __post_init__(self) -> None:
         if not self.name:
             raise SchemaError("trace role name must be non-empty")
-        if not self.event_type:
+        raw_types = self.event_type
+        if isinstance(raw_types, str):
+            event_types = (raw_types,)
+        else:
+            event_types = tuple(str(item) for item in raw_types)
+        if not event_types or any(not item for item in event_types):
             raise SchemaError("trace role event_type must be non-empty")
+        object.__setattr__(self, "event_type", event_types[0] if len(event_types) == 1 else event_types)
         object.__setattr__(self, "where", dict(self.where))
         if self.cardinality not in {"one", "many"}:
             raise SchemaError("trace role cardinality must be one or many")
@@ -65,10 +71,14 @@ class TraceRoleSpec:
                     f"trace role {self.name!r} exports must use non-empty names and paths"
                 )
 
+    @property
+    def event_types(self) -> tuple[str, ...]:
+        return (self.event_type,) if isinstance(self.event_type, str) else tuple(self.event_type)
+
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
             "name": self.name,
-            "event_type": self.event_type,
+            "event_type": self.event_type if isinstance(self.event_type, str) else list(self.event_type),
             "where": encode_value(dict(self.where)),
             "exports": dict(self.exports),
             "occurring_only": self.occurring_only,
@@ -106,7 +116,11 @@ class TraceRoleSpec:
         try:
             return cls(
                 name=str(data["name"]),
-                event_type=str(data["event_type"]),
+                event_type=(
+                    str(data["event_type"])
+                    if isinstance(data["event_type"], str)
+                    else tuple(str(item) for item in data["event_type"])
+                ),
                 where=dict(raw_where),
                 exports={str(k): str(v) for k, v in raw_exports.items()},
                 event_id=(
@@ -142,16 +156,23 @@ def resolve_trace_roles(
         expected_where = render_template(dict(role.where), context)
         matches = []
         for event in trace.events:
-            if event.event_type != role.event_type:
+            if event.event_type not in role.event_types:
                 continue
             if role.event_id is not None and event.id != role.event_id:
                 continue
             if role.occurring_only and event.occurs is not True:
                 continue
-            if all(
-                _resolve_event_path(event, path) == expected
-                for path, expected in expected_where.items()
-            ):
+            matched = True
+            for path, expected in expected_where.items():
+                try:
+                    actual = _resolve_event_path(event, path)
+                except CompositionError:
+                    matched = False
+                    break
+                if actual != expected:
+                    matched = False
+                    break
+            if matched:
                 matches.append(event)
         matches.sort(
             key=lambda event: (
@@ -186,7 +207,7 @@ def resolve_trace_roles(
                 )
                 raise CompositionError(
                     f"trace role {role.name!r} must resolve to exactly one "
-                    f"{role.event_type} event; {detail}"
+                    f"{'/'.join(role.event_types)} event; {detail}"
                 )
             context[role.name] = _export_role_event(role, matches[0])
             continue
@@ -194,7 +215,7 @@ def resolve_trace_roles(
         if len(matches) < role.min_matches:
             raise CompositionError(
                 f"trace role {role.name!r} requires at least "
-                f"{role.min_matches} {role.event_type} event(s); "
+                f"{role.min_matches} {'/'.join(role.event_types)} event(s); "
                 f"only {len(matches)} matched"
             )
         context[role.name] = [

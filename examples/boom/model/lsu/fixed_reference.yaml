@@ -1228,19 +1228,27 @@ repeat:
             name: bv
             width: 6
       - node: binary
-        op: lt
+        op: eq
         left:
-          node: event_field
-          event_id: fail
-          field: cycle
-          sort:
-            name: int
-        right:
           node: event_field
           event_id: exception
           field: cycle
           sort:
             name: int
+        right:
+          node: binary
+          op: add
+          left:
+            node: event_field
+            event_id: fail
+            field: cycle
+            sort:
+              name: int
+          right:
+            node: literal
+            sort:
+              name: int
+            value: 2
       exact: true
       tags:
       - state
@@ -4276,7 +4284,7 @@ repeat_product:
             width: 64
           value: ${candidate.address}
       - node: binary
-        op: ge
+        op: eq
         left:
           node: event_field
           event_id: fail

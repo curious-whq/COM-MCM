@@ -1,6 +1,6 @@
-# µMCM Foundation v0.13.0
+# µMCM Foundation v0.14.0
 
-v0.13 keeps the current-model layout introduced in v0.12 and adds a reusable BOOM MSHR/RPQ/SDQ/IOMSHR model grounded in the supplied Chisel.
+v0.14 adds a reusable BOOM L1/DCache/ProbeUnit/WritebackUnit model on top of the formal LSQ (v0.12) and MSHR/RPQ (v0.13) models, all grounded in the supplied Chisel.
 
 The project remains independent of FM-Agent.  Its job is to provide the deterministic infrastructure that later model-generation agents must target:
 
@@ -78,17 +78,22 @@ Standalone MSHR regression inputs live under `examples/boom/traces/mshr/`; gener
 
 The full BOOM Load–Load bug still produces the forbidden `fr → rfe → ppo` cycle using this formal MSHR model.
 
+
+## v0.14 L1 / DCache model
+
+The current `model/l1/module.yaml` models the memory-order-relevant L1 pipeline and boundaries: request acceptance, s0/s1/s2, hit/miss/nack outcomes, MSHR replay/refill integration, ProbeUnit clean/miss/dirty paths, WritebackUnit release flow, store writes/bypass and minimal LR/SC reservation state.
+
+The L1 model is **Trace-demand finite-instantiated**: the bounded Trace selects the request/outcome classes that can occur, so the solver does not eagerly instantiate every hit/miss/nack/probe branch for every operation. The transformations themselves remain reusable and parameterized.
+
+Standalone inputs are under `examples/boom/traces/l1/`; generated witnesses are archived under `tests/regressions/boom/v0_14/l1/`. See `L1_V0.14_SOURCE_MAP.md` and `ITERATION_14_REPORT.md`.
+
 ## Quick validation
 
 ```bash
 PYTHONPATH=src pytest -q
 ```
 
-Expected:
-
-```text
-120 passed
-```
+Expected total across the release regression groups: **136 passed**.
 
 ### LSQ-only examples
 
@@ -138,4 +143,4 @@ LDLDConflict → LoadOrderFail → MemoryOrderingException → SquashLoad
 
 and rejects the same bad younger-load retirement.
 
-See `ITERATION_12_REPORT.md` and `LSQ_V0.12_SOURCE_MAP.md` for implementation details and source grounding.
+See `ITERATION_14_REPORT.md`, `L1_V0.14_SOURCE_MAP.md`, `MSHR_V0.13_SOURCE_MAP.md`, and `LSQ_V0.12_SOURCE_MAP.md` for implementation details and source grounding.

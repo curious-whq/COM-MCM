@@ -1,0 +1,29 @@
+schema_version: umcm.trace.v0.14.0
+partial: true
+metadata:
+  case: probe_dirty
+  expected: FEASIBLE
+events:
+- id: remote
+  type: Arch.Store
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: W1
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+    byte_mask: 255
+  annotations:
+    microarch:
+      causes_probe: true
+      probe_path: dirty
+- id: release
+  type: DCache.ProbeRelease
+  occurs: true
+  cycle: 8
+  fields:
+    source_op_id: W1
+    address: x
+constraints: []

@@ -1,0 +1,42 @@
+schema_version: umcm.trace.v0.14.0
+partial: true
+metadata:
+  case: load_nack_data_bank
+  expected: FEASIBLE
+events:
+- id: l0
+  type: Arch.Load
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+    byte_mask: 255
+  annotations:
+    microarch:
+      ldq_idx: 2
+      l1_path: nack
+      l1_value: 42
+      uses_mshr: false
+      nack_cause: data_bank
+- id: valid_L0
+  type: LSU.DCacheReqValid
+  occurs: true
+  cycle: 1
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    port: 0
+- id: nack
+  type: DCache.LoadNack
+  occurs: true
+  cycle: 3
+  fields:
+    op_id: L0
+    ldq_idx: 2
+    address: x
+    port: 0
+constraints: []

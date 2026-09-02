@@ -1,0 +1,57 @@
+schema_version: umcm.trace.v0.14.0
+partial: true
+metadata:
+  case: mshr_replay_store
+  expected: FEASIBLE
+events:
+- id: s0
+  type: Arch.Store
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: S0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 9
+    byte_mask: 255
+  annotations:
+    microarch:
+      local_l1: true
+      stq_idx: 3
+      l1_path: miss
+      uses_mshr: true
+      queue_kind: stq
+      queue_idx: 3
+      mem_kind: store
+      mshr_id: 1
+      value: 9
+      tag_match: false
+      old_line_dirty: false
+      needs_acquire: true
+      grant_has_data: false
+      secondary: false
+      requires_second_acquire: false
+      is_hit_again: false
+      is_probe: false
+      sdq_id: 1
+- id: replay
+  type: MSHR.Replay
+  occurs: true
+  cycle: 5
+  fields:
+    mshr_id: 1
+    op_id: S0
+    queue_kind: stq
+    queue_idx: 3
+    address: x
+    value: 9
+- id: write
+  type: L1.StoreDataWrite
+  occurs: true
+  cycle: 8
+  fields:
+    op_id: S0
+    address: x
+    value: 9
+constraints: []
