@@ -231,3 +231,46 @@ def test_refine_cli_accepts_generated_abstraction(capsys, tmp_path) -> None:
     captured = capsys.readouterr()
     assert code == 0
     assert "REFINEMENT VALID" in captured.out
+
+
+def test_compose_cli_writes_modular_boom_model(capsys, tmp_path) -> None:
+    output = tmp_path / "composed.yaml"
+    code = main(
+        [
+            "compose",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--composition",
+            str(ROOT / "examples/boom_load_load/modular/buggy_composition.yaml"),
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "5 module(s), 21 connection(s)" in captured.out
+    assert "module lsu" in captured.out
+    assert "module dcache" in captured.out
+    assert output.exists()
+
+
+def test_complete_cli_accepts_modular_composition(capsys, tmp_path) -> None:
+    output = tmp_path / "modular-completed.yaml"
+    code = main(
+        [
+            "complete",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--trace",
+            str(ROOT / "examples/boom_load_load/stage6_trace.yaml"),
+            "--composition",
+            str(ROOT / "examples/boom_load_load/modular/buggy_composition.yaml"),
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "COMPOSED boom-load-load-buggy-modular-v0.9" in captured.out
+    assert "FEASIBLE finite completion" in captured.out
+    assert output.exists()

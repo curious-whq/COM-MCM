@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.9.0
+
+- 新增 `ModuleSpec / ModulePort`，可独立加载模块 slots、state、Transformation 与局部约束。
+- 新增 `CompositionSpec / ConnectionSpec`，支持相对路径模块引用和显式接口连接。
+- 新增 `shared_event` 与 `event_map` 两种连接模式。
+- 新增组合器，检查端口方向、事件类型、字段 Sort、required port、重复驱动和跨模块名称冲突。
+- 强制模块 Transformation 只能访问本模块状态。
+- 强制 Transformation 使用的事件类型必须由本模块 slot 或 port 显式声明。
+- 新增 `umcm compose`，可生成普通 CompletionSpec。
+- `umcm complete` 新增 `--composition`，可直接加载模块组合。
+- 将 BOOM witness 拆成 LSU、DCache、MSHR、Coherence、ROB 五个模块和 21 条连接。
+- 模块化 Buggy 模型与 v0.8 单体模型产生完全相同的 36-event Trace、状态和 forbidden graph。
+- Fixed 模型把 LSU exception、ROB squash 和 LSU invalidation 拆为跨模块事件链。
+- Package version 更新为 0.9.0，测试增至 86 项。
+
+## 0.9.0
+
+- 新增 `ModuleSpec / ModulePort / CompositionSpec / ConnectionSpec`。
+- 新增 `shared_event` 与 `event_map` 两类模块连接。
+- 新增 required-port、方向、事件类型、field-map 和单输入连接检查。
+- 新增 `umcm compose` 与 `umcm complete --composition`。
+- 将 BOOM witness 拆成 LSU、L1 DCache、MSHR、coherence、ROB/recovery 五个独立模型。
+- stateful Transformation 只能访问所属模块声明的持久状态。
+- fixed recovery 被拆为 LSU order-fail、ROB exception→squash、LSU squash-state update。
+- 建立 21 条显式共享事件连接，支持 DCache miss 等输出扇出。
+- 模块化 Buggy/Fixed 与 v0.8 单体模型的事件、状态和执行图结果完全一致。
+- 新增模块 schema/接口错误、event-map、组合等价性和 CLI 回归测试。
+- Package version 更新为 0.9.0，测试增至 86 项。
+
 ## 0.8.0
 
 - 新增可加载 `AbstractionSpec`，支持角色匹配、字段统一、摘要事件、retain 与 hide。

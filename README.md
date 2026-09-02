@@ -1,262 +1,282 @@
-# µMCM Foundation v0.8.0
+# µMCM Foundation v0.9.0
 
-这是第八轮底层基础设施，仍然与 FM-Agent 无关。BOOM 微架构行为由 YAML
-中的 `Event + Transformation + State + Trace` 描述；Python 提供通用的 Trace
-补全、层次抽象、架构投影、Execution Graph 构造和公理检查引擎。
-
-v0.8 在 v0.7 的完整错误闭环之上加入：
+这是第九轮底层基础设施，仍然与 FM-Agent 无关。项目现在支持：
 
 ```text
-concrete microarchitectural Trace
-        ↓  hierarchy_abstraction.yaml
-retain architectural events
-+ summarize relevant internal paths
-+ hide cycle-level implementation events
-        ↓
-certified abstract Trace
-        ↓
-rf / co / fr / po / ppo
-        ↓
-Memory-model result
+独立模块模型
+  LSU / DCache / MSHR / Coherence / ROB
+          ↓ typed ports + explicit connections
+组合后的微架构 Transformation 系统
+          ↓ finite Trace completion
+完整微架构 Trace
+          ↓ architecture projection
+rf / co / fr / po / ppo Execution Graph
+          ↓ axioms
+ALLOWED / FORBIDDEN
 ```
 
-对于当前 BOOM witness：
+v0.9 的核心变化是：BOOM Load–Load witness 不再由一个大型 completion YAML
+描述，而是由五个可独立加载的模块模型和一张显式连接清单组合得到。
 
-```text
-buggy: 36 concrete events → 11 abstract events → FORBIDDEN
-fixed: 37 concrete events → 10 abstract events → ALLOWED
-```
+## 1. 模块模型
 
-抽象前后生成的架构操作、关系和候选执行图集合完全相同。
-
-> 当前实现是**具体 witness 的确定性层次抽象与细化检查**，不是任意 RTL
-> 实现对抽象模型的通用 refinement theorem prover。
-
-## 1. 层次抽象模型
-
-新增目录：
-
-```text
-src/umcm/hierarchy/
-├── model.py      # 可加载的 AbstractionSpec
-└── engine.py     # abstract / certificate / refine / preservation
-```
-
-抽象规则由 YAML 加载。每条规则：
-
-1. 匹配若干具体事件角色；
-2. 用 `$variable` 统一操作身份、地址和值；
-3. 产生一个摘要事件；
-4. 隐藏不再需要的内部事件。
-
-例如，L0 的长延迟读值来源被压缩为：
-
-```text
-DCache.LoadMiss(L0)
-→ MSHR.PrimaryMissAccept(L0)
-→ MSHR.AcquireBlock(L0)
-→ MSHR.GrantData(L0, source=W1, value=1)
-→ MSHR.DrainRPQLoad(L0)
-→ DCache.LongLatencyLoadResponse(L0, 1)
-→ LSU.LoadSucceeded(L0, 1)
-```
-
-对应一个摘要事件：
-
-```text
-Hierarchy.ReadFromEvidence(
-    read_op_id=L0,
-    write_op_id=W1,
-    address=x,
-    value=1,
-    path=mshr_refill
-)
-```
-
-因此抽象可以隐藏 MSHR 状态和中间接口，但不能丢失 `rf` 所需的来源信息。
-
-## 2. 当前 BOOM 摘要事件
-
-`hierarchy_abstraction.yaml` 生成四类边界事件：
-
-- `Hierarchy.ReadFromEvidence`：保留 load 的具体 source write；
-- `Hierarchy.CoherenceOrderEvidence`：保留同地址写的 coherence 顺序证据；
-- `Hierarchy.CoherenceObservation`：压缩 Store → Probe → Release → observed；
-- `Hierarchy.LoadLoadResolution`：压缩 LD–LD conflict 的 assert-only 或 squash 结果。
-
-架构事件保持不变：
-
-```text
-Arch.InitWrite
-Arch.Load
-Arch.Store
-Arch.CommitLoad
-```
-
-内部的 TLB、retry queue、DCache pipeline、ProbeUnit 和 MSHR 事件默认隐藏。
-
-## 3. `rf` 和 `co` 来源不会因抽象而自由化
-
-v0.8 的 graph model 支持两类可加载 hint：
+每个模块使用 `umcm.module.v0.9.0`：
 
 ```yaml
-projection:
-  rf_hints:
-  - event_type: Hierarchy.ReadFromEvidence
-    read_id_field: read_op_id
-    write_id_field: write_op_id
-    address_field: address
-    value_field: value
-
-  co_hints:
-  - event_type: Hierarchy.CoherenceOrderEvidence
-    before_write_id_field: before_write_id
-    after_write_id_field: after_write_id
-    address_field: address
+schema_version: umcm.module.v0.9.0
+name: lsu
+ports: ...
+slots: ...
+state_variables: ...
+transformations: ...
+constraints: ...
 ```
 
-`rf` hint 会把某个 read 的来源限制为指定 write，并检查地址和值一致。
-`co` hint 会过滤同地址写的候选全序；冲突的顺序证据会被拒绝。
+模块只拥有自己的：
 
-因此：
+- 候选事件槽；
+- 持久状态；
+- Transformation；
+- 局部约束；
+- 类型化输入/输出端口。
+
+当前 BOOM 示例位于：
 
 ```text
-完整 Trace / 有 provenance 的抽象 Trace：rf、co 可以被固定
-普通部分 Trace：仍可枚举所有与观测兼容的 rf、co 补全
+examples/boom_load_load/modular/modules/
+├── lsu_buggy.yaml
+├── lsu_fixed.yaml
+├── dcache.yaml
+├── mshr.yaml
+├── coherence.yaml
+├── rob_buggy.yaml
+└── rob_fixed.yaml
 ```
 
-## 4. 抽象证书与细化检查
+状态所有权是严格局部的：一个模块的 Transformation 不能读取或修改另一个
+模块声明的状态。跨模块行为必须通过端口事件传递。
 
-每个生成的摘要事件携带：
+此外，Transformation 中使用的每一种事件类型都必须由该模块的 slot 或 port
+显式声明，不能绕过组合清单隐式依赖其他模块事件。
+
+## 2. 接口和连接
+
+端口声明包含：
 
 ```text
-abstraction spec name
-summary rule name
-source event IDs
-source event types
+name
+input / output
+event_type
+required_connection
 ```
 
-抽象 Trace 的 metadata 还记录：
+组合文件使用 `umcm.composition.v0.9.0`，显式列出模块和连接：
 
 ```text
-source Trace SHA-256
-retained event IDs
-hidden event IDs
-all summary-to-source mappings
-preserved/dropped constraint counts
+examples/boom_load_load/modular/
+├── buggy_composition.yaml
+└── fixed_composition.yaml
 ```
 
-`umcm refine` 会从具体 Trace 重新执行同一抽象，并比较：
+当前支持两种连接。
 
-- 摘要事件集合；
-- 字段和值；
-- 约束；
-- 抽象证书。
+### `shared_event`
 
-篡改 `write_op_id`、地址、值或 source mapping 都会导致 refinement 失败。
+两侧观察同一个物理边界事件。例如：
 
-## 5. 运行抽象
+```text
+LSU.dcache_req_valid
+    → DCache.lsu_req_valid
 
-### Buggy witness
+DCache.req_fire
+    → LSU.dcache_req_fire
+
+DCache.probe_release
+    → LSU.dcache_probe_release
+
+MSHR.drain_rpq_load
+    → DCache.mshr_drain_rpq_load
+```
+
+两端必须声明完全相同的 Event type。
+
+### `event_map`
+
+两侧使用不同 Event type 时，组合器生成一条精确 Transformation：
+
+```text
+source event
+→ target event
+```
+
+并按照 `field_map` 复制身份、地址、数据等字段；可选择要求同周期。该模式已经有
+单元测试覆盖，供后续把子模块内部事件映射成父模块边界事件使用。
+
+## 3. 组合器检查
+
+`compose_modules()` 会检查：
+
+- 模块文件存在且声明名称与引用名称一致；
+- port 的 Event type 存在；
+- source 必须是 output，target 必须是 input；
+- `shared_event` 两端类型相同；
+- `event_map` 字段存在且 Sort 兼容；
+- required port 已连接；
+- 一个 input port 不得有多个驱动；
+- slot、state 和 Transformation 名称跨模块不冲突；
+- Transformation 只能使用模块显式声明的 slot/port 事件；
+- Transformation 只能访问本模块状态。
+
+组合后仍生成普通 `CompletionSpec`，因此已有 finite completion 后端无需修改。
+
+## 4. BOOM 模块划分
+
+Buggy 组合包含：
+
+| 模块 | 端口 | Slots | 状态 | Transformations |
+|---|---:|---:|---:|---:|
+| LSU | 17 | 15 | 19 | 21 |
+| DCache | 12 | 11 | 3 | 8 |
+| MSHR | 4 | 6 | 10 | 6 |
+| Coherence | 3 | 0 | 0 | 2 |
+| ROB | 7 | 4 | 0 | 0 |
+
+合计：
+
+```text
+5 modules
+21 connections
+36 slots
+32 state variables
+37 transformations
+21 composition constraints
+```
+
+Fixed 组合复用同一个 DCache、MSHR 和 Coherence 模型，只替换：
+
+```text
+lsu_buggy  → lsu_fixed
+rob_buggy  → rob_fixed
+```
+
+Fixed 模型共 40 条 Transformation，其中恢复链被明确拆成：
+
+```text
+LSU.LoadOrderFail
+→ LSU emits Core.MemoryOrderingException
+→ ROB emits Core.SquashLoad
+→ LSU consumes squash and invalidates L1
+```
+
+ROB 不会直接修改 LSU 的 LDQ 状态。
+
+## 5. 生成组合模型
 
 ```bash
-PYTHONPATH=src python3 -m umcm abstract \
+PYTHONPATH=src python3 -m umcm compose \
   --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage7_buggy_completed.yaml \
-  --abstraction examples/boom_load_load/hierarchy_abstraction.yaml \
-  --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml \
-  --output stage8_buggy_abstract.yaml
+  --composition examples/boom_load_load/modular/buggy_composition.yaml \
+  --output composed_buggy.yaml
 ```
 
 预期：
 
 ```text
-ABSTRACTED boom-cycle-events -> composed-memory-events:
-  36 concrete event(s)
-  11 output event(s)
-  30 hidden event(s)
-  5 summary event(s)
-
-MEMORY-MODEL PRESERVATION:
-  concrete=forbidden, abstract=forbidden
-  PRESERVED
+COMPOSED ...: 5 module(s), 21 connection(s),
+36 slot(s), 32 state variable(s),
+37 transformation(s), 21 constraint(s)
 ```
 
-再检查抽象 Trace：
+## 6. 直接从模块组合补全 Trace
+
+Buggy：
+
+```bash
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/stage6_trace.yaml \
+  --composition examples/boom_load_load/modular/buggy_composition.yaml \
+  --output completed_buggy.yaml
+```
+
+预期：
+
+```text
+FEASIBLE finite completion
+36 events
+L0 = 1 commits
+L1 = 0 commits
+L1.order_fail = false
+```
+
+检查执行图：
 
 ```bash
 PYTHONPATH=src python3 -m umcm check \
   --schema examples/boom_load_load/event_types.yaml \
-  --trace stage8_buggy_abstract.yaml \
+  --trace completed_buggy.yaml \
   --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml
 ```
 
-仍然得到：
+得到：
 
 ```text
-InitX -rf-> L1
-W1    -rf-> L0
-InitX -co-> W1
-L1    -fr-> W1
-L0    -ppo-> L1
+InitX --rf--> L1
+W1    --rf--> L0
+InitX --co--> W1
+L1    --fr--> W1
+L0    --ppo-> L1
 
-L1 -fr-> W1 -rfe-> L0 -ppo-> L1
+L1 -fr-> W1 -rfe/rf-> L0 -ppo-> L1
 MEMORY MODEL VIOLATION
 ```
 
-### Fixed recovery witness
+Fixed recovery：
 
 ```bash
-PYTHONPATH=src python3 -m umcm abstract \
+PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage7_fixed_recovery_completed.yaml \
-  --abstraction examples/boom_load_load/hierarchy_abstraction.yaml \
-  --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml \
-  --output stage8_fixed_abstract.yaml
+  --trace examples/boom_load_load/stage6_recovery_trace.yaml \
+  --composition examples/boom_load_load/modular/fixed_composition.yaml \
+  --output completed_fixed.yaml
 ```
 
-预期：
+结果中 `L1` 被 `order_fail → exception → squash` 撤销，执行图为 `ALLOWED`。
+若对 fixed composition 强制要求 `L1=0` 仍然退休，则 completion 为
+`INFEASIBLE`。
+
+## 7. 与 v0.8 的关系
+
+v0.8 解决：
 
 ```text
-37 concrete events → 10 output events
-concrete=allowed, abstract=allowed
-PRESERVED
+如何把一条长的具体 Trace 抽象成较短的层次 Trace，
+同时保留 rf/co provenance 和内存模型结论。
 ```
 
-由于 `L1` 已被 `order_fail → exception → squash` 撤销，没有
-`Arch.CommitLoad(L1)`，因此它不会成为架构执行图节点。
-
-## 6. 验证细化证书
-
-```bash
-PYTHONPATH=src python3 -m umcm refine \
-  --schema examples/boom_load_load/event_types.yaml \
-  --concrete examples/boom_load_load/stage7_buggy_completed.yaml \
-  --abstract-trace examples/boom_load_load/stage8_buggy_abstract.yaml \
-  --abstraction examples/boom_load_load/hierarchy_abstraction.yaml
-```
-
-预期：
+v0.9 解决：
 
 ```text
-REFINEMENT VALID: every abstract event is backed by its rule sources
+如何把生成这条 Trace 的操作模型拆成独立模块，
+并通过显式接口重新组合。
 ```
 
-## 7. 关键文件
+两者正交：组合模型先生成具体 Trace，随后仍可使用 v0.8 的
+`umcm abstract / refine`。
 
-```text
-examples/boom_load_load/
-├── hierarchy_abstraction.yaml
-├── rvwmo_load_load_fragment.yaml
-├── stage7_buggy_completed.yaml
-├── stage7_fixed_recovery_completed.yaml
-├── stage8_buggy_abstract.yaml
-├── stage8_fixed_recovery_abstract.yaml
-├── stage8_buggy_execution_graph.yaml
-└── stage8_fixed_recovery_execution_graph.yaml
-```
+## 8. 当前边界
 
-## 8. 测试
+v0.9 完成的是**模块模型组合基础设施**，不是完整的 BOOM LSU/L1/MSHR 模型：
+
+- 当前规则仍针对已知 Load–Load witness 的有限事件槽；
+- `L0/L1/W1` 和队列索引仍是具体实例；
+- `shared_event` 当前按全局 Event type 共享；多核、多 DCache 或多 MSHR 实例仍需在 v0.10 加入 instance/channel 身份，避免同类型接口串线；
+- 还未实现参数化规则的按 Trace 实例化；
+- 还未覆盖完整 STQ、secondary miss、所有 nack、writeback 冷路径等。
+
+下一轮应将具体操作名和固定队列索引改为参数化模板。
+
+## 9. 测试
 
 ```bash
 PYTHONPATH=src pytest -q
@@ -265,18 +285,9 @@ PYTHONPATH=src pytest -q
 预期：
 
 ```text
-76 passed
+86 passed
 ```
 
-新增测试覆盖：
-
-- 抽象规则 YAML/JSON 往返；
-- 36→11 和 37→10 的具体压缩结果；
-- `rf` provenance 保持；
-- `co` hint 对候选全序的过滤；
-- 相互冲突的 `co` hint 拒绝；
-- buggy 抽象前后均为 `FORBIDDEN`；
-- fixed 抽象前后均为 `ALLOWED`；
-- 架构 candidate graph 集合精确相同；
-- 摘要事件篡改检测；
-- `umcm abstract` 与 `umcm refine` CLI。
+测试覆盖模块/组合 YAML 往返、单体与模块模型等价、Buggy/Fix 差分、required
+port、方向和类型检查、重复驱动、state ownership、未声明事件依赖，以及
+`event_map` 自动 Transformation。

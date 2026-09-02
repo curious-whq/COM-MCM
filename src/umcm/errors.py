@@ -43,3 +43,7 @@ class AxiomError(UMCMError):
 
 class AbstractionError(UMCMError):
     """Raised when a hierarchy/abstraction model cannot be applied."""
+
+
+class CompositionError(UMCMError):
+    """Raised when module interfaces or a composition manifest are invalid."""

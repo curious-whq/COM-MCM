@@ -1,4 +1,11 @@
-"""Command-line entry points for composition, traces, completion and axioms."""
+# `umcm/cli.py` 源码讲解
+
+文件职责：实现轨迹校验、补全、抽象和内存模型检查的命令行界面。下列代码块按原始行号连续排列，拼接后与源文件完全一致。
+
+## 模块说明与依赖（第 1–27 行）
+
+```python
+"""Command-line entry points for traces, completion, abstraction, and axioms."""
 
 from __future__ import annotations
 
@@ -6,7 +13,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from umcm.composition import CompositionSpec, compose_modules
 from umcm.errors import UMCMError
 from umcm.graph.checker import (
     AxiomStatus,
@@ -26,6 +32,13 @@ from umcm.ir.trace import Trace
 from umcm.solver.completion import CompletionStatus, complete_trace
 
 
+```
+
+给出模块说明并导入本文件所需的标准库、项目类型和公开依赖；这里不执行核心业务流程。
+
+## 函数 `_build_parser`（第 28–127 行）
+
+```python
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="umcm")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -48,15 +61,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     complete.add_argument("--schema", required=True, help="event catalog YAML/JSON")
     complete.add_argument("--trace", required=True, help="partial trace YAML/JSON")
-    completion_source = complete.add_mutually_exclusive_group(required=True)
-    completion_source.add_argument(
-        "--model",
-        help="monolithic completion model YAML/JSON",
-    )
-    completion_source.add_argument(
-        "--composition",
-        help="module/connector composition manifest YAML/JSON",
-    )
+    complete.add_argument("--model", required=True, help="completion model YAML/JSON")
     complete.add_argument(
         "--output",
         help="write the feasible completed trace to YAML/JSON",
@@ -72,22 +77,6 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=500_000,
         help="maximum finite-search nodes",
-    )
-
-    compose = subparsers.add_parser(
-        "compose",
-        help="compose module and connector models into one completion model",
-    )
-    compose.add_argument("--schema", required=True, help="event catalog YAML/JSON")
-    compose.add_argument(
-        "--composition",
-        required=True,
-        help="module/connector composition manifest YAML/JSON",
-    )
-    compose.add_argument(
-        "--output",
-        required=True,
-        help="write the composed completion model to YAML/JSON",
     )
 
     check = subparsers.add_parser(
@@ -150,6 +139,13 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+```
+
+构造完整的命令行解析器，为各子命令登记输入文件、后端和输出选项。
+
+## 函数 `_print_graph_summary`（第 128–153 行）
+
+```python
 def _print_graph_summary(check_result) -> None:
     representative = check_result.representative
     graph = representative.graph
@@ -176,6 +172,13 @@ def _print_graph_summary(check_result) -> None:
         print(f"  {name}: {rendered or '(empty)'}")
 
 
+```
+
+按候选图打印操作数、关系规模和公理结果，必要时输出诊断环。
+
+## 函数 `_check_metadata`（第 154–163 行）
+
+```python
 def _check_metadata(check_result) -> dict[str, object]:
     representative = check_result.representative
     return {
@@ -186,6 +189,13 @@ def _check_metadata(check_result) -> dict[str, object]:
     }
 
 
+```
+
+检查轨迹元数据中的模型名是否与命令行加载的图模型一致。
+
+## 函数 `main`（第 164–355 行）
+
+```python
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -203,55 +213,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
-        if args.command == "compose":
-            catalog = EventCatalog.load(args.schema)
-            manifest = CompositionSpec.load(args.composition)
-            composed = compose_modules(catalog, manifest)
-            output = Path(args.output)
-            composed.completion.dump(output)
-            totals = composed.manifest["totals"]
-            print(
-                f"COMPOSED {manifest.name}: "
-                f"{len(composed.modules)} module(s), "
-                f"{len(manifest.connections)} connection(s), "
-                f"{totals['slots']} slot(s), "
-                f"{totals['state_variables']} state variable(s), "
-                f"{totals['transformations']} transformation(s), "
-                f"{totals['constraints']} constraint(s)"
-            )
-            for loaded in composed.modules:
-                module = loaded.spec
-                print(
-                    f"  module {loaded.reference_name}: "
-                    f"{len(module.ports)} port(s), "
-                    f"{len(module.slots)} slot(s), "
-                    f"{len(module.state_variables)} state(s), "
-                    f"{len(module.transformations)} transformation(s)"
-                )
-            for connection in manifest.connections:
-                print(
-                    f"  connection {connection.name}: "
-                    f"{connection.source.qualified_name} -> "
-                    f"{connection.target.qualified_name} "
-                    f"[{connection.mode.value}]"
-                )
-            print(f"WROTE {output}")
-            return 0
-
         if args.command == "complete":
             catalog = EventCatalog.load(args.schema)
             trace = Trace.load(args.trace)
-            if args.composition:
-                manifest = CompositionSpec.load(args.composition)
-                composed = compose_modules(catalog, manifest)
-                model = composed.completion
-                print(
-                    f"COMPOSED {manifest.name}: "
-                    f"{len(composed.modules)} module(s), "
-                    f"{len(manifest.connections)} connection(s)"
-                )
-            else:
-                model = CompletionSpec.load(args.model)
+            model = CompletionSpec.load(args.model)
             result = complete_trace(
                 catalog,
                 trace,
@@ -423,5 +388,16 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
+```
+
+解析命令行并分派子命令；依次加载模型与轨迹，执行校验、补全、抽象或公理检查，再规范化输出和退出码。
+
+## 模块执行逻辑（第 356–357 行）
+
+```python
 if __name__ == "__main__":
     raise SystemExit(main())
+```
+
+执行模块入口或少量装配逻辑，把控制权交给已定义的公共函数。
+

@@ -1,0 +1,128 @@
+schema_version: umcm.module.v0.9.0
+name: rob
+metadata:
+  variant: fixed
+  stage: 9
+  source: Architectural operation and recovery boundary abstraction
+ports:
+- name: memory_order_exception
+  direction: input
+  event_type: Core.MemoryOrderingException
+- name: arch_load
+  direction: output
+  event_type: Arch.Load
+- name: arch_store
+  direction: output
+  event_type: Arch.Store
+- name: commit_load
+  direction: output
+  event_type: Arch.CommitLoad
+- name: branch_kill
+  direction: output
+  event_type: Core.BranchKill
+- name: exception
+  direction: output
+  event_type: Core.Exception
+- name: squash_load
+  direction: output
+  event_type: Core.SquashLoad
+slots:
+- id: branch_kill_0
+  type: Core.BranchKill
+  required: false
+  fields:
+    op_id: L0
+  cycle: 3
+  annotations:
+    role: optional_defense
+- id: exception_0
+  type: Core.Exception
+  required: false
+  fields:
+    hart: 0
+  cycle: 3
+  annotations:
+    role: optional_defense
+- id: l1_mem_order_exception
+  type: Core.MemoryOrderingException
+  required: true
+  cycle: 14
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    cause: MINI_EXCEPTION_MEM_ORDERING
+- id: l1_squash
+  type: Core.SquashLoad
+  required: true
+  cycle: 15
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    reason: memory_ordering_exception
+state_variables: []
+transformations:
+- name: memory_ordering_exception_emits_squash
+  inputs:
+  - role: exception
+    type: Core.MemoryOrderingException
+  outputs:
+  - role: squash
+    type: Core.SquashLoad
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: squash
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: exception
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: squash
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: exception
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: exception
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: squash
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  tags:
+  - fixed
+  - rob-recovery
+  - module-boundary
+  description: ROB/recovery converts the LSU memory-ordering exception into a squash
+    event.
+constraints: []

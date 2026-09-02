@@ -1,0 +1,362 @@
+"""Composition engine for independently loadable operational modules."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from typing import Any, Iterable
+
+from umcm.composition.model import (
+    CompositionSpec,
+    ConnectionMode,
+    ConnectionSpec,
+    ModulePort,
+    ModuleSpec,
+    PortDirection,
+)
+from umcm.errors import CompositionError
+from umcm.ir.completion import CompletionSpec, EventSlot
+from umcm.ir.event import EventCatalog
+from umcm.ir.expression import Binary, EventField
+from umcm.ir.sort import INT
+from umcm.ir.transformation import EventRole, Transformation
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedModule:
+    reference_name: str
+    path: str
+    spec: ModuleSpec
+
+
+@dataclass(slots=True)
+class CompositionResult:
+    """Materialized completion model and a diagnostic composition manifest."""
+
+    spec: CompositionSpec
+    modules: tuple[LoadedModule, ...]
+    completion: CompletionSpec
+    generated_transformations: tuple[str, ...]
+
+    @property
+    def manifest(self) -> dict[str, Any]:
+        return {
+            "composition": self.spec.name,
+            "modules": [
+                {
+                    "name": item.reference_name,
+                    "declared_name": item.spec.name,
+                    "path": item.path,
+                    "ports": len(item.spec.ports),
+                    "slots": len(item.spec.slots),
+                    "state_variables": len(item.spec.state_variables),
+                    "transformations": len(item.spec.transformations),
+                    "constraints": len(item.spec.constraints),
+                }
+                for item in self.modules
+            ],
+            "connections": [connection.to_dict() for connection in self.spec.connections],
+            "generated_transformations": list(self.generated_transformations),
+            "totals": {
+                "slots": len(self.completion.slots),
+                "state_variables": len(self.completion.state_variables),
+                "transformations": len(self.completion.transformations),
+                "constraints": len(self.completion.constraints),
+                "horizon": self.completion.horizon,
+            },
+        }
+
+
+def compose_modules(
+    catalog: EventCatalog,
+    composition: CompositionSpec,
+) -> CompositionResult:
+    """Load, validate, wire, and merge all modules in ``composition``."""
+
+    loaded: list[LoadedModule] = []
+    modules: dict[str, ModuleSpec] = {}
+    for reference in composition.modules:
+        path = composition.resolve_module_path(reference).resolve()
+        if not path.is_file():
+            raise CompositionError(
+                f"module {reference.name!r} file does not exist: {path}"
+            )
+        module = ModuleSpec.load(path)
+        if module.name != reference.name:
+            raise CompositionError(
+                f"module reference {reference.name!r} loads module "
+                f"named {module.name!r}: {path}"
+            )
+        module.validate(catalog)
+        modules[reference.name] = module
+        loaded.append(
+            LoadedModule(
+                reference_name=reference.name,
+                path=str(path),
+                spec=module,
+            )
+        )
+
+    _validate_connections(modules, composition.connections, catalog)
+
+    slots: list[EventSlot] = []
+    states = []
+    transformations: list[Transformation] = []
+    constraints = []
+    slot_owner: dict[str, str] = {}
+    state_owner: dict[str, str] = {}
+    transformation_owner: dict[str, str] = {}
+
+    for loaded_module in loaded:
+        module_name = loaded_module.reference_name
+        module = loaded_module.spec
+        for slot in module.slots:
+            previous = slot_owner.get(slot.id)
+            if previous is not None:
+                raise CompositionError(
+                    f"slot {slot.id!r} is declared by both {previous!r} "
+                    f"and {module_name!r}"
+                )
+            slot_owner[slot.id] = module_name
+            annotations = dict(slot.annotations)
+            annotations.setdefault("module_spec", module_name)
+            slots.append(replace(slot, annotations=annotations))
+
+        for state in module.state_variables:
+            previous = state_owner.get(state.name)
+            if previous is not None:
+                raise CompositionError(
+                    f"state {state.name!r} is declared by both {previous!r} "
+                    f"and {module_name!r}"
+                )
+            state_owner[state.name] = module_name
+            states.append(state)
+
+        for transformation in module.transformations:
+            previous = transformation_owner.get(transformation.name)
+            if previous is not None:
+                raise CompositionError(
+                    f"transformation {transformation.name!r} is declared by "
+                    f"both {previous!r} and {module_name!r}"
+                )
+            transformation_owner[transformation.name] = module_name
+            tags = tuple(dict.fromkeys((*transformation.tags, f"module:{module_name}")))
+            transformations.append(replace(transformation, tags=tags))
+
+        constraints.extend(module.constraints)
+
+    generated: list[str] = []
+    for connection in composition.connections:
+        if connection.mode is not ConnectionMode.EVENT_MAP:
+            continue
+        generated_transformation = _mapped_connection_transformation(
+            modules, connection, catalog
+        )
+        if generated_transformation.name in transformation_owner:
+            raise CompositionError(
+                f"generated connection transformation collides with "
+                f"{generated_transformation.name!r}"
+            )
+        transformation_owner[generated_transformation.name] = (
+            f"connection:{connection.name}"
+        )
+        transformations.append(generated_transformation)
+        generated.append(generated_transformation.name)
+
+    constraints.extend(composition.constraints)
+    metadata = dict(composition.metadata)
+    metadata["composition"] = {
+        "name": composition.name,
+        "modules": [item.reference_name for item in loaded],
+        "connections": [
+            {
+                "name": item.name,
+                "mode": item.mode.value,
+                "source": item.source.qualified_name,
+                "target": item.target.qualified_name,
+            }
+            for item in composition.connections
+        ],
+        "generated_transformations": generated,
+    }
+
+    completion = CompletionSpec(
+        slots=slots,
+        transformations=transformations,
+        state_variables=states,
+        constraints=constraints,
+        horizon=composition.horizon,
+        metadata=metadata,
+        schema_version="umcm.completion.v0.9.0",
+    )
+    return CompositionResult(
+        spec=composition,
+        modules=tuple(loaded),
+        completion=completion,
+        generated_transformations=tuple(generated),
+    )
+
+
+def _validate_connections(
+    modules: dict[str, ModuleSpec],
+    connections: Iterable[ConnectionSpec],
+    catalog: EventCatalog,
+) -> None:
+    connected_endpoints: dict[tuple[str, str], list[str]] = {}
+    target_endpoints: set[tuple[str, str]] = set()
+
+    for connection in connections:
+        source_port = _resolve_port(
+            modules,
+            connection.source.module,
+            connection.source.port,
+        )
+        target_port = _resolve_port(
+            modules,
+            connection.target.module,
+            connection.target.port,
+        )
+        if source_port.direction is not PortDirection.OUTPUT:
+            raise CompositionError(
+                f"connection {connection.name!r} source "
+                f"{connection.source.qualified_name} is not an output port"
+            )
+        if target_port.direction is not PortDirection.INPUT:
+            raise CompositionError(
+                f"connection {connection.name!r} target "
+                f"{connection.target.qualified_name} is not an input port"
+            )
+        target_key = (connection.target.module, connection.target.port)
+        if target_key in target_endpoints:
+            raise CompositionError(
+                f"input port {connection.target.qualified_name!r} has more than "
+                "one incoming connection"
+            )
+        target_endpoints.add(target_key)
+
+        connected_endpoints.setdefault(
+            (connection.source.module, connection.source.port), []
+        ).append(connection.name)
+        connected_endpoints.setdefault(target_key, []).append(connection.name)
+
+        source_type = catalog.resolve(source_port.event_type)
+        target_type = catalog.resolve(target_port.event_type)
+        if connection.mode is ConnectionMode.SHARED_EVENT:
+            if source_type.name != target_type.name:
+                raise CompositionError(
+                    f"shared_event connection {connection.name!r} requires "
+                    f"the same event type, got {source_type.name!r} and "
+                    f"{target_type.name!r}"
+                )
+        else:
+            _validate_field_map(connection, source_type, target_type)
+
+    for module_name, module in modules.items():
+        for port in module.ports:
+            if not port.required_connection:
+                continue
+            key = (module_name, port.name)
+            if key not in connected_endpoints:
+                raise CompositionError(
+                    f"required port {module_name}.{port.name} is unconnected"
+                )
+
+
+def _resolve_port(
+    modules: dict[str, ModuleSpec],
+    module_name: str,
+    port_name: str,
+) -> ModulePort:
+    try:
+        module = modules[module_name]
+    except KeyError as exc:
+        raise CompositionError(f"unknown module in connection: {module_name}") from exc
+    try:
+        return module.port_map[port_name]
+    except KeyError as exc:
+        raise CompositionError(
+            f"module {module_name!r} has no port {port_name!r}"
+        ) from exc
+
+
+def _validate_field_map(connection, source_type, target_type) -> None:
+    mapping = dict(connection.field_map)
+    if not mapping:
+        common = set(source_type.field_map) & set(target_type.field_map)
+        mapping = {name: name for name in common}
+    for target_field, source_field in mapping.items():
+        try:
+            target_sort = target_type.field_map[target_field].sort
+        except KeyError as exc:
+            raise CompositionError(
+                f"connection {connection.name!r} maps unknown target field "
+                f"{target_field!r}"
+            ) from exc
+        try:
+            source_sort = source_type.field_map[source_field].sort
+        except KeyError as exc:
+            raise CompositionError(
+                f"connection {connection.name!r} maps unknown source field "
+                f"{source_field!r}"
+            ) from exc
+        if not target_sort.compatible_with(source_sort):
+            raise CompositionError(
+                f"connection {connection.name!r} field mapping "
+                f"{source_field!r}->{target_field!r} has incompatible sorts "
+                f"{source_sort} and {target_sort}"
+            )
+
+
+def _mapped_connection_transformation(
+    modules: dict[str, ModuleSpec],
+    connection: ConnectionSpec,
+    catalog: EventCatalog,
+) -> Transformation:
+    source_port = _resolve_port(
+        modules, connection.source.module, connection.source.port
+    )
+    target_port = _resolve_port(
+        modules, connection.target.module, connection.target.port
+    )
+    source_type = catalog.resolve(source_port.event_type)
+    target_type = catalog.resolve(target_port.event_type)
+    mapping = dict(connection.field_map)
+    if not mapping:
+        common = set(source_type.field_map) & set(target_type.field_map)
+        mapping = {name: name for name in sorted(common)}
+
+    ensure = []
+    if connection.same_cycle:
+        ensure.append(
+            Binary(
+                "eq",
+                EventField("target", "cycle", INT),
+                EventField("source", "cycle", INT),
+            )
+        )
+    for target_field, source_field in sorted(mapping.items()):
+        target_sort = target_type.field_map[target_field].sort
+        source_sort = source_type.field_map[source_field].sort
+        ensure.append(
+            Binary(
+                "eq",
+                EventField("target", target_field, target_sort),
+                EventField("source", source_field, source_sort),
+            )
+        )
+
+    return Transformation(
+        name=f"connection.{connection.name}",
+        inputs=(EventRole("source", source_port.event_type),),
+        outputs=(EventRole("target", target_port.event_type),),
+        ensure=tuple(ensure),
+        exact=connection.exact,
+        description=(
+            connection.description
+            or f"Generated event mapping for {connection.name}."
+        ),
+        tags=(
+            "connection",
+            f"source:{connection.source.qualified_name}",
+            f"target:{connection.target.qualified_name}",
+        ),
+    )
