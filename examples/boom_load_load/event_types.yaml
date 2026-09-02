@@ -1,9 +1,9 @@
 schema_version: umcm.events.v0.1
 metadata:
-  model: boom-v4-load-load-stage4
-  description: BOOM Load-Load witness catalog through the younger-load L1 hit, LSU
-    executed/succeeded updates, ProbeUnit release, and LDQ observed state.
-  iteration: 0.4.0
+  model: boom-v4-load-load-stage5
+  description: BOOM Load-Load witness catalog through LD-LD search, conflict, buggy
+    assertion-only behavior, and corrected order-fail recovery.
+  iteration: 0.5.0
 events:
 - name: Arch.CommitLoad
   module: ROB
@@ -115,6 +115,50 @@ events:
     sort:
       name: int
     required: true
+- name: Core.MemoryOrderingException
+  module: Core
+  layer: recovery
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: cause
+    sort:
+      name: string
+    required: true
+  description: The LSU broadcasts MINI_EXCEPTION_MEM_ORDERING for the oldest failed
+    load.
+- name: Core.SquashLoad
+  module: Core
+  layer: recovery
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: reason
+    sort:
+      name: string
+    required: true
+  description: The recovery machinery invalidates the affected dynamic load before
+    retirement.
 - name: DCache.LoadHit
   module: DCache
   layer: l1
@@ -244,6 +288,32 @@ events:
     sort:
       name: int
     required: true
+- name: LSU.AssertViolation
+  module: LSU
+  layer: verification-monitor
+  visibility: internal
+  fields:
+  - name: property
+    sort:
+      name: string
+    required: true
+  - name: older_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: younger_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: A non-functional assertion monitor fires; it does not itself update
+    recovery state.
 - name: LSU.DCacheReqFire
   module: LSU+DCache
   layer: lsu-dcache-interface
@@ -292,6 +362,67 @@ events:
     sort:
       name: int
     required: true
+- name: LSU.LDLDConflict
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: older_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: older_ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: younger_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: younger_ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: An older search finds a same-address younger load that already succeeded
+    and was observed.
+- name: LSU.LDLDSearch
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: searcher_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: searcher_ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  description: The older load performs the next-cycle LD-LD LCAM search after retry
+    translation.
 - name: LSU.LoadExecuted
   module: LSU
   layer: lsu
@@ -336,6 +467,29 @@ events:
       width: 64
     required: true
   description: The LDQ observed bit becomes true for a matching released line.
+- name: LSU.LoadOrderFail
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: The younger LDQ entry is marked order_fail by the corrected LD-LD recovery
+    path.
 - name: LSU.LoadSucceeded
   module: LSU
   layer: lsu

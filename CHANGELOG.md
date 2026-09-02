@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- 新增 `LSU.LDLDSearch / LSU.LDLDConflict`。
+- 新增 `LSU.AssertViolation`，明确 assertion 是非功能性监视事件。
+- 新增 `LSU.LoadOrderFail / Core.MemoryOrderingException / Core.SquashLoad`。
+- 新增 `order_fail/squashed/executing_now` 三个 L1 状态。
+- 将 L0 retry 接入 BOOM 的 same-address observed-younger LD–LD guard。
+- 新增 buggy assertion-only 模型，允许 L1=0 继续退休。
+- 新增 fixed reference 模型，生成 order-fail→exception→squash。
+- 同一错误退休 Trace 在 fixed 模型下不可行。
+- Completion schema 与 package version 更新为 0.5.0。
+- 测试增至 47 项。
+
 ## 0.4.0
 
 - 新增年轻 Load L1 的 DCache hit/response 路径。

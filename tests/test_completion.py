@@ -337,3 +337,103 @@ def test_v04_completion_spec_roundtrip(tmp_path: Path) -> None:
     assert loaded.to_dict() == spec.to_dict()
     assert loaded.schema_version == "umcm.completion.v0.4.0"
     assert len(loaded.state_variables) == 15
+
+
+
+def _v05_inputs(
+    model: str,
+    trace_name: str = "stage5_trace.yaml",
+) -> tuple[EventCatalog, Trace, CompletionSpec]:
+    return (
+        EventCatalog.load(EXAMPLE / "event_types.yaml"),
+        Trace.load(EXAMPLE / trace_name),
+        CompletionSpec.load(EXAMPLE / model),
+    )
+
+
+def test_buggy_ldld_conflict_reaches_assert_without_order_fail_and_commits() -> None:
+    catalog, trace, spec = _v05_inputs("load_load_buggy_completion.yaml")
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.completed_trace is not None
+    completed = result.completed_trace
+
+    assert completed.get("dcache_req_fire_0").cycle < completed.get("l0_ldld_search").cycle
+    assert completed.get("l0_ldld_search").cycle == completed.get("l0_l1_ldld_conflict").cycle
+    assert completed.get("l0_l1_ldld_conflict").cycle == completed.get("ldld_assert_violation").cycle
+    assert completed.get("commit_l0").cycle < completed.get("commit_l1").cycle
+    assert completed.get("commit_l1").fields["value"] == 0
+
+    assert "l1_order_fail" not in result.added_event_ids
+    assert "l1_mem_order_exception" not in result.added_event_ids
+    assert "l1_squash" not in result.added_event_ids
+    assert result.final_state["LSU.ldq.L1.order_fail"] is False
+    assert result.final_state["LSU.ldq.L1.squashed"] is False
+    # Retirement consumes the still-valid LDQ entry in the buggy model.
+    assert result.final_state["LSU.ldq.L1.valid"] is False
+
+
+def test_fixed_ldld_conflict_generates_order_fail_exception_and_squash() -> None:
+    catalog, trace, spec = _v05_inputs(
+        "load_load_fixed_completion.yaml",
+        "stage5_recovery_trace.yaml",
+    )
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.completed_trace is not None
+    completed = result.completed_trace
+    assert completed.get("l0_ldld_search").cycle == completed.get("l0_l1_ldld_conflict").cycle
+    assert completed.get("l0_l1_ldld_conflict").cycle == completed.get("l1_order_fail").cycle
+    assert completed.get("l1_order_fail").cycle < completed.get("l1_mem_order_exception").cycle
+    assert completed.get("l1_mem_order_exception").cycle < completed.get("l1_squash").cycle
+    assert "ldld_assert_violation" not in result.added_event_ids
+    assert "commit_l1" not in {event.id for event in completed.events}
+    assert result.final_state["LSU.ldq.L1.order_fail"] is True
+    assert result.final_state["LSU.ldq.L1.squashed"] is True
+    assert result.final_state["LSU.ldq.L1.valid"] is False
+
+
+def test_fixed_model_blocks_the_same_forbidden_l1_retirement() -> None:
+    catalog, trace, spec = _v05_inputs("load_load_fixed_completion.yaml")
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.INFEASIBLE
+    assert "l1_commit_requires_valid_executed_succeeded_load" in result.reason
+    assert "LSU.ldq.L1.valid == True" in result.reason
+    assert "pre-state is False" in result.reason
+
+
+def test_ldld_conflict_requires_the_observed_younger_state() -> None:
+    catalog, trace, spec = _v05_inputs("load_load_buggy_completion.yaml")
+    spec.slots = [
+        replace(slot, required=False)
+        if slot.id == "l1_load_observed"
+        else slot
+        for slot in spec.slots
+    ]
+    from umcm.ir.expression import EventField, Unary
+    from umcm.ir.sort import BOOL
+
+    spec.constraints.append(
+        Unary("not", EventField("l1_load_observed", "occurs", BOOL))
+    )
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.INFEASIBLE
+    assert "LSU.ldq.L1.observed == True" in result.reason
+
+
+def test_v05_models_roundtrip(tmp_path: Path) -> None:
+    for model in (
+        "load_load_buggy_completion.yaml",
+        "load_load_fixed_completion.yaml",
+    ):
+        _, _, spec = _v05_inputs(model)
+        path = tmp_path / f"{model}.json"
+        spec.dump(path)
+        loaded = CompletionSpec.load(path)
+        assert loaded.to_dict() == spec.to_dict()
+        assert loaded.schema_version == "umcm.completion.v0.5.0"
+        assert len(loaded.state_variables) == 18

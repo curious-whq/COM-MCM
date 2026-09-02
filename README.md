@@ -1,321 +1,205 @@
-# µMCM Foundation v0.4.0
+# µMCM Foundation v0.5.0
 
-这是第四轮底层基础设施。项目仍然与 FM-Agent 完全无关：当前目标是先用手写的 `Event + Transformation + State + Trace`，构造并检查 BOOM Load–Load 错误所需的微架构可行路径。
+这是第五轮底层基础设施。项目仍然与 FM-Agent 无关：当前使用手写的
+`Event + Transformation + State + Trace`，逐步构造 BOOM Load–Load 顺序错误的
+微架构可行执行。
 
-v0.4.0 在 v0.3.1 的 `L0 TLB miss → retry queue → DCache request accepted` 路径上，加入了年轻 Load `L1` 的旧值命中、ProbeUnit release 以及 LDQ `observed` 状态：
-
-```text
-L0: TLBMiss
-    → RetryEnqueue
-
-L1: DCacheReqFire
-    → LDQ.executed := true
-    → DCacheHit(value=0)
-    → DCacheResponse(value=0)
-    → LDQ.succeeded := true
-    → LDQ.value := 0
-
-W1: store x=1
-    → ProbeReceive(x)
-    → ProbeRelease(x)
-    → LDQ[L1].observed := true
-
-L0: RetryIssue
-    → DCacheReqFire
-```
-
-当前版本尚未执行最终的 LD–LD search，也尚未生成 `rf/co/fr/ppo/hb` Execution Graph。下一轮将把 `L0 retry` 与源码中的 `assert(false.B)` 分支连接起来。
-
-## 1. 本轮新增的 Event
+v0.5.0 在 v0.4.0 已完成的路径上加入了真正的 LD–LD 搜索和恢复差分：
 
 ```text
-DCache.LoadHit
-DCache.LoadNack
-DCache.ProbeReceive
-LSU.LoadExecuted
-LSU.LoadSucceeded
+L1 hit old value 0
+→ L1.executed = true
+→ L1.succeeded = true
+→ Probe/Release
+→ L1.observed = true
+
+L0 TLB retry
+→ DCache request accepted
+→ LD–LD search
+→ same-address observed-younger conflict
 ```
 
-同时细化了已有事件：
+随后分别建立两个模型：
 
 ```text
-DCache.LoadResponse
-DCache.ProbeRelease
-LSU.LoadObserved
+buggy:
+  conflict → assert monitor
+  order_fail 保持 false
+  L1=0 可以退休
+
+fixed reference:
+  conflict → order_fail
+           → MINI_EXCEPTION_MEM_ORDERING
+           → squash L1
+  同一个 L1=0 退休目标不可行
 ```
 
-所有跨模块事件都保存必要身份：
+这里的 `LSU.AssertViolation` 被明确建模为**非功能性监视事件**。它记录
+`assert(false.B)` 被触发，但不会自动产生 `order_fail`、exception 或 squash。
+
+当前版本仍未生成最终的 `rf/co/fr/ppo/hb` Execution Graph；下一轮将把本轮的
+微架构 witness 投影到架构事件并检测 `rf → ppo → fr` 环。
+
+## 1. 新增事件
 
 ```text
-op_id / ldq_idx / address / port / source_op_id
+LSU.LDLDSearch
+LSU.LDLDConflict
+LSU.AssertViolation
+LSU.LoadOrderFail
+Core.MemoryOrderingException
+Core.SquashLoad
 ```
 
-## 2. 本轮新增的持久状态
-
-### L1 的 LDQ 摘要
+关键字段保留：
 
 ```text
-LSU.ldq.L1.valid
-LSU.ldq.L1.addr_valid
-LSU.ldq.L1.addr_is_virtual
-LSU.ldq.L1.address
-LSU.ldq.L1.executed
-LSU.ldq.L1.succeeded
-LSU.ldq.L1.observed
-LSU.ldq.L1.value
+older/younger op_id
+older/younger ldq_idx
+address
+exception cause
+squash reason
 ```
 
-状态更新为：
+## 2. 新增状态
 
 ```text
-DCacheReqFire(L1)
-→ executed := true
-
-DCacheResponse(L1, 0)
-→ succeeded := true
-→ value := 0
-
-ProbeRelease(x) 且 same_block(L1.address, x)
-→ observed := true
-
-DCacheNack(L1)
-→ executed := false
-→ succeeded 保持 false
+LSU.ldq.L1.order_fail
+LSU.ldq.L1.squashed
+LSU.ldq.L1.executing_now
 ```
 
-### ProbeUnit 摘要
+其中 `executing_now = false` 对应源码中的：
+
+```scala
+!s1_executing_loads(i)
+```
+
+本轮路径使用更强但足够的 witness 条件：
 
 ```text
-DCache.probe.pending
-DCache.probe.address
-DCache.probe.source_op_id
+L1.valid
+∧ L1.addr_valid
+∧ !L1.addr_is_virtual
+∧ L1.executed
+∧ L1.succeeded
+∧ L1.observed
+∧ !L1.executing_now
+∧ same_address(L0, L1)
+∧ older(L0, L1)
 ```
 
-它保留：
-
-```text
-ProbeReceive(W1, x)
-→ 捕获 source_op_id/address
-→ pending := true
-
-ProbeRelease(W1, x)
-→ 必须匹配已捕获的 Probe
-→ pending := false
-```
-
-ProbeUnit 的 metadata read、MSHR interaction、writeback 等中间 FSM 状态在本轮被隐藏；这里只保留组合所需的边界身份和先后关系。
-
-## 3. Transformation 仍是唯一操作语义
-
-本轮没有增加独立“握手语义”。请求接受仍由普通 Transformation 表示：
-
-```text
-ReqValid ∧ ReqReady
-→ DCacheReqFire
-```
-
-其余路径同样由 Transformation 表示：
-
-```text
-DCacheReqFire(L1)
-→ LoadExecuted(L1)
-
-LoadHit(L1, 0)
-→ LoadResponse(L1, 0)
-
-LoadResponse(L1, 0)
-→ LoadSucceeded(L1, 0)
-
-ProbeReceive(W1, x)
-→ ProbeRelease(W1, x)
-
-LoadObserved(L1, x)
-→ 必须存在同 cache block 的 ProbeRelease
-```
-
-其中一部分规则用于正向状态转换，一部分规则用于给 query goal 寻找因果支撑事件。它们都使用同一个 `Transformation` IR。
-
-## 4. 层次抽象方式
-
-本轮没有完整展开 Store Queue、L2、TileLink 和 ProbeUnit 全部状态，而是采用可行路径摘要：
-
-```text
-Store 侧：
-Arch.Store(W1, x=1)
-→ feasible ProbeReceive(W1, x)
-
-DCache 命中侧：
-accepted request
-→ response-eligible hit
-→ response(value=0)
-
-ProbeUnit：
-ProbeReceive
-→ capture pending probe state
-→ ProbeRelease
-```
-
-抽象隐藏内部事件，但保留：
-
-```text
-请求身份
-地址
-返回值
-Probe 来源
-必要顺序
-持久状态更新
-```
-
-## 5. 正向 witness
+## 3. Buggy 模型
 
 运行：
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage4_trace.yaml \
-  --model examples/boom_load_load/young_load_probe_completion.yaml \
-  --output completed_stage4.yaml
+  --trace examples/boom_load_load/stage5_trace.yaml \
+  --model examples/boom_load_load/load_load_buggy_completion.yaml \
+  --output completed_stage5_buggy.yaml
 ```
 
-预期核心输出：
+预期：
 
 ```text
-FEASIBLE finite completion
+FEASIBLE
 
-cycle 4:  L1 DCacheReqFire
-cycle 5:  L1 LoadExecuted
-cycle 6:  L1 DCacheHit(value=0)
-cycle 7:  L1 DCacheResponse / LoadSucceeded(value=0)
-cycle 9:  ProbeReceive(W1, x)
-cycle 10: ProbeRelease(W1, x)
-cycle 11: L1 LoadObserved
-cycle 12: L0 RetryIssue / DCacheReqFire
+cycle 13: LDLDSearch(L0)
+cycle 13: LDLDConflict(L0,L1)
+cycle 13: AssertViolation
+
+order_fail = false
+squashed   = false
+CommitLoad(L1,0) 可发生
 ```
 
-状态结果：
+## 4. Fixed recovery 模型
 
-```text
-LSU.ldq.L1.executed  = true
-LSU.ldq.L1.succeeded = true
-LSU.ldq.L1.value     = 0
-LSU.ldq.L1.observed  = true
-DCache.probe.pending = false
-```
-
-## 6. 两类负向检查
-
-### 6.1 release 地址不同
+先只检查恢复路径，不要求错误 load 退休：
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage4_trace.yaml \
-  --model examples/boom_load_load/young_load_probe_address_mismatch.yaml
+  --trace examples/boom_load_load/stage5_recovery_trace.yaml \
+  --model examples/boom_load_load/load_load_fixed_completion.yaml \
+  --output completed_stage5_fixed_recovery.yaml
 ```
 
-模型提供一条真实可支撑的 `W2: store y → probe y → release y` 路径，但仍要求：
+预期：
 
 ```text
-LoadObserved(L1, x)
+FEASIBLE
+
+cycle 13: LDLDConflict
+cycle 13: LoadOrderFail(L1)
+cycle 14: MemoryOrderingException(L1)
+cycle 15: SquashLoad(L1)
+
+order_fail = true
+squashed   = true
+valid      = false
 ```
 
-结果：
+再对同一个错误退休目标运行 fixed 模型：
+
+```bash
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/stage5_trace.yaml \
+  --model examples/boom_load_load/load_load_fixed_completion.yaml
+```
+
+预期退出码为 `1`：
 
 ```text
 INFEASIBLE
+
+CommitLoad(L1,0) requires LSU.ldq.L1.valid == true,
+but recovery has already squashed L1 and made valid == false.
 ```
 
-因为 `release(y)` 不能把 `load(x)` 标记为 observed。
+## 5. 源码对应关系
 
-### 6.2 DCache nack
-
-```bash
-PYTHONPATH=src python3 -m umcm complete \
-  --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage4_trace.yaml \
-  --model examples/boom_load_load/young_load_nack_completion.yaml \
-  --output completed_nack.yaml
-```
-
-结果可行，但最终状态为：
+本轮模型依据给定 BOOM v4 LSU 源码：
 
 ```text
-executed  = false
-succeeded = false
-observed  = false
-value      = UNSET_VALUE
+lsu.scala:1117–1120
+  retry load 在翻译成功后触发 do_ld_search
+
+lsu.scala:1238–1255
+  older search + same address/mask + younger executed/succeeded
+  + !s1_executing_loads + observed
+  当前仅 assert(false.B)，order_fail/failed_load 赋值被注释
+
+lsu.scala:1458–1475
+  ldq_order_fail 会生成 MINI_EXCEPTION_MEM_ORDERING
+
+lsu.scala:1749–1765
+  load 退休要求 LDQ entry 有效、executed/forwarded 且 succeeded
 ```
 
-强制同一次 attempt 同时 `nack` 和 `succeeded`：
+`exception → squash` 是父级恢复逻辑的抽象边界摘要；本轮不展开整个 ROB。
 
-```bash
-PYTHONPATH=src python3 -m umcm complete \
-  --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage4_trace.yaml \
-  --model examples/boom_load_load/young_load_nack_plus_success.yaml
-```
-
-结果：
-
-```text
-INFEASIBLE
-```
-
-## 7. 安装与测试
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-pytest -q
-```
-
-也可以不安装：
+## 6. 测试
 
 ```bash
 PYTHONPATH=src pytest -q
 ```
 
-v0.4.0 基线：
+预期：
 
 ```text
-42 passed
+47 passed
 ```
 
-## 8. 当前边界
+测试覆盖：
 
-当前版本尚未实现：
-
-- `L0 retry → LD–LD search → assert(false.B)`；
-- L0 在 Probe 后 miss、MSHR refill 并返回 `1`；
-- `Commit(L0,1)` 与 `Commit(L1,0)`；
-- Execution Graph；
-- `rf/co/fr/ppo/hb`；
-- RVWMO 合法性检查；
-- 通用 `Hierarchy/Abstraction` IR；
-- 从 Chisel 自动提取模型；
-- FM-Agent 接入。
-
-## 9. 下一阶段
-
-Iteration 5 将连接：
-
-```text
-L1.executed = true
-L1.succeeded = true
-L1.observed = true
-
-L0 RetryIssue
-→ do_ld_search
-→ Older(L0,L1)
-→ SameAddress(L0,L1)
-→ LLConflict(L0,L1)
-```
-
-并区分：
-
-```text
-buggy：LLConflict → AssertFailure，但不设置 order_fail
-fixed：LLConflict → order_fail → memory-ordering exception
-```
+- buggy conflict → assertion-only 路径可行；
+- assertion 不更新 `order_fail`；
+- buggy 路径允许 `CommitLoad(L1,0)`；
+- fixed 路径产生 order-fail、exception 和 squash；
+- fixed 模型阻止相同错误退休结果；
+- 没有 `observed` 状态时不能形成本轮 LD–LD conflict；
+- v0.1–v0.4 所有回归继续通过。
