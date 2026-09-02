@@ -43,6 +43,8 @@ class TraceRoleSpec:
     exports: Mapping[str, str] = field(default_factory=dict)
     event_id: str | None = None
     occurring_only: bool = True
+    cardinality: str = "one"
+    min_matches: int = 1
     description: str = ""
 
     def __post_init__(self) -> None:
@@ -51,6 +53,10 @@ class TraceRoleSpec:
         if not self.event_type:
             raise SchemaError("trace role event_type must be non-empty")
         object.__setattr__(self, "where", dict(self.where))
+        if self.cardinality not in {"one", "many"}:
+            raise SchemaError("trace role cardinality must be one or many")
+        if self.min_matches < 0:
+            raise SchemaError("trace role min_matches must be non-negative")
         object.__setattr__(self, "exports", dict(self.exports))
         for alias, path in self.exports.items():
             if not alias or not path:
@@ -65,6 +71,8 @@ class TraceRoleSpec:
             "where": encode_value(dict(self.where)),
             "exports": dict(self.exports),
             "occurring_only": self.occurring_only,
+            "cardinality": self.cardinality,
+            "min_matches": self.min_matches,
         }
         if self.event_id is not None:
             data["event_id"] = self.event_id
@@ -78,7 +86,7 @@ class TraceRoleSpec:
             raise SerializationError("trace role must be a mapping")
         allowed = {
             "name", "event_type", "where", "exports", "event_id",
-            "occurring_only", "description",
+            "occurring_only", "cardinality", "min_matches", "description",
         }
         unknown = set(data) - allowed
         if unknown:
@@ -102,6 +110,8 @@ class TraceRoleSpec:
                     None if data.get("event_id") is None else str(data["event_id"])
                 ),
                 occurring_only=bool(data.get("occurring_only", True)),
+                cardinality=str(data.get("cardinality", "one")),
+                min_matches=int(data.get("min_matches", 1)),
                 description=str(data.get("description", "")),
             )
         except KeyError as exc:
@@ -113,19 +123,15 @@ class TraceRoleSpec:
 def resolve_trace_roles(
     trace: Trace,
     roles: list[TraceRoleSpec] | tuple[TraceRoleSpec, ...],
-) -> dict[str, dict[str, Any]]:
-    """Resolve roles in declaration order.
+) -> dict[str, Any]:
+    """Resolve singular or collection roles in declaration order.
 
-    ``where`` values may themselves reference previously resolved roles, e.g.::
-
-        where:
-          fields.op_id: "${older_load.op_id}"
-
-    This makes it possible to select the commit event corresponding to a load
-    without hard-coding that load's identity.
+    ``cardinality: one`` preserves the v0.10 behavior. ``cardinality: many``
+    exports every matching event, ordered deterministically by cycle then id.
+    Collection roles are primarily used by v0.11 finite LDQ-family expansion.
     """
 
-    context: dict[str, dict[str, Any]] = {}
+    context: dict[str, Any] = {}
     for role in roles:
         if role.name in context:
             raise CompositionError(f"duplicate trace role {role.name!r}")
@@ -143,33 +149,54 @@ def resolve_trace_roles(
                 for path, expected in expected_where.items()
             ):
                 matches.append(event)
-        if len(matches) != 1:
-            detail = (
-                "no event matched"
-                if not matches
-                else f"{len(matches)} events matched: "
-                + ", ".join(event.id for event in matches)
+        matches.sort(
+            key=lambda event: (
+                event.cycle if isinstance(event.cycle, int) else 10**18,
+                event.id,
             )
-            raise CompositionError(
-                f"trace role {role.name!r} must resolve to exactly one "
-                f"{role.event_type} event; {detail}"
-            )
-        event = matches[0]
-        exported: dict[str, Any] = {
-            "event_id": event.id,
-            "event_type": event.event_type,
-        }
-        for alias, path in role.exports.items():
-            value = _resolve_event_path(event, path)
-            if isinstance(value, Expr):
-                raise CompositionError(
-                    f"trace role {role.name!r} export {alias!r} from {path!r} "
-                    "is symbolic; finite template instantiation requires a "
-                    "concrete observed value"
+        )
+        if role.cardinality == "one":
+            if len(matches) != 1:
+                detail = (
+                    "no event matched"
+                    if not matches
+                    else f"{len(matches)} events matched: "
+                    + ", ".join(event.id for event in matches)
                 )
-            exported[alias] = value
-        context[role.name] = exported
+                raise CompositionError(
+                    f"trace role {role.name!r} must resolve to exactly one "
+                    f"{role.event_type} event; {detail}"
+                )
+            context[role.name] = _export_role_event(role, matches[0])
+            continue
+
+        if len(matches) < role.min_matches:
+            raise CompositionError(
+                f"trace role {role.name!r} requires at least "
+                f"{role.min_matches} {role.event_type} event(s); "
+                f"only {len(matches)} matched"
+            )
+        context[role.name] = [
+            _export_role_event(role, event) for event in matches
+        ]
     return context
+
+
+def _export_role_event(role: TraceRoleSpec, event) -> dict[str, Any]:
+    exported: dict[str, Any] = {
+        "event_id": event.id,
+        "event_type": event.event_type,
+    }
+    for alias, path in role.exports.items():
+        value = _resolve_event_path(event, path)
+        if isinstance(value, Expr):
+            raise CompositionError(
+                f"trace role {role.name!r} export {alias!r} from {path!r} "
+                "is symbolic; finite template instantiation requires a "
+                "concrete observed value"
+            )
+        exported[alias] = value
+    return exported
 
 
 def render_template(value: Any, context: Mapping[str, Any]) -> Any:
@@ -205,6 +232,98 @@ def render_template(value: Any, context: Mapping[str, Any]) -> Any:
             rendered[new_key] = render_template(item, context)
         return rendered
     return value
+
+
+def expand_module_repeats(
+    raw_module: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Expand declarative per-role fragments in a raw module template.
+
+    Syntax::
+
+        repeat:
+          - over: loads
+            as: load
+            include:
+              state_variables: [...]
+              transformations: [...]
+
+    The named ``over`` role must have ``cardinality: many``.  Each item is
+    exposed through ``as`` plus a zero-based ``repeat_index`` field.  Only the
+    standard module list sections may be repeated.
+    """
+
+    if not isinstance(raw_module, Mapping):
+        raise CompositionError("module template must be a mapping")
+    data = dict(raw_module)
+    raw_repeats = data.pop("repeat", [])
+    if not raw_repeats:
+        return data
+    if not isinstance(raw_repeats, list):
+        raise CompositionError("module repeat must be a list")
+    allowed_sections = {
+        "ports", "slots", "state_variables", "transformations", "constraints"
+    }
+    for spec in raw_repeats:
+        if not isinstance(spec, Mapping):
+            raise CompositionError("module repeat item must be a mapping")
+        unknown = set(spec) - {"over", "as", "include"}
+        if unknown:
+            raise CompositionError(
+                "module repeat contains unknown key(s): "
+                + ", ".join(sorted(str(item) for item in unknown))
+            )
+        try:
+            over = str(spec["over"])
+            alias = str(spec["as"])
+            include = spec["include"]
+        except KeyError as exc:
+            raise CompositionError(
+                f"module repeat is missing {exc.args[0]!r}"
+            ) from exc
+        if not alias:
+            raise CompositionError("module repeat alias must be non-empty")
+        try:
+            collection = _resolve_context_path(context, over)
+        except CompositionError as exc:
+            raise CompositionError(
+                f"module repeat over {over!r} could not be resolved"
+            ) from exc
+        if not isinstance(collection, list):
+            raise CompositionError(
+                f"module repeat over {over!r} requires a cardinality=many role"
+            )
+        if not isinstance(include, Mapping):
+            raise CompositionError("module repeat include must be a mapping")
+        bad_sections = set(include) - allowed_sections
+        if bad_sections:
+            raise CompositionError(
+                "module repeat include contains unsupported section(s): "
+                + ", ".join(sorted(str(item) for item in bad_sections))
+            )
+        for index, item in enumerate(collection):
+            if not isinstance(item, Mapping):
+                raise CompositionError(
+                    f"module repeat role {over!r} item {index} is not a mapping"
+                )
+            local_context = dict(context)
+            local_item = dict(item)
+            local_item["repeat_index"] = index
+            local_context[alias] = local_item
+            rendered = render_template(dict(include), local_context)
+            for section, values in rendered.items():
+                if not isinstance(values, list):
+                    raise CompositionError(
+                        f"module repeat section {section!r} must render to a list"
+                    )
+                current = data.setdefault(section, [])
+                if not isinstance(current, list):
+                    raise CompositionError(
+                        f"module section {section!r} must be a list before repeat expansion"
+                    )
+                current.extend(values)
+    return data
 
 
 def template_placeholders(value: Any) -> set[str]:

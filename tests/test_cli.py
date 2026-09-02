@@ -274,3 +274,25 @@ def test_complete_cli_accepts_modular_composition(capsys, tmp_path) -> None:
     assert "COMPOSED boom-load-load-buggy-modular-v0.9" in captured.out
     assert "FEASIBLE finite completion" in captured.out
     assert output.exists()
+
+
+def test_compose_cli_prints_collection_roles(capsys, tmp_path) -> None:
+    output = tmp_path / "v011-composed.yaml"
+    code = main(
+        [
+            "compose",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--composition",
+            str(ROOT / "examples/boom_load_load/modular/buggy_parameterized_composition.yaml"),
+            "--trace",
+            str(ROOT / "examples/boom_load_load/stage11_three_load_trace.yaml"),
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "role loads: 3 item(s)" in captured.out
+    assert "LoadExtra" in captured.out
+    assert output.exists()

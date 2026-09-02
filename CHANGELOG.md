@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- `TraceRoleSpec` adds `cardinality: many` for finite collection roles.
+- Module templates add declarative `repeat` expansion over collection roles.
+- BOOM LSU templates now instantiate generic per-load LDQ state for every observed load.
+- Added source-grounded load-side lifecycle rules: allocation, TLB/retry, execute, nack/wakeup, response, observed, order-fail, recovery, and non-forwarded commit.
+- Added standalone nack→wakeup→reexecute regression and three-load finite-instantiation regression.
+- Event catalog adds `LSU.LDQAllocate` and `LSU.LoadWakeup`.
+
 ## 0.10.0
 
 - 新增 Trace role 解析与有限参数绑定。

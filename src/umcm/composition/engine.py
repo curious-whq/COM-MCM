@@ -15,6 +15,7 @@ from umcm.composition.model import (
 )
 from umcm.errors import CompositionError
 from umcm.composition.parameterization import (
+    expand_module_repeats,
     render_template,
     resolve_trace_roles,
     template_placeholders,
@@ -43,7 +44,7 @@ class CompositionResult:
     modules: tuple[LoadedModule, ...]
     completion: CompletionSpec
     generated_transformations: tuple[str, ...]
-    resolved_roles: Mapping[str, Mapping[str, Any]]
+    resolved_roles: Mapping[str, Any]
 
     @property
     def manifest(self) -> dict[str, Any]:
@@ -64,9 +65,7 @@ class CompositionResult:
             ],
             "connections": [connection.to_dict() for connection in self.spec.connections],
             "generated_transformations": list(self.generated_transformations),
-            "resolved_roles": {
-                name: dict(values) for name, values in self.resolved_roles.items()
-            },
+            "resolved_roles": _copy_role_context(self.resolved_roles),
             "totals": {
                 "slots": len(self.completion.slots),
                 "state_variables": len(self.completion.state_variables),
@@ -108,6 +107,13 @@ def compose_modules(
                 f"module {reference.name!r} file does not exist: {path}"
             )
         raw_module = load_data(path)
+        if isinstance(raw_module, Mapping) and raw_module.get("repeat"):
+            if not resolved_roles:
+                raise CompositionError(
+                    f"module {reference.name!r} declares repeat expansion but "
+                    "no trace roles were resolved"
+                )
+            raw_module = expand_module_repeats(raw_module, resolved_roles)
         placeholders = template_placeholders(raw_module)
         if placeholders:
             if not resolved_roles:
@@ -209,9 +215,7 @@ def compose_modules(
     metadata = dict(composition.metadata)
     metadata["composition"] = {
         "name": composition.name,
-        "resolved_roles": {
-            name: dict(values) for name, values in resolved_roles.items()
-        },
+        "resolved_roles": _copy_role_context(resolved_roles),
         "modules": [item.reference_name for item in loaded],
         "connections": [
             {
@@ -232,7 +236,7 @@ def compose_modules(
         constraints=constraints,
         horizon=composition.horizon,
         metadata=metadata,
-        schema_version="umcm.completion.v0.10.0",
+        schema_version="umcm.completion.v0.11.0",
     )
     return CompositionResult(
         spec=composition,
@@ -241,6 +245,18 @@ def compose_modules(
         generated_transformations=tuple(generated),
         resolved_roles=resolved_roles,
     )
+
+
+def _copy_role_context(context: Mapping[str, Any]) -> dict[str, Any]:
+    copied: dict[str, Any] = {}
+    for name, value in context.items():
+        if isinstance(value, Mapping):
+            copied[name] = dict(value)
+        elif isinstance(value, list):
+            copied[name] = [dict(item) if isinstance(item, Mapping) else item for item in value]
+        else:
+            copied[name] = value
+    return copied
 
 
 def _validate_connections(

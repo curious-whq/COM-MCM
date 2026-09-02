@@ -1,4 +1,65 @@
-# µMCM Foundation v0.10.0
+# µMCM Foundation v0.11.0
+
+v0.11 extends the parameterized/composable foundation with a **generic BOOM load-side LDQ model** grounded in the supplied LSU Chisel source.
+
+The key change is that the LSU no longer declares LDQ state only for the two witness loads. A collection role selects every `Arch.Load` in the bounded trace, and a declarative `repeat` block instantiates one LDQ state family and common lifecycle transformations for each observed load.
+
+## What is new
+
+```text
+v0.10:
+  one / older_load / younger_load roles
+  → concrete parameterized witness
+
+v0.11:
+  loads: cardinality=many
+  → repeat over every observed load
+  → LDQ[idx] state family
+  → generic allocation / TLB / retry / execute / nack / wakeup /
+     response / observed / order-fail / recovery / commit behavior
+```
+
+The operational solver is still finite: repeat expansion happens before solving and produces an ordinary bounded `CompletionSpec`.
+
+## Quick validation
+
+```bash
+PYTHONPATH=src pytest -q
+```
+
+Expected:
+
+```text
+98 passed
+```
+
+### Generic nack/wakeup path
+
+```bash
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/stage11_load_side_nack_wakeup.yaml \
+  --composition examples/boom_load_load/modular/load_side_generic_composition.yaml \
+  --output stage11_load_side_completed.yaml
+```
+
+### Real bug with an unrelated third load
+
+```bash
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/stage11_three_load_trace.yaml \
+  --composition examples/boom_load_load/modular/buggy_parameterized_composition.yaml \
+  --output stage11_buggy_completed.yaml
+```
+
+Then check the graph as before with `rvwmo_load_load_fragment.yaml`.
+
+See `ITERATION_11_REPORT.md` for scope and source mapping.
+
+---
+
+## Historical notes: v0.10.0
 
 这是第十轮底层基础设施，仍然与 FM-Agent 无关。
 

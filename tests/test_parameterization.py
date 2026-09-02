@@ -133,3 +133,59 @@ def test_parameterized_templates_contain_no_witness_specific_operation_names() -
         assert "value: L0\n" not in text
         assert "value: L1\n" not in text
         assert "value: W1\n" not in text
+
+
+def test_collection_role_and_module_repeat_expand_per_load(tmp_path: Path) -> None:
+    catalog = EventCatalog.load(EXAMPLE / "event_types.yaml")
+    trace = Trace.load(EXAMPLE / "stage10_parameterized_trace.yaml")
+
+    module_path = tmp_path / "lsu_repeat.yaml"
+    module_path.write_text(
+        """
+schema_version: umcm.module.v0.11.0
+name: lsu
+ports: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+  - over: loads
+    as: load
+    include:
+      state_variables:
+        - name: LSU.ldq[${load.ldq_idx}].valid
+          sort: {name: bool}
+          initial: false
+      transformations: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    composition = CompositionSpec.from_dict(
+        {
+            "schema_version": "umcm.composition.v0.11.0",
+            "name": "repeat-loads",
+            "modules": [{"name": "lsu", "path": str(module_path)}],
+            "connections": [],
+            "roles": [
+                {
+                    "name": "loads",
+                    "event_type": "Arch.Load",
+                    "cardinality": "many",
+                    "exports": {
+                        "op_id": "fields.op_id",
+                        "address": "fields.address",
+                        "ldq_idx": "annotations.microarch.ldq_idx",
+                    },
+                }
+            ],
+        }
+    )
+    composed = compose_modules(catalog, composition, trace)
+    assert [item["op_id"] for item in composed.resolved_roles["loads"]] == [
+        "LoadAlpha",
+        "LoadBeta",
+    ]
+    names = {state.name for state in composed.completion.state_variables}
+    assert names == {"LSU.ldq[13].valid", "LSU.ldq[7].valid"}

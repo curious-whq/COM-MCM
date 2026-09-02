@@ -1,10 +1,10 @@
-schema_version: umcm.composition.v0.10.0
+schema_version: umcm.composition.v0.11.0
 name: boom-load-load-fixed-parameterized-v0.10
 horizon: 20
 metadata:
   variant: fixed
-  stage: 10
-  purpose: Instantiate reusable LSU/L1/MSHR/Coherence/ROB templates from semantic roles resolved in the input trace.
+  stage: 11
+  purpose: Instantiate reusable LSU/L1/MSHR/Coherence/ROB templates plus generic per-load LDQ families from the input trace.
   legacy_monolith: ../load_load_fixed_mshr_completion.yaml
   parameterized: true
 modules:
@@ -525,3 +525,15 @@ roles:
     op_id: fields.op_id
     address: fields.address
     value: fields.value
+- name: loads
+  event_type: Arch.Load
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    hart: fields.hart
+    program_index: fields.program_index
+    cycle: cycle
+    ldq_idx: annotations.microarch.ldq_idx
+  description: All observed loads in this bounded trace; used to instantiate generic LDQ entry state and lifecycle rules.

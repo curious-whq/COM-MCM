@@ -1,0 +1,987 @@
+schema_version: umcm.module.v0.11.0
+name: lsu_load_side
+metadata:
+  stage: 11
+  parameterized: true
+  load_side_generic: true
+  source: BOOM v4 LSU Chisel supplied by user (LDQ/load-side only)
+  scope: LDQ allocation, TLB/retry state, accepted execution, nack/wakeup, response, observation, order-fail bit, recovery, commit
+  out_of_scope:
+  - STQ forwarding semantics
+  - store commit/drain
+  - fence/AMO/LR-SC
+  - pairwise LD-LD search generation
+  source_sha256: 81d738e8c8967f0fad72a2406a623a384fac229e10c20ffa37a6907aece9b7b5
+  source_lines: 2183
+ports:
+- name: arch_load
+  direction: input
+  event_type: Arch.Load
+  required_connection: false
+- name: commit_load
+  direction: input
+  event_type: Arch.CommitLoad
+  required_connection: false
+- name: branch_kill
+  direction: input
+  event_type: Core.BranchKill
+  required_connection: false
+- name: exception
+  direction: input
+  event_type: Core.Exception
+  required_connection: false
+- name: squash_load
+  direction: input
+  event_type: Core.SquashLoad
+  required_connection: false
+- name: dcache_req_fire
+  direction: input
+  event_type: LSU.DCacheReqFire
+  required_connection: false
+- name: dcache_load_nack
+  direction: input
+  event_type: DCache.LoadNack
+  required_connection: false
+- name: tlb_miss
+  direction: output
+  event_type: LSU.TLBMiss
+  required_connection: false
+- name: retry_enqueue
+  direction: output
+  event_type: LSU.RetryEnqueue
+  required_connection: false
+- name: retry_issue
+  direction: output
+  event_type: LSU.RetryIssue
+  required_connection: false
+- name: tlb_hit
+  direction: output
+  event_type: LSU.TLBHit
+  required_connection: false
+- name: load_executed
+  direction: output
+  event_type: LSU.LoadExecuted
+  required_connection: false
+- name: load_succeeded
+  direction: output
+  event_type: LSU.LoadSucceeded
+  required_connection: false
+- name: load_observed
+  direction: output
+  event_type: LSU.LoadObserved
+  required_connection: false
+- name: load_order_fail
+  direction: output
+  event_type: LSU.LoadOrderFail
+  required_connection: false
+- name: load_wakeup
+  direction: output
+  event_type: LSU.LoadWakeup
+  required_connection: false
+- name: ldq_allocate
+  direction: output
+  event_type: LSU.LDQAllocate
+  required_connection: false
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: loads
+  as: load
+  include:
+    slots:
+    - id: ldq_allocate_${load.repeat_index}
+      type: LSU.LDQAllocate
+      required: false
+      fields:
+        op_id: ${load.op_id}
+        ldq_idx: ${load.ldq_idx}
+      cycle: ${load.cycle}
+      annotations:
+        role: ldq_allocation
+        source: dispatch
+    - id: load_wakeup_${load.repeat_index}
+      type: LSU.LoadWakeup
+      required: false
+      fields:
+        op_id: ${load.op_id}
+        ldq_idx: ${load.ldq_idx}
+        address: ${load.address}
+        port: 0
+      annotations:
+        role: optional_load_wakeup
+    state_variables:
+    - name: LSU.ldq[${load.ldq_idx}].valid
+      sort: &id001
+        name: bool
+      initial: false
+      description: LDQ allocation-valid bit.
+    - name: LSU.ldq[${load.ldq_idx}].addr_valid
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].addr_is_virtual
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].addr_is_uncacheable
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].address
+      sort: &id005
+        name: address
+        width: 64
+      initial: EMPTY_ADDR
+    - name: LSU.ldq[${load.ldq_idx}].executed
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].succeeded
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].order_fail
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].observed
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].forward_std_val
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].forward_stq_idx
+      sort: &id003
+        name: bv
+        width: 6
+      initial: 63
+    - name: LSU.ldq[${load.ldq_idx}].ld_byte_mask
+      sort:
+        name: bv
+        width: 8
+      initial: 0
+    - name: LSU.ldq[${load.ldq_idx}].value
+      sort: &id006
+        name: value
+        width: 64
+      initial: UNSET_VALUE
+    - name: LSU.ldq[${load.ldq_idx}].squashed
+      sort: *id001
+      initial: false
+    - name: LSU.ldq[${load.ldq_idx}].executing_now
+      sort: *id001
+      initial: false
+    transformations:
+    - name: ldq_allocate_${load.op_id}
+      inputs:
+      - role: arch
+        type: Arch.Load
+      outputs:
+      - role: alloc
+        type: LSU.LDQAllocate
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: arch
+          field: op_id
+          sort: &id002
+            name: op_id
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: alloc
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: alloc
+          field: op_id
+          sort: *id002
+        right:
+          node: event_field
+          event_id: arch
+          field: op_id
+          sort: *id002
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: alloc
+          field: ldq_idx
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${load.ldq_idx}
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: alloc
+          field: cycle
+          sort: &id004
+            name: int
+        right:
+          node: event_field
+          event_id: arch
+          field: cycle
+          sort: *id004
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].executed
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].succeeded
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].order_fail
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].observed
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].forward_std_val
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].squashed
+        at: alloc
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      exact: true
+      tags:
+      - state
+      - ldq
+      - dispatch
+      - source:394-403
+    - name: tlb_miss_records_virtual_address_${load.op_id}
+      inputs:
+      - role: miss
+        type: LSU.TLBMiss
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: miss
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: miss
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: miss
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_is_virtual
+        at: miss
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].address
+        at: miss
+        value:
+          node: event_field
+          event_id: miss
+          field: vaddr
+          sort: *id005
+      tags:
+      - state
+      - ldq
+      - tlb
+      - source:960-970
+    - name: retry_enqueue_clears_ldq_address_${load.op_id}
+      inputs:
+      - role: enqueue
+        type: LSU.RetryEnqueue
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enqueue
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: enqueue
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: enqueue
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_is_virtual
+        at: enqueue
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: enqueue
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      tags:
+      - state
+      - ldq
+      - retry
+      - source:506-542
+    - name: tlb_hit_records_physical_address_${load.op_id}
+      inputs:
+      - role: hit
+        type: LSU.TLBHit
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: hit
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: hit
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: hit
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_is_virtual
+        at: hit
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].address
+        at: hit
+        value:
+          node: event_field
+          event_id: hit
+          field: paddr
+          sort: *id005
+      tags:
+      - state
+      - ldq
+      - tlb
+      - source:960-970
+    - name: dcache_fire_records_load_address_${load.op_id}
+      inputs:
+      - role: fire
+        type: LSU.DCacheReqFire
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: fire
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: fire
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: fire
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_is_virtual
+        at: fire
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].address
+        at: fire
+        value:
+          node: event_field
+          event_id: fire
+          field: address
+          sort: *id005
+      tags:
+      - state
+      - ldq
+      - issue
+      - source:872-905,960-970
+    - name: load_executed_sets_ldq_bit_${load.op_id}
+      inputs:
+      - role: executed
+        type: LSU.LoadExecuted
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: executed
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: executed
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].executed
+        at: executed
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      tags:
+      - state
+      - ldq
+      - execute
+      - source:1171-1172,1386-1388
+    - name: dcache_nack_clears_executed_${load.op_id}
+      inputs:
+      - role: nack
+        type: DCache.LoadNack
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: nack
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].executed
+        at: nack
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].executed
+        at: nack
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      tags:
+      - state
+      - ldq
+      - nack
+      - source:1542-1548
+    - name: load_succeeded_sets_value_${load.op_id}
+      inputs:
+      - role: success
+        type: LSU.LoadSucceeded
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: success
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: success
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].executed
+        at: success
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].succeeded
+        at: success
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].value
+        at: success
+        value:
+          node: event_field
+          event_id: success
+          field: value
+          sort: *id006
+      tags:
+      - state
+      - ldq
+      - response
+      - source:1557-1585
+    - name: load_observed_sets_ldq_bit_${load.op_id}
+      inputs:
+      - role: observed
+        type: LSU.LoadObserved
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: observed
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: observed
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: observed
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_is_virtual
+        at: observed
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].address
+        at: observed
+        op: eq
+        value:
+          node: event_field
+          event_id: observed
+          field: address
+          sort: *id005
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].observed
+        at: observed
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      tags:
+      - state
+      - ldq
+      - coherence
+      - source:1207-1214
+    - name: load_order_fail_sets_ldq_bit_${load.op_id}
+      inputs:
+      - role: fail
+        type: LSU.LoadOrderFail
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: fail
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: fail
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].order_fail
+        at: fail
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      tags:
+      - state
+      - ldq
+      - order-fail
+      - source:1232-1235,1300-1320,1458-1475
+    - name: load_wakeup_requires_sleeping_entry_${load.op_id}
+      inputs:
+      - role: wakeup
+        type: LSU.LoadWakeup
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: wakeup
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: wakeup
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: wakeup
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].succeeded
+        at: wakeup
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].addr_is_virtual
+        at: wakeup
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].executed
+        at: wakeup
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].order_fail
+        at: wakeup
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].address
+        at: wakeup
+        op: eq
+        value:
+          node: event_field
+          event_id: wakeup
+          field: address
+          sort: *id005
+      tags:
+      - state
+      - ldq
+      - wakeup
+      - source:499-503,616-632
+    - name: branch_kill_invalidates_load_${load.op_id}
+      inputs:
+      - role: kill
+        type: Core.BranchKill
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: kill
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: kill
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: kill
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].squashed
+        at: kill
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      tags:
+      - state
+      - ldq
+      - recovery
+      - source:1718-1727
+    - name: squash_invalidates_load_${load.op_id}
+      inputs:
+      - role: squash
+        type: Core.SquashLoad
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: squash
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: squash
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: squash
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].squashed
+        at: squash
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      tags:
+      - state
+      - ldq
+      - recovery
+      - source:1718-1727
+    - name: exception_flush_invalidates_load_${load.op_id}
+      inputs:
+      - role: exception
+        type: Core.Exception
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: exception
+          field: hart
+          sort: *id004
+        right:
+          node: literal
+          sort: *id004
+          value: ${load.hart}
+      ensure: []
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: exception
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].addr_valid
+        at: exception
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      - state: LSU.ldq[${load.ldq_idx}].squashed
+        at: exception
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      tags:
+      - state
+      - ldq
+      - exception
+      - source:1928-1960
+    - name: commit_requires_valid_executed_succeeded_${load.op_id}
+      inputs:
+      - role: commit
+        type: Arch.CommitLoad
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: commit
+          field: op_id
+          sort: *id002
+        right:
+          node: literal
+          sort: *id002
+          value: ${load.op_id}
+      ensure: []
+      state_requirements:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: commit
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].executed
+        at: commit
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].succeeded
+        at: commit
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: true
+      - state: LSU.ldq[${load.ldq_idx}].value
+        at: commit
+        op: eq
+        value:
+          node: event_field
+          event_id: commit
+          field: value
+          sort: *id006
+      state_updates:
+      - state: LSU.ldq[${load.ldq_idx}].valid
+        at: commit
+        value:
+          node: literal
+          sort: *id001
+          value: false
+      description: Non-forwarded load retirement path; store-to-load forwarding is modeled in a later LSQ iteration.
+      tags:
+      - state
+      - ldq
+      - commit
+      - source:1749-1765
+      - no-forwarding-yet

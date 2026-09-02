@@ -234,10 +234,20 @@ def main(argv: list[str] | None = None) -> int:
                     f"{len(module.transformations)} transformation(s)"
                 )
             for role_name, values in composed.resolved_roles.items():
-                rendered = ", ".join(
-                    f"{key}={value!r}" for key, value in sorted(values.items())
-                )
-                print(f"  role {role_name}: {rendered}")
+                if isinstance(values, list):
+                    print(f"  role {role_name}: {len(values)} item(s)")
+                    for index, item in enumerate(values):
+                        rendered = ", ".join(
+                            f"{key}={value!r}"
+                            for key, value in sorted(item.items())
+                        )
+                        print(f"    [{index}] {rendered}")
+                else:
+                    rendered = ", ".join(
+                        f"{key}={value!r}"
+                        for key, value in sorted(values.items())
+                    )
+                    print(f"  role {role_name}: {rendered}")
             for connection in manifest.connections:
                 print(
                     f"  connection {connection.name}: "
