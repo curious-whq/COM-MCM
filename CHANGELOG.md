@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+- 新增年轻 Load L1 的 DCache hit/response 路径。
+- 新增 `DCache.LoadHit / DCache.LoadNack / DCache.ProbeReceive`。
+- 新增 `LSU.LoadExecuted / LSU.LoadSucceeded`，并细化 response/release/observed 事件身份字段。
+- 新增 L1 LDQ `executed/succeeded/observed/value` 持久状态。
+- 新增 ProbeUnit pending probe 的 address/source identity 状态。
+- 新增 store→probe 与 ProbeReceive→ProbeRelease 的可行路径摘要。
+- 正向模型完成 `L1=0 → Probe → observed → L0 retry`。
+- 新增 release 地址不匹配、DCache nack、nack+success 三类负向回归。
+- Completion schema 与 package version 更新为 0.4.0。
+- 测试增至 42 项。
+
 ## 0.3.1
 
 - 修正概念划分：`valid/ready/fire` 统一归入普通 `Transformation` 状态转换语义，不再称为独立“握手语义”。

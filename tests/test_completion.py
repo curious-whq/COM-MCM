@@ -240,3 +240,100 @@ def test_exact_interface_transition_is_not_unconditional_liveness() -> None:
 
     assert result.status is CompletionStatus.FEASIBLE
     assert result.added_event_ids == ()
+
+
+def _v04_inputs(
+    model: str = "young_load_probe_completion.yaml",
+    trace_name: str = "stage4_trace.yaml",
+) -> tuple[EventCatalog, Trace, CompletionSpec]:
+    return (
+        EventCatalog.load(EXAMPLE / "event_types.yaml"),
+        Trace.load(EXAMPLE / trace_name),
+        CompletionSpec.load(EXAMPLE / model),
+    )
+
+
+def test_young_load_old_hit_response_probe_and_observed_path() -> None:
+    catalog, trace, spec = _v04_inputs()
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.completed_trace is not None
+    assert result.added_event_ids == (
+        "l0_tlb_miss",
+        "retry_enqueue_0",
+        "retry_issue_0",
+        "l0_tlb_hit",
+        "dcache_req_valid_0",
+        "dcache_req_ready_0",
+        "dcache_req_fire_0",
+        "l1_dcache_req_valid",
+        "l1_dcache_req_ready",
+        "l1_dcache_req_fire",
+        "l1_load_executed",
+        "l1_dcache_hit",
+        "l1_dcache_response",
+        "l1_load_succeeded",
+        "probe_receive_x",
+        "probe_release_x",
+        "l1_load_observed",
+    )
+
+    completed = result.completed_trace
+    assert completed.get("l1_dcache_req_fire").cycle < completed.get("l1_load_executed").cycle
+    assert completed.get("l1_load_executed").cycle < completed.get("l1_dcache_hit").cycle
+    assert completed.get("l1_dcache_hit").cycle < completed.get("l1_dcache_response").cycle
+    assert completed.get("l1_dcache_response").fields["value"] == 0
+    assert completed.get("l1_load_succeeded").fields["value"] == 0
+    assert completed.get("l1_load_succeeded").cycle < completed.get("store_w1").cycle
+    assert completed.get("store_w1").cycle < completed.get("probe_receive_x").cycle
+    assert completed.get("probe_receive_x").cycle < completed.get("probe_release_x").cycle
+    assert completed.get("probe_release_x").cycle < completed.get("l1_load_observed").cycle
+    assert completed.get("l1_load_observed").cycle < completed.get("retry_issue_0").cycle
+
+    assert result.final_state["LSU.ldq.L1.executed"] is True
+    assert result.final_state["LSU.ldq.L1.succeeded"] is True
+    assert result.final_state["LSU.ldq.L1.observed"] is True
+    assert result.final_state["LSU.ldq.L1.value"] == 0
+    assert result.final_state["DCache.probe.pending"] is False
+    assert result.final_state["DCache.probe.address"] == "x"
+    assert result.final_state["DCache.probe.source_op_id"] == "W1"
+
+
+def test_probe_release_for_different_block_cannot_mark_l1_observed() -> None:
+    catalog, trace, spec = _v04_inputs("young_load_probe_address_mismatch.yaml")
+    result = complete_trace(catalog, trace, spec)
+    assert result.status is CompletionStatus.INFEASIBLE
+
+
+def test_dcache_nack_clears_executed_and_does_not_succeed() -> None:
+    catalog, trace, spec = _v04_inputs("young_load_nack_completion.yaml")
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.completed_trace is not None
+    assert "l1_dcache_nack" in result.added_event_ids
+    assert "l1_dcache_hit" not in result.added_event_ids
+    assert "l1_dcache_response" not in result.added_event_ids
+    assert "l1_load_succeeded" not in result.added_event_ids
+    assert "l1_load_observed" not in result.added_event_ids
+    assert result.final_state["LSU.ldq.L1.executed"] is False
+    assert result.final_state["LSU.ldq.L1.succeeded"] is False
+    assert result.final_state["LSU.ldq.L1.observed"] is False
+    assert result.final_state["LSU.ldq.L1.value"] == "UNSET_VALUE"
+
+
+def test_same_load_attempt_cannot_be_nacked_and_succeed() -> None:
+    catalog, trace, spec = _v04_inputs("young_load_nack_plus_success.yaml")
+    result = complete_trace(catalog, trace, spec)
+    assert result.status is CompletionStatus.INFEASIBLE
+
+
+def test_v04_completion_spec_roundtrip(tmp_path: Path) -> None:
+    _, _, spec = _v04_inputs()
+    path = tmp_path / "v04.json"
+    spec.dump(path)
+    loaded = CompletionSpec.load(path)
+    assert loaded.to_dict() == spec.to_dict()
+    assert loaded.schema_version == "umcm.completion.v0.4.0"
+    assert len(loaded.state_variables) == 15

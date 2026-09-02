@@ -1,214 +1,450 @@
 schema_version: umcm.events.v0.1
 metadata:
-  model: boom-v4-load-load-seed
-  description: >-
-    BOOM Load-Load witness event catalog through LSU retry translation and the
-    LSU-to-DCache request-acceptance transition. valid, ready, and fire are
-    interface observations consumed by ordinary Transformation rules. Later
-    iterations add probe, response, order-failure and architectural execution-graph events.
+  model: boom-v4-load-load-stage4
+  description: BOOM Load-Load witness catalog through the younger-load L1 hit, LSU
+    executed/succeeded updates, ProbeUnit release, and LDQ observed state.
+  iteration: 0.4.0
 events:
-  - name: Arch.InitWrite
-    module: Architecture
-    layer: architectural
-    visibility: architectural
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: address
-        sort: {name: address, width: 64}
-      - name: value
-        sort: {name: value, width: 64}
-
-  - name: Arch.Load
-    module: Architecture
-    layer: architectural
-    visibility: architectural
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: hart
-        sort: int
-      - name: program_index
-        sort: int
-      - name: address
-        sort: {name: address, width: 64}
-      - name: value
-        sort: {name: value, width: 64}
-        required: false
-
-  - name: Arch.Store
-    module: Architecture
-    layer: architectural
-    visibility: architectural
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: hart
-        sort: int
-      - name: program_index
-        sort: int
-      - name: address
-        sort: {name: address, width: 64}
-      - name: value
-        sort: {name: value, width: 64}
-
-  - name: Arch.CommitLoad
-    module: ROB
-    layer: architectural-boundary
-    visibility: public
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: value
-        sort: {name: value, width: 64}
-
-  - name: LSU.TLBMiss
-    module: LSU
-    layer: lsu
-    visibility: internal
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: ldq_idx
-        sort: {name: bv, width: 6}
-        required: false
-      - name: vaddr
-        sort: {name: address, width: 64}
-        required: false
-
-  - name: LSU.RetryEnqueue
-    module: LSU
-    layer: lsu
-    visibility: internal
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: ldq_idx
-        sort: {name: bv, width: 6}
-        required: false
-      - name: vaddr
-        sort: {name: address, width: 64}
-        required: false
-
-  - name: LSU.RetryIssue
-    module: LSU
-    layer: lsu
-    visibility: internal
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: ldq_idx
-        sort: {name: bv, width: 6}
-        required: false
-      - name: vaddr
-        sort: {name: address, width: 64}
-        required: false
-
-  - name: LSU.TLBHit
-    module: LSU
-    layer: lsu
-    visibility: internal
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: ldq_idx
-        sort: {name: bv, width: 6}
-      - name: vaddr
-        sort: {name: address, width: 64}
-      - name: paddr
-        sort: {name: address, width: 64}
-
-  - name: LSU.DCacheReqValid
-    module: LSU
-    layer: lsu-dcache-interface
-    visibility: public
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: ldq_idx
-        sort: {name: bv, width: 6}
-      - name: address
-        sort: {name: address, width: 64}
-      - name: port
-        sort: int
-
-  - name: DCache.ReqReady
-    module: DCache
-    layer: lsu-dcache-interface
-    visibility: public
-    fields:
-      - name: port
-        sort: int
-
-  - name: LSU.DCacheReqFire
-    module: LSU+DCache
-    layer: lsu-dcache-interface
-    visibility: public
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: ldq_idx
-        sort: {name: bv, width: 6}
-      - name: address
-        sort: {name: address, width: 64}
-      - name: port
-        sort: int
-
-  - name: Core.BranchKill
-    module: Core
-    layer: control
-    visibility: public
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-
-  - name: Core.Exception
-    module: Core
-    layer: control
-    visibility: public
-    fields:
-      - name: hart
-        sort: int
-
-  - name: DCache.LoadResponse
-    module: DCache
-    layer: l1
-    visibility: public
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: address
-        sort: {name: address, width: 64}
-      - name: value
-        sort: {name: value, width: 64}
-
-  - name: DCache.ProbeRelease
-    module: DCache
-    layer: l1
-    visibility: public
-    fields:
-      - name: address
-        sort: {name: address, width: 64}
-
-  - name: LSU.LoadObserved
-    module: LSU
-    layer: lsu
-    visibility: internal
-    fields:
-      - name: op_id
-        sort: op_id
-        identity: true
-      - name: address
-        sort: {name: address, width: 64}
+- name: Arch.CommitLoad
+  module: ROB
+  layer: architectural-boundary
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: Arch.InitWrite
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: Arch.Load
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: hart
+    sort:
+      name: int
+    required: true
+  - name: program_index
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: false
+- name: Arch.Store
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: hart
+    sort:
+      name: int
+    required: true
+  - name: program_index
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: Core.BranchKill
+  module: Core
+  layer: control
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+- name: Core.Exception
+  module: Core
+  layer: control
+  visibility: public
+  fields:
+  - name: hart
+    sort:
+      name: int
+    required: true
+- name: DCache.LoadHit
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  description: A non-nacked read hit selected by the DCache pipeline.
+- name: DCache.LoadNack
+  module: DCache
+  layer: l1-lsu-interface
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  description: The DCache rejects an accepted load attempt and requests reexecution.
+- name: DCache.LoadResponse
+  module: DCache
+  layer: l1-lsu-interface
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+  description: A successful cache-side load response delivered to the LSU.
+- name: DCache.ProbeReceive
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: public
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: A coherence probe associated with an external store enters ProbeUnit.
+- name: DCache.ProbeRelease
+  module: DCache.ProbeUnit
+  layer: l1-lsu-interface
+  visibility: public
+  fields:
+  - name: source_op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: The ProbeUnit lsu_release event accepted by the LSU.
+- name: DCache.ReqReady
+  module: DCache
+  layer: lsu-dcache-interface
+  visibility: public
+  fields:
+  - name: port
+    sort:
+      name: int
+    required: true
+- name: LSU.DCacheReqFire
+  module: LSU+DCache
+  layer: lsu-dcache-interface
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+- name: LSU.DCacheReqValid
+  module: LSU
+  layer: lsu-dcache-interface
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: port
+    sort:
+      name: int
+    required: true
+- name: LSU.LoadExecuted
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: The corresponding LDQ executed state becomes true.
+- name: LSU.LoadObserved
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: The LDQ observed bit becomes true for a matching released line.
+- name: LSU.LoadSucceeded
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  description: The LSU accepts a response and records the load value.
+- name: LSU.RetryEnqueue
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: false
+  - name: vaddr
+    sort:
+      name: address
+      width: 64
+    required: false
+- name: LSU.RetryIssue
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: false
+  - name: vaddr
+    sort:
+      name: address
+      width: 64
+    required: false
+- name: LSU.TLBHit
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: true
+  - name: vaddr
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: paddr
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: LSU.TLBMiss
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: ldq_idx
+    sort:
+      name: bv
+      width: 6
+    required: false
+  - name: vaddr
+    sort:
+      name: address
+      width: 64
+    required: false
