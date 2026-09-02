@@ -1,8 +1,9 @@
 schema_version: umcm.events.v0.1
 metadata:
-  model: boom-v4-load-load-stage6
-  description: BOOM Load-Load witness through L0 MSHR refill and long-latency response.
-  iteration: 0.6.0
+  model: boom-v4-load-load-stage7
+  description: BOOM Load-Load witness through MSHR response and architectural execution-graph
+    checking.
+  iteration: 0.7.0
 events:
 - name: Arch.CommitLoad
   module: ROB
@@ -134,7 +135,8 @@ events:
     sort:
       name: string
     required: true
-  description: The LSU broadcasts MINI_EXCEPTION_MEM_ORDERING for the oldest failed load.
+  description: The LSU broadcasts MINI_EXCEPTION_MEM_ORDERING for the oldest failed
+    load.
 - name: Core.SquashLoad
   module: Core
   layer: recovery
@@ -155,7 +157,8 @@ events:
     sort:
       name: string
     required: true
-  description: The recovery machinery invalidates the affected dynamic load before retirement.
+  description: The recovery machinery invalidates the affected dynamic load before
+    retirement.
 - name: DCache.LoadHit
   module: DCache
   layer: l1
@@ -309,7 +312,8 @@ events:
       name: address
       width: 64
     required: true
-  description: A non-functional assertion monitor fires; it does not itself update recovery state.
+  description: A non-functional assertion monitor fires; it does not itself update
+    recovery state.
 - name: LSU.DCacheReqFire
   module: LSU+DCache
   layer: lsu-dcache-interface
@@ -390,7 +394,8 @@ events:
       name: address
       width: 64
     required: true
-  description: An older search finds a same-address younger load that already succeeded and was observed.
+  description: An older search finds a same-address younger load that already succeeded
+    and was observed.
 - name: LSU.LDLDSearch
   module: LSU
   layer: lsu
@@ -416,7 +421,8 @@ events:
     sort:
       name: int
     required: true
-  description: The older load performs the next-cycle LD-LD LCAM search after retry translation.
+  description: The older load performs the next-cycle LD-LD LCAM search after retry
+    translation.
 - name: LSU.LoadExecuted
   module: LSU
   layer: lsu
@@ -482,7 +488,8 @@ events:
       name: address
       width: 64
     required: true
-  description: The younger LDQ entry is marked order_fail by the corrected LD-LD recovery path.
+  description: The younger LDQ entry is marked order_fail by the corrected LD-LD recovery
+    path.
 - name: LSU.LoadSucceeded
   module: LSU
   layer: lsu
@@ -757,7 +764,8 @@ events:
       name: value
       width: 64
     required: true
-  description: The bounded witness abstracts the completed refill line as one value-bearing event.
+  description: The bounded witness abstracts the completed refill line as one value-bearing
+    event.
 - name: MSHR.DrainRPQLoad
   module: BoomMSHR
   layer: mshr-rpq
@@ -789,7 +797,8 @@ events:
       name: value
       width: 64
     required: true
-  description: A retained ordinary load dequeues in s_drain_rpq_loads using line-buffer data.
+  description: A retained ordinary load dequeues in s_drain_rpq_loads using line-buffer
+    data.
 - name: DCache.LongLatencyLoadResponse
   module: DCache+MSHR
   layer: l1-lsu-interface
@@ -821,4 +830,5 @@ events:
       name: value
       width: 64
     required: true
-  description: The MSHR response reaches the LSU through the long-latency response interface.
+  description: The MSHR response reaches the LSU through the long-latency response
+    interface.

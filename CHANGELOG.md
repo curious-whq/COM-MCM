@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0
+
+- 新增 `MemoryOperation / ExecutionGraph / Relation`。
+- 新增有限关系代数：union、intersection、difference、inverse、composition、transitive closure。
+- 新增 Trace 架构投影和 committed-load value 合并。
+- 新增 `rf/co` 候选枚举、`fr = rf^-1 ; co`、`rfe` 和 Load–Load `ppo`。
+- 新增可加载 `ProjectionSpec / DerivedRelationSpec / AxiomSpec`。
+- 新增 `acyclic / irreflexive / empty` 公理检查。
+- 新增 MSHR GrantData provenance 对架构 `rf` 的收紧与一致性检查。
+- 新增 `umcm check` CLI 和 Execution Graph YAML/JSON 输出。
+- BOOM buggy Trace 自动生成 `W1-rf-L0-ppo-L1-fr-W1` 关系环。
+- 新增 allowed、same-write 与 fixed-recovery 对照样例。
+- 架构投影会隐藏被 squash 且未退休的推测 load。
+- Package version 更新为 0.7.0，测试增至 67 项。
+
 ## 0.6.0
 
 - 补齐 L0 的 DCache miss → MSHR → AcquireBlock → GrantData → RPQ direct response 路径。

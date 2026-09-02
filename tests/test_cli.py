@@ -80,3 +80,94 @@ def test_stage4_wrong_probe_address_cli_is_infeasible(capsys) -> None:
     captured = capsys.readouterr()
     assert code == 1
     assert "INFEASIBLE" in captured.out
+
+
+def test_check_cli_reports_boom_violation(capsys, tmp_path) -> None:
+    from umcm.ir.completion import CompletionSpec
+    from umcm.ir.event import EventCatalog
+    from umcm.ir.trace import Trace
+    from umcm.solver.completion import CompletionStatus, complete_trace
+
+    catalog = EventCatalog.load(ROOT / "examples/boom_load_load/event_types.yaml")
+    trace = Trace.load(ROOT / "examples/boom_load_load/stage6_trace.yaml")
+    model = CompletionSpec.load(
+        ROOT / "examples/boom_load_load/load_load_buggy_mshr_completion.yaml"
+    )
+    completed = complete_trace(catalog, trace, model)
+    assert completed.status is CompletionStatus.FEASIBLE
+    assert completed.completed_trace is not None
+    trace_path = tmp_path / "completed.yaml"
+    completed.completed_trace.dump(trace_path)
+    graph_path = tmp_path / "graph.yaml"
+
+    code = main(
+        [
+            "check",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--trace",
+            str(trace_path),
+            "--axioms",
+            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+            "--output",
+            str(graph_path),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "MEMORY MODEL VIOLATION" in captured.out
+    assert "W1 -rfe/rf-> L0" in captured.out
+    assert "L0 -ppo-> L1" in captured.out
+    assert "L1 -fr-> W1" in captured.out
+    assert graph_path.exists()
+
+
+def test_check_cli_reports_allowed_control(capsys) -> None:
+    code = main(
+        [
+            "check",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--trace",
+            str(ROOT / "examples/boom_load_load/stage7_allowed_trace.yaml"),
+            "--axioms",
+            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "MEMORY MODEL ALLOWED" in captured.out
+
+
+def test_check_cli_reports_fixed_recovery_allowed(capsys, tmp_path) -> None:
+    from umcm.ir.completion import CompletionSpec
+    from umcm.ir.event import EventCatalog
+    from umcm.ir.trace import Trace
+    from umcm.solver.completion import CompletionStatus, complete_trace
+
+    catalog = EventCatalog.load(ROOT / "examples/boom_load_load/event_types.yaml")
+    trace = Trace.load(ROOT / "examples/boom_load_load/stage6_recovery_trace.yaml")
+    model = CompletionSpec.load(
+        ROOT / "examples/boom_load_load/load_load_fixed_mshr_completion.yaml"
+    )
+    completed = complete_trace(catalog, trace, model)
+    assert completed.status is CompletionStatus.FEASIBLE
+    assert completed.completed_trace is not None
+    trace_path = tmp_path / "fixed-completed.yaml"
+    completed.completed_trace.dump(trace_path)
+
+    code = main(
+        [
+            "check",
+            "--schema",
+            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            "--trace",
+            str(trace_path),
+            "--axioms",
+            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "MEMORY MODEL ALLOWED" in captured.out
+    assert "L1: read" not in captured.out

@@ -1,160 +1,202 @@
-# µMCM Foundation v0.6.0
+# µMCM Foundation v0.7.0
 
-这是第六轮底层基础设施。项目仍与 FM-Agent 无关：BOOM 模型继续由 YAML
-中的 `Event + Transformation + State + Trace` 手工描述，Python 只提供通用加载、
-实例化、有限补全和状态执行引擎。
+这是第七轮底层基础设施，仍然与 FM-Agent 无关。BOOM 微架构行为继续由
+YAML 中的 `Event + Transformation + State + Trace` 描述；Python 提供通用的
+Trace 补全、架构投影、Execution Graph 构造、关系代数和公理检查引擎。
 
-v0.6 在 v0.5 的真实 LD–LD 冲突路径之后，补齐 older load `L0` 通过 MSHR
-得到新值 `1` 并退休的路径：
-
-```text
-L0 DCache request
-→ DCache miss
-→ primary MSHR accept
-→ RPQ retain L0 identity
-→ AcquireBlock
-→ GrantData(x=1, source=W1)
-→ refill complete
-→ s_drain_rpq_loads
-→ long-latency response(L0,1)
-→ L0.succeeded/value := true/1
-→ CommitLoad(L0,1)
-```
-
-与既有路径组合后，buggy 模型现在能够补全完整架构结果：
+v0.7 在 v0.6 的完整微架构 Trace 之后加入：
 
 ```text
-L0 = 1
-L1 = 0
-两条 load 均退休
+completed microarchitectural Trace
+→ architectural projection
+→ candidate Execution Graphs
+→ po / rf / rfe / co / fr / ppo
+→ hb / ar derived relations
+→ loaded Axiom checks
 ```
 
-fixed reference 模型仍会通过 `order_fail → exception → squash` 阻止 L1=0
-退休，但不会阻止更老的 L0 经 MSHR 得到 1。
-
-> v0.6 仍只检查微架构 Trace 可行性。`rf/co/fr/ppo` Execution Graph 和
-> RVWMO 公理检查留到下一轮。
-
-## 1. 新增事件
+对 BOOM buggy 模型，系统现在能够自动得到：
 
 ```text
-DCache.LoadMiss
-MSHR.PrimaryMissAccept
-MSHR.RPQEnqueue
-MSHR.AcquireBlock
-MSHR.GrantData
-MSHR.RefillComplete
-MSHR.DrainRPQLoad
-DCache.LongLatencyLoadResponse
+W1  -rf/rfe-> L0
+L0  -ppo----> L1
+L1  -fr-----> W1
 ```
 
-关键身份始终保留：
+并报告该关系环违反当前实现的 RVWMO Load–Load 片段。
+
+> `rvwmo_load_load_fragment.yaml` 只覆盖本案例需要的同地址 Load–Load
+> preserved-order 规则及相应关系环检查，不是完整 RVWMO 实现。
+
+## 1. 新增模块
 
 ```text
-mshr_id
-op_id
-ldq_idx
-address
-source_op_id
-value
+src/umcm/graph/
+├── relation.py      # finite relation algebra and labeled cycle search
+├── execution.py     # MemoryOperation and ExecutionGraph
+├── model.py         # loadable Projection / DerivedRelation / Axiom model
+├── builder.py       # Trace → candidate rf/co graphs
+└── checker.py       # axiom checking across all candidates
 ```
 
-## 2. 新增 MSHR 状态摘要
+### Execution Graph 节点
+
+当前架构投影识别：
 
 ```text
-MSHR.0.state
-MSHR.0.req_op_id / req_ldq_idx / req_address
-MSHR.0.rpq_valid / rpq_op_id / rpq_ldq_idx / rpq_address
-MSHR.0.line_value / line_source_op_id
+Arch.InitWrite → init_write
+Arch.Store     → write
+Arch.Load + Arch.CommitLoad → read(value)
 ```
 
-本轮只建模一个 primary miss 和一个 RPQ load entry，但状态转换是真实持久状态：
+微架构内部事件不会直接成为架构图节点，但可提供投影证据。例如：
 
 ```text
-INVALID
-→ REFILL_REQ
-→ REFILL_RESP
-→ DRAIN_RPQ_LOADS
+MSHR.GrantData(op_id=L0, source_op_id=W1, value=1)
 ```
 
-同时为 L0 加入：
+会把 `L0` 的 `rf` 候选约束到 `W1`。
+
+## 2. 关系生成
+
+基础引擎生成：
+
+- `po`：同 hart 按 `program_index` 排序；
+- `rf`：每个 committed read 从同地址、同值 write 中选择来源；
+- `co`：枚举每个地址上的 write total order，初始写位于最前；
+- `fr = rf^-1 ; co`；
+- `rfe`：跨 hart 的 `rf`；
+- `ppo`：当前加载的 `load_load_different_write` 规则。
+
+`rvwmo_load_load_fragment.yaml` 再加载派生关系：
 
 ```text
-LSU.ldq.L0.valid
-LSU.ldq.L0.executed
-LSU.ldq.L0.succeeded
-LSU.ldq.L0.value
+hb = ppo ∪ rfe
+ar = hb ∪ fr ∪ co
 ```
 
-## 3. scoped exact Transformation
+关系代数基础设施支持：
 
-v0.6 新增 `output_when`。它解决同一种输出事件由多条路径产生时的组合问题。
-例如 L0 和 L1 都会产生 `LSU.LoadExecuted`，但分别由 retry-MSHR 路径和普通
-hit 路径支持：
+```text
+union
+intersection
+difference
+inverse
+composition
+transitive_closure
+```
+
+## 3. 公理模型
+
+公理从 YAML 加载，而不是写在 BOOM Python 代码中：
 
 ```yaml
-exact: true
-output_when:
-  node: binary
-  op: eq
-  left:  executed.op_id
-  right: L0
+axioms:
+- name: rvwmo_load_load_order_fragment
+  kind: acyclic
+  relations: [ppo, rfe, fr, co]
 ```
 
-含义是：该 Transformation 只对满足 `executed.op_id == L0` 的输出承担
-“必须存在输入支持”的 exact 义务；L1 输出由另一条 Transformation 负责。
+当前 checker 支持：
 
-## 4. 运行完整 buggy witness
+```text
+acyclic
+irreflexive
+empty
+```
+
+如果 `rf` 或 `co` 存在多个候选，系统枚举所有候选图。只要至少一个图满足全部
+公理，结果就是 `ALLOWED`；只有所有候选都违反公理，才报告 `FORBIDDEN`。
+
+## 4. 运行 BOOM 完整闭环
+
+先生成完整微架构 Trace：
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
   --trace examples/boom_load_load/stage6_trace.yaml \
   --model examples/boom_load_load/load_load_buggy_mshr_completion.yaml \
-  --output completed_stage6_buggy.yaml
+  --output completed_stage7_buggy.yaml
 ```
 
-预期：
+再构造 Execution Graph 并检查公理：
+
+```bash
+PYTHONPATH=src python3 -m umcm check \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace completed_stage7_buggy.yaml \
+  --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml \
+  --output stage7_buggy_graph.yaml
+```
+
+预期输出：
 
 ```text
-FEASIBLE
-36 total events
-30 hidden events added
+EXECUTION GRAPH: 4 operation(s), 1 candidate(s)
 
-cycle 14: DCache.LoadMiss(L0)
-cycle 14: MSHR.PrimaryMissAccept(L0)
-cycle 14: MSHR.RPQEnqueue(L0)
-cycle 15: MSHR.AcquireBlock(L0)
-cycle 16: MSHR.GrantData(L0, source=W1, value=1)
-cycle 16: MSHR.RefillComplete(L0, value=1)
-cycle 17: MSHR.DrainRPQLoad(L0, value=1)
-cycle 17: DCache.LongLatencyLoadResponse(L0, value=1)
-cycle 17: LSU.LoadSucceeded(L0, value=1)
-cycle 18: CommitLoad(L0,1)
-cycle 19: CommitLoad(L1,0)
+rf:  InitX->L1, W1->L0
+co:  InitX->W1
+fr:  L1->W1
+ppo: L0->L1
+
+MEMORY MODEL VIOLATION: rvwmo-load-load-fragment-v0.7
+cycle:
+  L1 -fr-> W1
+  W1 -rfe/rf-> L0
+  L0 -ppo-> L1
 ```
 
-## 5. 运行 fixed differential
+检测到违反时命令退出码为 `1`；允许时为 `0`。
 
-允许 L0 完成、但不要求 L1 退休：
+### Fixed recovery 对照
+
+恢复版本中，`L1` 产生 `order_fail → exception → squash`，因此没有
+`Arch.CommitLoad(L1)`。架构投影只保留已退休的操作，并隐藏该推测执行：
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
   --trace examples/boom_load_load/stage6_recovery_trace.yaml \
   --model examples/boom_load_load/load_load_fixed_mshr_completion.yaml \
-  --output completed_stage6_fixed_recovery.yaml
+  --output completed_stage7_fixed.yaml
+
+PYTHONPATH=src python3 -m umcm check \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace completed_stage7_fixed.yaml \
+  --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml
 ```
 
-预期 `FEASIBLE`：L0 仍通过 MSHR 得到 1，L1 被 squash。
+预期只投影 `InitX / W1 / L0`，结果为 `MEMORY MODEL ALLOWED`。
 
-再对要求两条 load 都退休的 `stage6_trace.yaml` 运行 fixed 模型，预期退出码 1：
+## 5. 对照样例
+
+允许的值演化：
+
+```bash
+PYTHONPATH=src python3 -m umcm check \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/stage7_allowed_trace.yaml \
+  --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml
+```
+
+预期：
 
 ```text
-INFEASIBLE
-L1 commit requires valid LDQ entry,
-but order-fail recovery already made L1.valid = false.
+L0=0, L1=1
+MEMORY MODEL ALLOWED
 ```
+
+两条 load 都读同一个初始写时：
+
+```bash
+PYTHONPATH=src python3 -m umcm check \
+  --schema examples/boom_load_load/event_types.yaml \
+  --trace examples/boom_load_load/stage7_same_write_trace.yaml \
+  --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml
+```
+
+此时两条 load 的 `rf` 来源相同，因此本片段不生成 Load–Load `ppo`。
 
 ## 6. 测试
 
@@ -165,13 +207,19 @@ PYTHONPATH=src pytest -q
 预期：
 
 ```text
-54 passed
+67 passed
 ```
 
-测试额外覆盖：
+测试覆盖：
 
-- MSHR 请求/RPQ/response 始终保持 L0 身份；
-- GrantData 必须与可见 store `W1` 的地址和值一致；
-- RPQ 身份错配会阻断 long-latency response；
-- L0/L1 两条 exact producer 可组合，不再互相错误约束；
-- fixed 模型保留 L0=1 路径，同时阻止 L1=0 退休。
+- v0.1–v0.6 全部回归；
+- `inverse / compose / closure` 关系代数；
+- Trace 到四个架构操作的投影；
+- `rf/co/fr/po/ppo/rfe/hb/ar` 精确边集合；
+- BOOM forbidden cycle；
+- fixed recovery 中被 squash、未退休的 L1 不进入架构图；
+- allowed control；
+- 相同 `rf` 来源时不生成 Load–Load `ppo`；
+- 多个同值 write 时枚举多个 `rf/co` 候选；
+- MSHR `source_op_id/address/value` 与架构 `rf` 不一致时拒绝；
+- Execution Graph 与 graph-model YAML/JSON 往返序列化。

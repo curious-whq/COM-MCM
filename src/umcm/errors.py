@@ -31,3 +31,11 @@ class BackendUnavailableError(SolverError):
 
 class CompletionError(UMCMError):
     """Raised when a completion specification cannot be instantiated."""
+
+
+class GraphError(UMCMError):
+    """Raised when an execution graph cannot be projected or constructed."""
+
+
+class AxiomError(UMCMError):
+    """Raised when an axiom or relation specification is malformed."""

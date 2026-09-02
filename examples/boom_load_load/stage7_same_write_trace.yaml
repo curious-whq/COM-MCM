@@ -1,0 +1,51 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: boom-load-load-ordering-same-write-control
+  note: Both loads read InitX, so the same-address load-load PPO rule is not generated.
+events:
+- id: init_x
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitX
+    address: x
+    value: 0
+- id: load_l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+- id: load_l1
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    address: x
+- id: store_w1
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: W1
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+- id: commit_l0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L0
+    value: 0
+- id: commit_l1
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L1
+    value: 0
+constraints: []
