@@ -1,0 +1,54 @@
+schema_version: umcm.composition.v0.13.0
+name: boom-mshr-standalone
+horizon: 32
+metadata:
+  version: 0.13.0
+  purpose: Standalone bounded BOOM MSHR/RPQ/SDQ/IOMSHR regression composition.
+modules:
+- name: mshr
+  path: ../model/mshr/module.yaml
+connections: []
+constraints: []
+roles:
+- name: mshr_requests
+  event_type: DCache.MSHRRequest
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    queue_kind: fields.queue_kind
+    queue_idx: fields.queue_idx
+    address: fields.address
+    value: fields.value
+    mem_kind: fields.mem_kind
+    mshr_id: fields.mshr_id
+    tag_match: fields.tag_match
+    old_line_dirty: fields.old_line_dirty
+    needs_acquire: fields.needs_acquire
+    grant_has_data: fields.grant_has_data
+    secondary: fields.secondary
+    requires_second_acquire: fields.requires_second_acquire
+    is_hit_again: fields.is_hit_again
+    is_probe: fields.is_probe
+    sdq_id: fields.sdq_id
+- name: mshr_instances
+  event_type: DCache.MSHRRequest
+  cardinality: many
+  min_matches: 0
+  distinct_by: fields.mshr_id
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    mshr_id: fields.mshr_id
+    grant_has_data: fields.grant_has_data
+    needs_acquire: fields.needs_acquire
+- name: io_requests
+  event_type: IOMSHR.Request
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+    mem_kind: fields.mem_kind
+    io_id: fields.io_id

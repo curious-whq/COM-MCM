@@ -1,12 +1,12 @@
 schema_version: umcm.abstraction.v0.1
-name: boom-lsq-l1-mshr-witness-v0.8
+name: boom-lsq-l1-mshr-v0.13
 source_level: boom-cycle-events
 target_level: composed-memory-events
 default_action: hide
 metadata:
   purpose: Hide cycle-level LSU, L1, ProbeUnit, and MSHR events while preserving architectural projection evidence.
-  limitation: This abstraction is scoped to the bounded BOOM load-load witness.
-  version: 0.12.0
+  limitation: Current summaries cover the bounded BOOM load-load witness while using the reusable v0.13 MSHR event vocabulary.
+  version: 0.13.0
 retain:
   event_types:
   - Arch.InitWrite
@@ -84,7 +84,7 @@ summaries:
       op_id: $read
       address: $address
   - name: accept
-    event_type: MSHR.PrimaryMissAccept
+    event_type: MSHR.PrimaryAccept
     fields:
       op_id: $read
       address: $address
@@ -104,7 +104,14 @@ summaries:
       value: $value
       mshr_id: $mshr
   - name: drain
-    event_type: MSHR.DrainRPQLoad
+    event_type: MSHR.DirectLoadResponse
+    fields:
+      op_id: $read
+      address: $address
+      value: $value
+      mshr_id: $mshr
+  - name: respq
+    event_type: MSHR.ResponseDequeue
     fields:
       op_id: $read
       address: $address

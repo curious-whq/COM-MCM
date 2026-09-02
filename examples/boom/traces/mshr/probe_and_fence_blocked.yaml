@@ -1,0 +1,70 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata:
+  case: probe_and_fence_blocked
+  expected: FEASIBLE
+  description: Fence sees occupied MSHR; probe is blocked in post-refill metadata/writeback phase.
+events:
+- id: req0
+  type: DCache.MSHRRequest
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: Ld0
+    queue_kind: ldq
+    queue_idx: 5
+    address: x
+    value: 0
+    mem_kind: load
+    mshr_id: 2
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: true
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+    sdq_id: 0
+- id: fence_block
+  type: MSHR.FenceBlocked
+  occurs: true
+  cycle: 1
+  fields:
+    mshr_id: 2
+    reason: busy
+- id: resp0
+  type: MSHR.ResponseDequeue
+  occurs: true
+  cycle: 5
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    queue_idx: 5
+    address: x
+    value: 11
+- id: meta_read
+  type: MSHR.MetaReadRequest
+  occurs: true
+  cycle: 6
+  fields:
+    mshr_id: 2
+    address: x
+- id: meta_dirty
+  type: MSHR.MetaReadResponse
+  occurs: true
+  cycle: 7
+  fields:
+    mshr_id: 2
+    address: x
+    valid: true
+    needs_writeback: true
+- id: probe_block
+  type: MSHR.ProbeBlocked
+  occurs: true
+  cycle: 8
+  fields:
+    mshr_id: 2
+    address: x
+    reason: busy
+constraints: []

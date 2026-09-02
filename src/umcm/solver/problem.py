@@ -267,24 +267,33 @@ def _instantiate_transformation(
             f"{input_index}.{bound_inputs}"
         )
         if transformation.state_mode == "guard":
-            predicates = tuple(
-                GuardPredicateInstance(
-                    state=requirement.state,
-                    cycle=EventField(input_mapping[requirement.at], "cycle", INT),
-                    op=requirement.op,
-                    expected=substitute_event_ids(requirement.value, input_mapping),
-                )
+            input_names = set(input_mapping)
+            if all(
+                requirement.at in input_names
                 for requirement in transformation.state_requirements
-            )
-            guarded_forwards.append(
-                GuardedForwardInstance(
-                    name=forward_name,
-                    antecedent=antecedent,
-                    predicates=predicates,
-                    consequent=disjunction(alternatives),
-                    origin=f"transformation:{transformation.name}",
+            ):
+                predicates = tuple(
+                    GuardPredicateInstance(
+                        state=requirement.state,
+                        cycle=EventField(input_mapping[requirement.at], "cycle", INT),
+                        op=requirement.op,
+                        expected=substitute_event_ids(requirement.value, input_mapping),
+                    )
+                    for requirement in transformation.state_requirements
                 )
-            )
+                guarded_forwards.append(
+                    GuardedForwardInstance(
+                        name=forward_name,
+                        antecedent=antecedent,
+                        predicates=predicates,
+                        consequent=disjunction(alternatives),
+                        origin=f"transformation:{transformation.name}",
+                    )
+                )
+            # If a guard is anchored to an output candidate, forward generation
+            # is not forced here.  For exact transformations the support rule
+            # below still proves that any chosen output has a matching input and
+            # that all state guards hold at the candidate output cycle.
         else:
             constraints.append(
                 NamedConstraint(

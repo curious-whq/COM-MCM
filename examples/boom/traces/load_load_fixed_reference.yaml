@@ -26,6 +26,20 @@ events:
     microarch:
       ldq_idx: 13
       mshr_id: 3
+      uses_mshr: true
+      queue_kind: ldq
+      queue_idx: 13
+      mem_kind: load
+      value: 0
+      tag_match: false
+      old_line_dirty: false
+      needs_acquire: true
+      grant_has_data: true
+      secondary: false
+      requires_second_acquire: false
+      is_hit_again: false
+      is_probe: false
+      sdq_id: 0
 - id: load_younger
   type: Arch.Load
   occurs: true
@@ -39,6 +53,7 @@ events:
   annotations:
     microarch:
       ldq_idx: 7
+      uses_mshr: false
 - id: store_visible
   type: Arch.Store
   occurs: true
@@ -56,14 +71,14 @@ events:
   fields:
     op_id: LoadAlpha
     value: 1
-  cycle: 18
+  cycle: 20
 - id: commit_younger
   type: Arch.CommitLoad
   occurs: false
   fields:
     op_id: LoadBeta
     value: 0
-  cycle: 19
+  cycle: 21
 - id: older_tlb_miss
   type: LSU.TLBMiss
   occurs: true

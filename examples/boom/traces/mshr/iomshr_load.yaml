@@ -1,0 +1,26 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata:
+  case: iomshr_load
+  expected: FEASIBLE
+  description: Uncacheable load traverses IOMSHR request/access/ack/response state machine.
+events:
+- id: io_req
+  type: IOMSHR.Request
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: IO0
+    address: mmio0
+    mem_kind: load
+    value: 77
+    io_id: 5
+- id: io_resp
+  type: IOMSHR.Response
+  occurs: true
+  cycle: 3
+  fields:
+    op_id: IO0
+    value: 77
+    io_id: 5
+constraints: []

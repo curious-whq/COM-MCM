@@ -130,13 +130,12 @@ class Transformation:
                     f"state-guarded transformation {self.name!r} cannot directly update state; "
                     "attach updates to the derived output event in a separate transformation"
                 )
-            input_names = {role.name for role in self.inputs}
-            bad = [item.at for item in self.state_requirements if item.at not in input_names]
-            if bad:
-                raise SchemaError(
-                    f"state-guarded transformation {self.name!r} must anchor state guards "
-                    "to input roles only"
-                )
+            # Guards may anchor to output roles as well as inputs.  When an
+            # output role is used, forward generation is intentionally weak:
+            # the transition is not forced merely from the input because the
+            # enabling state is defined at the candidate output cycle.  Exact
+            # support still requires every occurring output to have a matching
+            # input and state witness.
 
     @property
     def role_map(self) -> dict[str, EventRole]:

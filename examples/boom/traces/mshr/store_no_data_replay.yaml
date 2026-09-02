@@ -1,0 +1,40 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata:
+  case: store_no_data_replay
+  expected: FEASIBLE
+  description: Store miss with no-data grant drains through replay and frees SDQ.
+events:
+- id: req0
+  type: DCache.MSHRRequest
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: St0
+    queue_kind: stq
+    queue_idx: 3
+    address: x
+    value: 9
+    mem_kind: store
+    mshr_id: 1
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: false
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+    sdq_id: 4
+- id: replay0
+  type: MSHR.Replay
+  occurs: true
+  cycle: 3
+  fields:
+    mshr_id: 1
+    op_id: St0
+    queue_kind: stq
+    queue_idx: 3
+    address: x
+    value: 9
+constraints: []

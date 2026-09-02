@@ -45,6 +45,7 @@ class TraceRoleSpec:
     occurring_only: bool = True
     cardinality: str = "one"
     min_matches: int = 1
+    distinct_by: str | None = None
     description: str = ""
 
     def __post_init__(self) -> None:
@@ -76,6 +77,8 @@ class TraceRoleSpec:
         }
         if self.event_id is not None:
             data["event_id"] = self.event_id
+        if self.distinct_by is not None:
+            data["distinct_by"] = self.distinct_by
         if self.description:
             data["description"] = self.description
         return data
@@ -86,7 +89,7 @@ class TraceRoleSpec:
             raise SerializationError("trace role must be a mapping")
         allowed = {
             "name", "event_type", "where", "exports", "event_id",
-            "occurring_only", "cardinality", "min_matches", "description",
+            "occurring_only", "cardinality", "min_matches", "distinct_by", "description",
         }
         unknown = set(data) - allowed
         if unknown:
@@ -112,6 +115,7 @@ class TraceRoleSpec:
                 occurring_only=bool(data.get("occurring_only", True)),
                 cardinality=str(data.get("cardinality", "one")),
                 min_matches=int(data.get("min_matches", 1)),
+                distinct_by=(None if data.get("distinct_by") is None else str(data.get("distinct_by"))),
                 description=str(data.get("description", "")),
             )
         except KeyError as exc:
@@ -128,7 +132,7 @@ def resolve_trace_roles(
 
     ``cardinality: one`` preserves the v0.10 behavior. ``cardinality: many``
     exports every matching event, ordered deterministically by cycle then id.
-    Collection roles are primarily used by v0.12 finite LSQ-family expansion.
+    Collection roles are used by finite LSQ/MSHR-family expansion; distinct_by supports one persistent instance per shared resource id.
     """
 
     context: dict[str, Any] = {}
@@ -155,6 +159,23 @@ def resolve_trace_roles(
                 event.id,
             )
         )
+        if role.distinct_by is not None:
+            deduped = []
+            seen = set()
+            for event in matches:
+                key = _resolve_event_path(event, role.distinct_by)
+                try:
+                    marker = (type(key).__name__, key)
+                    if marker in seen:
+                        continue
+                    seen.add(marker)
+                except TypeError as exc:
+                    raise CompositionError(
+                        f"trace role {role.name!r} distinct_by path "
+                        f"{role.distinct_by!r} did not resolve to a hashable value"
+                    ) from exc
+                deduped.append(event)
+            matches = deduped
         if role.cardinality == "one":
             if len(matches) != 1:
                 detail = (

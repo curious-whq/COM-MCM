@@ -1,925 +1,3728 @@
-schema_version: umcm.module.v0.12.0
+schema_version: umcm.module.v0.13.0
 name: mshr
 metadata:
   variant: shared
-  source: BOOM v4 BoomMSHR/BoomMSHRFile abstraction
+  version: 0.13.0
   parameterized: true
-  template_parameters:
-  - older_load.op_id
-  - older_load.address
-  - older_load.ldq_idx
-  - older_load.mshr_id
-  - younger_load.op_id
-  - younger_load.ldq_idx
-  - visible_store.op_id
-  - visible_store.value
-  - init_write.value
-  version: 0.12.0
+  source: BOOM v4 BoomMSHR/BoomMSHRFile/IOMSHR
+  scope: Memory-order-relevant primary/secondary miss, RPQ, SDQ, refill, replay, response queue, writeback/finish and MMIO
+    behavior.
+  abstractions:
+  - refill beats summarized by RefillComplete
+  - RPQ occupancy represented per bounded request
+  - prefetch path excluded from v0.13 memory-order surface
+  source_sha256: 7e70d1a095f9543ecb20c2983e925205ef473376fe7e6112173d7e8079069fcf
 ports:
-- name: dcache_load_miss
+- name: request
   direction: input
-  event_type: DCache.LoadMiss
-- name: primary_miss_accept
-  direction: output
-  event_type: MSHR.PrimaryMissAccept
+  event_type: DCache.MSHRRequest
+  required_connection: false
+- name: branch_kill
+  direction: input
+  event_type: Core.BranchKill
+  required_connection: false
+- name: exception
+  direction: input
+  event_type: Core.Exception
+  required_connection: false
 - name: grant_data
   direction: output
   event_type: MSHR.GrantData
-- name: drain_rpq_load
+- name: grant_no_data
   direction: output
-  event_type: MSHR.DrainRPQLoad
-slots:
-- id: older_mshr_primary_accept
-  type: MSHR.PrimaryMissAccept
-  required: false
-  cycle: 14
-  fields:
-    mshr_id: ${older_load.mshr_id}
-    op_id: ${older_load.op_id}
-    ldq_idx: ${older_load.ldq_idx}
-    address: ${older_load.address}
-- id: older_mshr_rpq_enqueue
-  type: MSHR.RPQEnqueue
-  required: false
-  cycle: 14
-  fields:
-    mshr_id: ${older_load.mshr_id}
-    op_id: ${older_load.op_id}
-    ldq_idx: ${older_load.ldq_idx}
-    address: ${older_load.address}
-- id: older_mshr_acquire
-  type: MSHR.AcquireBlock
-  required: false
-  cycle: 15
-  fields:
-    mshr_id: ${older_load.mshr_id}
-    op_id: ${older_load.op_id}
-    address: ${older_load.address}
-- id: older_mshr_grant_data
-  type: MSHR.GrantData
-  required: false
-  cycle: 16
-  fields:
-    mshr_id: ${older_load.mshr_id}
-    op_id: ${older_load.op_id}
-    source_op_id: ${visible_store.op_id}
-    address: ${older_load.address}
-    value: 1
-- id: older_mshr_refill_complete
-  type: MSHR.RefillComplete
-  required: false
-  cycle: 16
-  fields:
-    mshr_id: ${older_load.mshr_id}
-    op_id: ${older_load.op_id}
-    source_op_id: ${visible_store.op_id}
-    address: ${older_load.address}
-    value: 1
-- id: older_mshr_drain_rpq
-  type: MSHR.DrainRPQLoad
-  required: false
-  cycle: 17
-  fields:
-    mshr_id: ${older_load.mshr_id}
-    op_id: ${older_load.op_id}
-    ldq_idx: ${older_load.ldq_idx}
-    address: ${older_load.address}
-    value: 1
-state_variables:
-- name: MSHR[${older_load.mshr_id}].state
-  sort:
-    name: string
-  initial: INVALID
-- name: MSHR[${older_load.mshr_id}].req_op_id
-  sort:
-    name: op_id
-  initial: EMPTY
-- name: MSHR[${older_load.mshr_id}].req_ldq_idx
-  sort:
-    name: bv
-    width: 6
-  initial: 63
-- name: MSHR[${older_load.mshr_id}].req_address
-  sort:
-    name: address
-    width: 64
-  initial: EMPTY_ADDR
-- name: MSHR[${older_load.mshr_id}].rpq_valid
-  sort:
-    name: bool
-  initial: false
-- name: MSHR[${older_load.mshr_id}].rpq_op_id
-  sort:
-    name: op_id
-  initial: EMPTY
-- name: MSHR[${older_load.mshr_id}].rpq_ldq_idx
-  sort:
-    name: bv
-    width: 6
-  initial: 63
-- name: MSHR[${older_load.mshr_id}].rpq_address
-  sort:
-    name: address
-    width: 64
-  initial: EMPTY_ADDR
-- name: MSHR[${older_load.mshr_id}].line_value
-  sort:
-    name: value
-    width: 64
-  initial: UNSET_VALUE
-- name: MSHR[${older_load.mshr_id}].line_source_op_id
-  sort:
-    name: op_id
-  initial: EMPTY
-transformations:
-- name: primary_mshr_accept_requires_older_miss
-  inputs:
-  - role: accept
-    type: MSHR.PrimaryMissAccept
-  outputs:
-  - role: miss
-    type: DCache.LoadMiss
-  when:
-    node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: literal
-      sort:
-        name: op_id
-      value: ${older_load.op_id}
-  ensure:
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: miss
-      field: op_id
-      sort:
-        name: op_id
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: ldq_idx
-      sort:
-        name: bv
-        width: 6
-    right:
-      node: event_field
-      event_id: miss
-      field: ldq_idx
-      sort:
-        name: bv
-        width: 6
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: address
-      sort:
-        name: address
-        width: 64
-    right:
-      node: event_field
-      event_id: miss
-      field: address
-      sort:
-        name: address
-        width: 64
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: cycle
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: miss
-      field: cycle
-      sort:
-        name: int
-  state_requirements:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: accept
-    op: eq
-    value:
-      node: literal
-      sort:
-        name: string
-      value: INVALID
-  state_updates:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: accept
-    value:
-      node: literal
-      sort:
-        name: string
-      value: REFILL_REQ
-  - state: MSHR[${older_load.mshr_id}].req_op_id
-    at: accept
-    value:
-      node: event_field
-      event_id: accept
-      field: op_id
-      sort:
-        name: op_id
-  - state: MSHR[${older_load.mshr_id}].req_ldq_idx
-    at: accept
-    value:
-      node: event_field
-      event_id: accept
-      field: ldq_idx
-      sort:
-        name: bv
-        width: 6
-  - state: MSHR[${older_load.mshr_id}].req_address
-    at: accept
-    value:
-      node: event_field
-      event_id: accept
-      field: address
-      sort:
-        name: address
-        width: 64
-  tags:
-  - state
-  - mshr-allocation
-- name: primary_mshr_accept_enqueues_rpq
-  inputs:
-  - role: accept
-    type: MSHR.PrimaryMissAccept
-  outputs:
-  - role: enqueue
-    type: MSHR.RPQEnqueue
-  when:
-    node: literal
-    sort:
-      name: bool
-    value: true
-  ensure:
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: mshr_id
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: enqueue
-      field: mshr_id
-      sort:
-        name: int
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: enqueue
-      field: op_id
-      sort:
-        name: op_id
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: ldq_idx
-      sort:
-        name: bv
-        width: 6
-    right:
-      node: event_field
-      event_id: enqueue
-      field: ldq_idx
-      sort:
-        name: bv
-        width: 6
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: address
-      sort:
-        name: address
-        width: 64
-    right:
-      node: event_field
-      event_id: enqueue
-      field: address
-      sort:
-        name: address
-        width: 64
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: accept
-      field: cycle
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: enqueue
-      field: cycle
-      sort:
-        name: int
-  state_requirements:
-  - state: MSHR[${older_load.mshr_id}].rpq_valid
-    at: enqueue
-    op: eq
-    value:
-      node: literal
-      sort:
-        name: bool
-      value: false
-  state_updates:
-  - state: MSHR[${older_load.mshr_id}].rpq_valid
-    at: enqueue
-    value:
-      node: literal
-      sort:
-        name: bool
-      value: true
-  - state: MSHR[${older_load.mshr_id}].rpq_op_id
-    at: enqueue
-    value:
-      node: event_field
-      event_id: enqueue
-      field: op_id
-      sort:
-        name: op_id
-  - state: MSHR[${older_load.mshr_id}].rpq_ldq_idx
-    at: enqueue
-    value:
-      node: event_field
-      event_id: enqueue
-      field: ldq_idx
-      sort:
-        name: bv
-        width: 6
-  - state: MSHR[${older_load.mshr_id}].rpq_address
-    at: enqueue
-    value:
-      node: event_field
-      event_id: enqueue
-      field: address
-      sort:
-        name: address
-        width: 64
-  exact: true
-  tags:
-  - state
-  - rpq
-  - identity
-- name: mshr_acquire_requires_primary_accept
-  inputs:
-  - role: acquire
-    type: MSHR.AcquireBlock
-  outputs:
-  - role: accept
-    type: MSHR.PrimaryMissAccept
-  when:
-    node: literal
-    sort:
-      name: bool
-    value: true
-  ensure:
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: acquire
-      field: mshr_id
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: accept
-      field: mshr_id
-      sort:
-        name: int
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: acquire
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: accept
-      field: op_id
-      sort:
-        name: op_id
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: acquire
-      field: address
-      sort:
-        name: address
-        width: 64
-    right:
-      node: event_field
-      event_id: accept
-      field: address
-      sort:
-        name: address
-        width: 64
-  - node: binary
-    op: lt
-    left:
-      node: event_field
-      event_id: accept
-      field: cycle
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: acquire
-      field: cycle
-      sort:
-        name: int
-  state_requirements:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: acquire
-    op: eq
-    value:
-      node: literal
-      sort:
-        name: string
-      value: REFILL_REQ
-  - state: MSHR[${older_load.mshr_id}].req_op_id
-    at: acquire
-    op: eq
-    value:
-      node: event_field
-      event_id: acquire
-      field: op_id
-      sort:
-        name: op_id
-  - state: MSHR[${older_load.mshr_id}].req_address
-    at: acquire
-    op: eq
-    value:
-      node: event_field
-      event_id: acquire
-      field: address
-      sort:
-        name: address
-        width: 64
-  state_updates:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: acquire
-    value:
-      node: literal
-      sort:
-        name: string
-      value: REFILL_RESP
-  tags:
-  - state
-  - mshr-fsm
-  - tilelink
-- name: grant_data_requires_matching_acquire
-  inputs:
-  - role: grant
-    type: MSHR.GrantData
-  outputs:
-  - role: acquire
-    type: MSHR.AcquireBlock
-  when:
-    node: literal
-    sort:
-      name: bool
-    value: true
-  ensure:
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: grant
-      field: mshr_id
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: acquire
-      field: mshr_id
-      sort:
-        name: int
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: grant
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: acquire
-      field: op_id
-      sort:
-        name: op_id
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: grant
-      field: address
-      sort:
-        name: address
-        width: 64
-    right:
-      node: event_field
-      event_id: acquire
-      field: address
-      sort:
-        name: address
-        width: 64
-  - node: binary
-    op: lt
-    left:
-      node: event_field
-      event_id: acquire
-      field: cycle
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: grant
-      field: cycle
-      sort:
-        name: int
-  state_requirements:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: grant
-    op: eq
-    value:
-      node: literal
-      sort:
-        name: string
-      value: REFILL_RESP
-  - state: MSHR[${older_load.mshr_id}].req_op_id
-    at: grant
-    op: eq
-    value:
-      node: event_field
-      event_id: grant
-      field: op_id
-      sort:
-        name: op_id
-  - state: MSHR[${older_load.mshr_id}].req_address
-    at: grant
-    op: eq
-    value:
-      node: event_field
-      event_id: grant
-      field: address
-      sort:
-        name: address
-        width: 64
-  tags:
-  - causal-support
-  - tilelink
-  - identity
-- name: refill_complete_requires_grant_data
-  inputs:
-  - role: complete
-    type: MSHR.RefillComplete
-  outputs:
-  - role: grant
-    type: MSHR.GrantData
-  when:
-    node: literal
-    sort:
-      name: bool
-    value: true
-  ensure:
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: complete
-      field: mshr_id
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: grant
-      field: mshr_id
-      sort:
-        name: int
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: complete
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: grant
-      field: op_id
-      sort:
-        name: op_id
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: complete
-      field: source_op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: grant
-      field: source_op_id
-      sort:
-        name: op_id
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: complete
-      field: address
-      sort:
-        name: address
-        width: 64
-    right:
-      node: event_field
-      event_id: grant
-      field: address
-      sort:
-        name: address
-        width: 64
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: complete
-      field: value
-      sort:
-        name: value
-        width: 64
-    right:
-      node: event_field
-      event_id: grant
-      field: value
-      sort:
-        name: value
-        width: 64
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: complete
-      field: cycle
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: grant
-      field: cycle
-      sort:
-        name: int
-  state_requirements:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: complete
-    op: eq
-    value:
-      node: literal
-      sort:
-        name: string
-      value: REFILL_RESP
-  - state: MSHR[${older_load.mshr_id}].req_op_id
-    at: complete
-    op: eq
-    value:
-      node: event_field
-      event_id: complete
-      field: op_id
-      sort:
-        name: op_id
-  - state: MSHR[${older_load.mshr_id}].req_address
-    at: complete
-    op: eq
-    value:
-      node: event_field
-      event_id: complete
-      field: address
-      sort:
-        name: address
-        width: 64
-  state_updates:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: complete
-    value:
-      node: literal
-      sort:
-        name: string
-      value: DRAIN_RPQ_LOADS
-  - state: MSHR[${older_load.mshr_id}].line_value
-    at: complete
-    value:
-      node: event_field
-      event_id: complete
-      field: value
-      sort:
-        name: value
-        width: 64
-  - state: MSHR[${older_load.mshr_id}].line_source_op_id
-    at: complete
-    value:
-      node: event_field
-      event_id: complete
-      field: source_op_id
-      sort:
-        name: op_id
-  tags:
-  - state
-  - mshr-fsm
-  - refill
-- name: drain_rpq_load_requires_completed_refill
-  inputs:
-  - role: drain
-    type: MSHR.DrainRPQLoad
-  outputs:
-  - role: complete
-    type: MSHR.RefillComplete
-  when:
-    node: literal
-    sort:
-      name: bool
-    value: true
-  ensure:
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: drain
-      field: mshr_id
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: complete
-      field: mshr_id
-      sort:
-        name: int
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: drain
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: complete
-      field: op_id
-      sort:
-        name: op_id
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: drain
-      field: address
-      sort:
-        name: address
-        width: 64
-    right:
-      node: event_field
-      event_id: complete
-      field: address
-      sort:
-        name: address
-        width: 64
-  - node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: drain
-      field: value
-      sort:
-        name: value
-        width: 64
-    right:
-      node: event_field
-      event_id: complete
-      field: value
-      sort:
-        name: value
-        width: 64
-  - node: binary
-    op: lt
-    left:
-      node: event_field
-      event_id: complete
-      field: cycle
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: drain
-      field: cycle
-      sort:
-        name: int
-  state_requirements:
-  - state: MSHR[${older_load.mshr_id}].state
-    at: drain
-    op: eq
-    value:
-      node: literal
-      sort:
-        name: string
-      value: DRAIN_RPQ_LOADS
-  - state: MSHR[${older_load.mshr_id}].rpq_valid
-    at: drain
-    op: eq
-    value:
-      node: literal
-      sort:
-        name: bool
-      value: true
-  - state: MSHR[${older_load.mshr_id}].rpq_op_id
-    at: drain
-    op: eq
-    value:
-      node: event_field
-      event_id: drain
-      field: op_id
-      sort:
-        name: op_id
-  - state: MSHR[${older_load.mshr_id}].rpq_ldq_idx
-    at: drain
-    op: eq
-    value:
-      node: event_field
-      event_id: drain
-      field: ldq_idx
-      sort:
-        name: bv
-        width: 6
-  - state: MSHR[${older_load.mshr_id}].rpq_address
-    at: drain
-    op: eq
-    value:
-      node: event_field
-      event_id: drain
-      field: address
-      sort:
-        name: address
-        width: 64
-  - state: MSHR[${older_load.mshr_id}].line_value
-    at: drain
-    op: eq
-    value:
-      node: event_field
-      event_id: drain
-      field: value
-      sort:
-        name: value
-        width: 64
-  state_updates:
-  - state: MSHR[${older_load.mshr_id}].rpq_valid
-    at: drain
-    value:
-      node: literal
-      sort:
-        name: bool
-      value: false
-  tags:
-  - state
-  - rpq
-  - line-buffer
+  event_type: MSHR.GrantNoData
+  required_connection: false
+- name: response
+  direction: output
+  event_type: MSHR.ResponseDequeue
+- name: replay
+  direction: output
+  event_type: MSHR.Replay
+  required_connection: false
+- name: refill
+  direction: output
+  event_type: MSHR.RefillWrite
+  required_connection: false
+- name: meta_write
+  direction: output
+  event_type: MSHR.MetaWrite
+  required_connection: false
+- name: wb_req
+  direction: output
+  event_type: MSHR.WritebackRequest
+  required_connection: false
+- name: mem_finish
+  direction: output
+  event_type: MSHR.MemFinish
+  required_connection: false
+- name: probe_blocked
+  direction: output
+  event_type: MSHR.ProbeBlocked
+  required_connection: false
+- name: fence_blocked
+  direction: output
+  event_type: MSHR.FenceBlocked
+  required_connection: false
+- name: io_request
+  direction: input
+  event_type: IOMSHR.Request
+  required_connection: false
+- name: io_response
+  direction: output
+  event_type: IOMSHR.Response
+  required_connection: false
+slots: []
+state_variables: []
+transformations: []
 constraints: []
+repeat:
+- over: mshr_instances
+  as: inst
+  include:
+    state_variables:
+    - name: MSHR[${inst.mshr_id}].state
+      sort: &id001
+        name: string
+      initial: INVALID
+    - name: MSHR[${inst.mshr_id}].req_op_id
+      sort: &id003
+        name: op_id
+      initial: EMPTY
+    - name: MSHR[${inst.mshr_id}].req_address
+      sort: &id006
+        name: address
+        width: 64
+      initial: EMPTY_ADDR
+    - name: MSHR[${inst.mshr_id}].req_kind
+      sort: *id001
+      initial: NONE
+    - name: MSHR[${inst.mshr_id}].req_needs_wb
+      sort: &id002
+        name: bool
+      initial: false
+    - name: MSHR[${inst.mshr_id}].grant_had_data
+      sort: *id002
+      initial: false
+    - name: MSHR[${inst.mshr_id}].line_value
+      sort: &id004
+        name: value
+        width: 64
+      initial: UNSET_VALUE
+    - name: MSHR[${inst.mshr_id}].line_source_op_id
+      sort: *id003
+      initial: EMPTY
+    - name: MSHR[${inst.mshr_id}].grantack_valid
+      sort: *id002
+      initial: false
+    - name: MSHR[${inst.mshr_id}].commit_line
+      sort: *id002
+      initial: false
+    - name: MSHR[${inst.mshr_id}].probe_rdy
+      sort: *id002
+      initial: true
+    slots:
+    - id: mshr_acquire_${inst.repeat_index}
+      type: MSHR.AcquireBlock
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        op_id: ${inst.op_id}
+        address: ${inst.address}
+    - id: mshr_grant_data_${inst.repeat_index}
+      type: MSHR.GrantData
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        op_id: ${inst.op_id}
+        source_op_id:
+          $expr:
+            node: symbol
+            name: mshr::${inst.mshr_id}::grant_source
+            sort: *id003
+        address: ${inst.address}
+        value:
+          $expr:
+            node: symbol
+            name: mshr::${inst.mshr_id}::grant_value
+            sort: *id004
+    - id: mshr_grant_no_data_${inst.repeat_index}
+      type: MSHR.GrantNoData
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        op_id: ${inst.op_id}
+        address: ${inst.address}
+    - id: mshr_lb_write_${inst.repeat_index}
+      type: MSHR.LineBufferWrite
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+        value:
+          $expr:
+            node: symbol
+            name: mshr::${inst.mshr_id}::lb_value
+            sort: *id004
+    - id: mshr_refill_complete_${inst.repeat_index}
+      type: MSHR.RefillComplete
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        op_id: ${inst.op_id}
+        source_op_id:
+          $expr:
+            node: symbol
+            name: mshr::${inst.mshr_id}::refill_source
+            sort: *id003
+        address: ${inst.address}
+        value:
+          $expr:
+            node: symbol
+            name: mshr::${inst.mshr_id}::refill_value
+            sort: *id004
+    - id: mshr_meta_read_${inst.repeat_index}
+      type: MSHR.MetaReadRequest
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_meta_resp_clean_${inst.repeat_index}
+      type: MSHR.MetaReadResponse
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+        valid: true
+        needs_writeback: false
+    - id: mshr_meta_resp_dirty_${inst.repeat_index}
+      type: MSHR.MetaReadResponse
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+        valid: true
+        needs_writeback: true
+    - id: mshr_meta_clear_${inst.repeat_index}
+      type: MSHR.MetaClear
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_wb_req_${inst.repeat_index}
+      type: MSHR.WritebackRequest
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_wb_done_${inst.repeat_index}
+      type: MSHR.WritebackDone
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_commit_line_${inst.repeat_index}
+      type: MSHR.CommitLine
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_refill_write_${inst.repeat_index}
+      type: MSHR.RefillWrite
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_meta_write_${inst.repeat_index}
+      type: MSHR.MetaWrite
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_mem_finish_${inst.repeat_index}
+      type: MSHR.MemFinish
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+    - id: mshr_probe_blocked_${inst.repeat_index}
+      type: MSHR.ProbeBlocked
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        address: ${inst.address}
+        reason: busy
+    - id: mshr_fence_blocked_${inst.repeat_index}
+      type: MSHR.FenceBlocked
+      required: false
+      fields:
+        mshr_id: ${inst.mshr_id}
+        reason: busy
+    transformations:
+    - name: acquire_${inst.mshr_id}
+      inputs:
+      - role: accept
+        type: MSHR.PrimaryAccept
+      outputs:
+      - role: acquire
+        type: MSHR.AcquireBlock
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: accept
+            field: mshr_id
+            sort: &id005
+              name: int
+          right:
+            node: literal
+            sort: *id005
+            value: ${inst.mshr_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: accept
+            field: needs_acquire
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: true
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: acquire
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: acquire
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: acquire
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: accept
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: acquire
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: acquire
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: REFILL_REQ
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: acquire
+        value:
+          node: literal
+          sort: *id001
+          value: REFILL_RESP
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: acquire
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: acquire
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      tags:
+      - mshr-fsm
+      - tilelink
+    - name: grant_data_${inst.mshr_id}
+      inputs:
+      - role: acquire
+        type: MSHR.AcquireBlock
+      outputs:
+      - role: grant
+        type: MSHR.GrantData
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: acquire
+            field: mshr_id
+            sort: *id005
+          right:
+            node: literal
+            sort: *id005
+            value: ${inst.mshr_id}
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id002
+            value: ${inst.grant_has_data}
+          right:
+            node: literal
+            sort: *id002
+            value: true
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: acquire
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: acquire
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: grant
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: acquire
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: grant
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: acquire
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: grant
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: grant
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: REFILL_RESP
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].grant_had_data
+        at: grant
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      - state: MSHR[${inst.mshr_id}].line_value
+        at: grant
+        value:
+          node: event_field
+          event_id: grant
+          field: value
+          sort: *id004
+      - state: MSHR[${inst.mshr_id}].line_source_op_id
+        at: grant
+        value:
+          node: event_field
+          event_id: grant
+          field: source_op_id
+          sort: *id003
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      tags:
+      - grant-data
+    - name: grant_no_data_${inst.mshr_id}
+      inputs:
+      - role: acquire
+        type: MSHR.AcquireBlock
+      outputs:
+      - role: grant
+        type: MSHR.GrantNoData
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: acquire
+            field: mshr_id
+            sort: *id005
+          right:
+            node: literal
+            sort: *id005
+            value: ${inst.mshr_id}
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id002
+            value: ${inst.grant_has_data}
+          right:
+            node: literal
+            sort: *id002
+            value: false
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: acquire
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: acquire
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: grant
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: acquire
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: grant
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: acquire
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: grant
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: grant
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: REFILL_RESP
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: grant
+        value:
+          node: literal
+          sort: *id001
+          value: DRAIN_RPQ
+      - state: MSHR[${inst.mshr_id}].grant_had_data
+        at: grant
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR[${inst.mshr_id}].grantack_valid
+        at: grant
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: grant
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      tags:
+      - permission-grant
+    - name: grant_writes_lb_${inst.mshr_id}
+      inputs:
+      - role: grant
+        type: MSHR.GrantData
+      outputs:
+      - role: write
+        type: MSHR.LineBufferWrite
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: write
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: write
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: value
+          sort: *id004
+        right:
+          node: event_field
+          event_id: write
+          field: value
+          sort: *id004
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: write
+          field: cycle
+          sort: *id005
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: write
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+    - name: refill_complete_${inst.mshr_id}
+      inputs:
+      - role: grant
+        type: MSHR.GrantData
+      outputs:
+      - role: complete
+        type: MSHR.RefillComplete
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: complete
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: complete
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: source_op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: complete
+          field: source_op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: complete
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: value
+          sort: *id004
+        right:
+          node: event_field
+          event_id: complete
+          field: value
+          sort: *id004
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: grant
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: complete
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: complete
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: REFILL_RESP
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: complete
+        value:
+          node: literal
+          sort: *id001
+          value: DRAIN_RPQ_LOADS
+      - state: MSHR[${inst.mshr_id}].grantack_valid
+        at: complete
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      - state: MSHR[${inst.mshr_id}].commit_line
+        at: complete
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: complete
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: complete
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      tags:
+      - refill-complete
+    - name: meta_read_when_rpq_empty_${inst.mshr_id}
+      inputs:
+      - role: meta
+        type: MSHR.MetaReadRequest
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: meta
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure: []
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: meta
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: DRAIN_RPQ_LOADS
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: meta
+        value:
+          node: literal
+          sort: *id001
+          value: META_RESP
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: meta
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      tags:
+      - meta
+      - rpq-empty-boundary
+    - name: dirty_meta_clear_${inst.mshr_id}
+      inputs:
+      - role: resp
+        type: MSHR.MetaReadResponse
+      outputs:
+      - role: clear
+        type: MSHR.MetaClear
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: resp
+            field: mshr_id
+            sort: *id005
+          right:
+            node: literal
+            sort: *id005
+            value: ${inst.mshr_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: resp
+            field: valid
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: true
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: resp
+            field: needs_writeback
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: true
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: resp
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: clear
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: resp
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: clear
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: resp
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: META_RESP
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: clear
+        value:
+          node: literal
+          sort: *id001
+          value: WB_REQ
+      tags:
+      - writeback
+    - name: clean_meta_commit_${inst.mshr_id}
+      inputs:
+      - role: resp
+        type: MSHR.MetaReadResponse
+      outputs:
+      - role: commit
+        type: MSHR.CommitLine
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: resp
+            field: mshr_id
+            sort: *id005
+          right:
+            node: literal
+            sort: *id005
+            value: ${inst.mshr_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: resp
+            field: valid
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: true
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: resp
+            field: needs_writeback
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: false
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: resp
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: commit
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: resp
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: commit
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: resp
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: META_RESP
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: commit
+        value:
+          node: literal
+          sort: *id001
+          value: COMMIT_LINE
+      tags:
+      - meta
+    - name: wb_request_${inst.mshr_id}
+      inputs:
+      - role: clear
+        type: MSHR.MetaClear
+      outputs:
+      - role: wb
+        type: MSHR.WritebackRequest
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: clear
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: clear
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: wb
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: clear
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: wb
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: wb
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: WB_REQ
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: wb
+        value:
+          node: literal
+          sort: *id001
+          value: WB_RESP
+      tags:
+      - writeback
+    - name: wb_done_${inst.mshr_id}
+      inputs:
+      - role: wb
+        type: MSHR.WritebackRequest
+      outputs:
+      - role: done
+        type: MSHR.WritebackDone
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: wb
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: wb
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: done
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: wb
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: done
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: done
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: WB_RESP
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: done
+        value:
+          node: literal
+          sort: *id001
+          value: COMMIT_LINE
+      tags:
+      - writeback
+    - name: commit_after_wb_${inst.mshr_id}
+      inputs:
+      - role: done
+        type: MSHR.WritebackDone
+      outputs:
+      - role: commit
+        type: MSHR.CommitLine
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: done
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: done
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: commit
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: done
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: commit
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: commit
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: COMMIT_LINE
+      tags:
+      - writeback
+      - commit-line
+    - name: commit_refill_${inst.mshr_id}
+      inputs:
+      - role: commit
+        type: MSHR.CommitLine
+      outputs:
+      - role: refill
+        type: MSHR.RefillWrite
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: commit
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: commit
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: refill
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: commit
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: refill
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: refill
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: COMMIT_LINE
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: refill
+        value:
+          node: literal
+          sort: *id001
+          value: DRAIN_RPQ
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: refill
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      tags:
+      - refill-write
+    - name: meta_write_after_refill_${inst.mshr_id}
+      inputs:
+      - role: refill
+        type: MSHR.RefillWrite
+      outputs:
+      - role: meta
+        type: MSHR.MetaWrite
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: refill
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: refill
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: meta
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: refill
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: meta
+          field: cycle
+          sort: *id005
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: meta
+        value:
+          node: literal
+          sort: *id001
+          value: MEM_FINISH_1
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: meta
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      tags:
+      - meta-write
+    - name: mem_finish_${inst.mshr_id}
+      inputs:
+      - role: meta
+        type: MSHR.MetaWrite
+      outputs:
+      - role: finish
+        type: MSHR.MemFinish
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: meta
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${inst.mshr_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: meta
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: finish
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: meta
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: finish
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: finish
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: MEM_FINISH_1
+      state_updates:
+      - state: MSHR[${inst.mshr_id}].state
+        at: finish
+        value:
+          node: literal
+          sort: *id001
+          value: INVALID
+      - state: MSHR[${inst.mshr_id}].grantack_valid
+        at: finish
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR[${inst.mshr_id}].commit_line
+        at: finish
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: finish
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      tags:
+      - finish
+    - name: fence_blocked_${inst.mshr_id}
+      inputs:
+      - role: block
+        type: MSHR.FenceBlocked
+      outputs: []
+      when:
+        node: literal
+        sort: *id002
+        value: true
+      ensure: []
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].state
+        at: block
+        op: ne
+        value:
+          node: literal
+          sort: *id001
+          value: INVALID
+      tags:
+      - fence
+    - name: probe_blocked_${inst.mshr_id}
+      inputs:
+      - role: block
+        type: MSHR.ProbeBlocked
+      outputs: []
+      when:
+        node: literal
+        sort: *id002
+        value: true
+      ensure: []
+      state_requirements:
+      - state: MSHR[${inst.mshr_id}].probe_rdy
+        at: block
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      tags:
+      - probe
+- over: mshr_requests
+  as: mreq
+  include:
+    state_variables:
+    - name: MSHR.req[${mreq.op_id}].rpq_valid
+      sort: *id002
+      initial: false
+    - name: MSHR.req[${mreq.op_id}].killed
+      sort: *id002
+      initial: false
+    - name: MSHR.req[${mreq.op_id}].responseq_valid
+      sort: *id002
+      initial: false
+    - name: MSHR.req[${mreq.op_id}].sdq_valid
+      sort: *id002
+      initial: false
+    slots:
+    - id: primary_${mreq.repeat_index}
+      type: MSHR.PrimaryAccept
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        mem_kind: ${mreq.mem_kind}
+        needs_acquire: ${mreq.needs_acquire}
+        old_line_dirty: ${mreq.old_line_dirty}
+        grant_has_data: ${mreq.grant_has_data}
+    - id: secondary_${mreq.repeat_index}
+      type: MSHR.SecondaryMissAccept
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        mem_kind: ${mreq.mem_kind}
+    - id: rpq_insert_primary_${mreq.repeat_index}
+      type: MSHR.RPQInsert
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        mem_kind: ${mreq.mem_kind}
+        admission: primary
+    - id: rpq_insert_secondary_${mreq.repeat_index}
+      type: MSHR.RPQInsert
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        mem_kind: ${mreq.mem_kind}
+        admission: secondary
+    - id: rpq_kill_branch_${mreq.repeat_index}
+      type: MSHR.RPQKill
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        reason: branch
+    - id: rpq_kill_exception_${mreq.repeat_index}
+      type: MSHR.RPQKill
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        reason: exception
+    - id: direct_${mreq.repeat_index}
+      type: MSHR.DirectLoadResponse
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        value:
+          $expr:
+            node: symbol
+            name: mshr::${mreq.op_id}::direct_value
+            sort: *id004
+    - id: deq_direct_${mreq.repeat_index}
+      type: MSHR.RPQDequeue
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        disposition: direct
+    - id: replay_${mreq.repeat_index}
+      type: MSHR.Replay
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        value: ${mreq.value}
+    - id: deq_replay_${mreq.repeat_index}
+      type: MSHR.RPQDequeue
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_kind: ${mreq.queue_kind}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        disposition: replay
+    - id: resp_enq_${mreq.repeat_index}
+      type: MSHR.ResponseEnqueue
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        value:
+          $expr:
+            node: symbol
+            name: mshr::${mreq.op_id}::resp_value
+            sort: *id004
+    - id: resp_deq_${mreq.repeat_index}
+      type: MSHR.ResponseDequeue
+      required: false
+      fields:
+        mshr_id: ${mreq.mshr_id}
+        op_id: ${mreq.op_id}
+        queue_idx: ${mreq.queue_idx}
+        address: ${mreq.address}
+        value:
+          $expr:
+            node: symbol
+            name: mshr::${mreq.op_id}::resp_value
+            sort: *id004
+    - id: sdq_alloc_${mreq.repeat_index}
+      type: MSHR.SDQAllocate
+      required: false
+      fields:
+        op_id: ${mreq.op_id}
+        sdq_id: ${mreq.sdq_id}
+        value: ${mreq.value}
+    - id: sdq_free_${mreq.repeat_index}
+      type: MSHR.SDQFree
+      required: false
+      fields:
+        op_id: ${mreq.op_id}
+        sdq_id: ${mreq.sdq_id}
+    transformations:
+    - name: primary_accept_${mreq.op_id}
+      inputs:
+      - role: request
+        type: DCache.MSHRRequest
+      outputs:
+      - role: accept
+        type: MSHR.PrimaryAccept
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: request
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: request
+            field: secondary
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: false
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: accept
+          field: cycle
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: accept
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: accept
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: needs_acquire
+          sort: *id002
+        right:
+          node: event_field
+          event_id: accept
+          field: needs_acquire
+          sort: *id002
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: old_line_dirty
+          sort: *id002
+        right:
+          node: event_field
+          event_id: accept
+          field: old_line_dirty
+          sort: *id002
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: grant_has_data
+          sort: *id002
+        right:
+          node: event_field
+          event_id: accept
+          field: grant_has_data
+          sort: *id002
+      state_requirements:
+      - state: MSHR[${mreq.mshr_id}].state
+        at: request
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: INVALID
+      state_updates:
+      - state: MSHR[${mreq.mshr_id}].state
+        at: accept
+        value:
+          node: ite
+          condition:
+            node: event_field
+            event_id: accept
+            field: needs_acquire
+            sort: *id002
+          then:
+            node: literal
+            sort: *id001
+            value: REFILL_REQ
+          else:
+            node: literal
+            sort: *id001
+            value: DRAIN_RPQ
+      - state: MSHR[${mreq.mshr_id}].req_op_id
+        at: accept
+        value:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+      - state: MSHR[${mreq.mshr_id}].req_address
+        at: accept
+        value:
+          node: event_field
+          event_id: accept
+          field: address
+          sort: *id006
+      - state: MSHR[${mreq.mshr_id}].req_kind
+        at: accept
+        value:
+          node: event_field
+          event_id: accept
+          field: mem_kind
+          sort: *id001
+      - state: MSHR[${mreq.mshr_id}].req_needs_wb
+        at: accept
+        value:
+          node: event_field
+          event_id: accept
+          field: old_line_dirty
+          sort: *id002
+      - state: MSHR[${mreq.mshr_id}].grant_had_data
+        at: accept
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR[${mreq.mshr_id}].probe_rdy
+        at: accept
+        value:
+          node: ite
+          condition:
+            node: event_field
+            event_id: accept
+            field: needs_acquire
+            sort: *id002
+          then:
+            node: literal
+            sort: *id002
+            value: true
+          else:
+            node: literal
+            sort: *id002
+            value: false
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      tags:
+      - primary-miss
+    - name: secondary_accept_${mreq.op_id}
+      inputs:
+      - role: request
+        type: DCache.MSHRRequest
+      outputs:
+      - role: accept
+        type: MSHR.SecondaryMissAccept
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: request
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: request
+            field: secondary
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: true
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: request
+            field: requires_second_acquire
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: false
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: request
+            field: is_probe
+            sort: *id002
+          right:
+            node: literal
+            sort: *id002
+            value: false
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: accept
+          field: cycle
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: accept
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: accept
+          field: address
+          sort: *id006
+      state_requirements:
+      - state: MSHR[${mreq.mshr_id}].state
+        at: request
+        op: ne
+        value:
+          node: literal
+          sort: *id001
+          value: INVALID
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      tags:
+      - secondary-miss
+    - name: primary_rpq_insert_${mreq.op_id}
+      inputs:
+      - role: accept
+        type: MSHR.PrimaryAccept
+      outputs:
+      - role: insert
+        type: MSHR.RPQInsert
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id002
+            value: ${mreq.secondary}
+          right:
+            node: literal
+            sort: *id002
+            value: false
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: accept
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: insert
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: insert
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: queue_idx
+          sort: *id005
+        right:
+          node: event_field
+          event_id: insert
+          field: queue_idx
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: insert
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: insert
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: accept
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: insert
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: insert
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: insert
+            field: admission
+            sort: *id001
+          right:
+            node: literal
+            sort: *id001
+            value: primary
+      tags:
+      - rpq
+    - name: secondary_rpq_insert_${mreq.op_id}
+      inputs:
+      - role: accept
+        type: MSHR.SecondaryMissAccept
+      outputs:
+      - role: insert
+        type: MSHR.RPQInsert
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id002
+            value: ${mreq.secondary}
+          right:
+            node: literal
+            sort: *id002
+            value: true
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: accept
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: insert
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: insert
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: queue_idx
+          sort: *id005
+        right:
+          node: event_field
+          event_id: insert
+          field: queue_idx
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: insert
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: accept
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: insert
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: accept
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: insert
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: insert
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: insert
+            field: admission
+            sort: *id001
+          right:
+            node: literal
+            sort: *id001
+            value: secondary
+      tags:
+      - rpq
+      - secondary
+    - name: rpq_branch_kill_${mreq.op_id}
+      inputs:
+      - role: kill
+        type: Core.BranchKill
+      outputs:
+      - role: drop
+        type: MSHR.RPQKill
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: kill
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id001
+            value: ${mreq.queue_kind}
+          right:
+            node: literal
+            sort: *id001
+            value: ldq
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: drop
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: drop
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${mreq.mshr_id}
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: drop
+          field: reason
+          sort: *id001
+        right:
+          node: literal
+          sort: *id001
+          value: branch
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: kill
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: drop
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: kill
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      state_mode: guard
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: reason
+            sort: *id001
+          right:
+            node: literal
+            sort: *id001
+            value: branch
+    - name: rpq_exception_kill_${mreq.op_id}
+      inputs:
+      - role: kill
+        type: Core.Exception
+      outputs:
+      - role: drop
+        type: MSHR.RPQKill
+      when:
+        node: binary
+        op: eq
+        left:
+          node: literal
+          sort: *id001
+          value: ${mreq.queue_kind}
+        right:
+          node: literal
+          sort: *id001
+          value: ldq
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: drop
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: drop
+          field: mshr_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${mreq.mshr_id}
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: drop
+          field: reason
+          sort: *id001
+        right:
+          node: literal
+          sort: *id001
+          value: exception
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: kill
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: drop
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: kill
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      state_mode: guard
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: reason
+            sort: *id001
+          right:
+            node: literal
+            sort: *id001
+            value: exception
+    - name: rpq_branch_kill_state_${mreq.op_id}
+      inputs:
+      - role: drop
+        type: MSHR.RPQKill
+      outputs: []
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: reason
+            sort: *id001
+          right:
+            node: literal
+            sort: *id001
+            value: branch
+      ensure: []
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: drop
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR.req[${mreq.op_id}].killed
+        at: drop
+        value:
+          node: literal
+          sort: *id002
+          value: true
+    - name: rpq_exception_kill_state_${mreq.op_id}
+      inputs:
+      - role: drop
+        type: MSHR.RPQKill
+      outputs: []
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: drop
+            field: reason
+            sort: *id001
+          right:
+            node: literal
+            sort: *id001
+            value: exception
+      ensure: []
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: drop
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR.req[${mreq.op_id}].killed
+        at: drop
+        value:
+          node: literal
+          sort: *id002
+          value: true
+    - name: direct_load_response_${mreq.op_id}
+      inputs:
+      - role: complete
+        type: MSHR.RefillComplete
+      - role: insert
+        type: MSHR.RPQInsert
+      outputs:
+      - role: response
+        type: MSHR.DirectLoadResponse
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id001
+            value: ${mreq.mem_kind}
+          right:
+            node: literal
+            sort: *id001
+            value: load
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id001
+            value: ${mreq.queue_kind}
+          right:
+            node: literal
+            sort: *id001
+            value: ldq
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: complete
+            field: mshr_id
+            sort: *id005
+          right:
+            node: literal
+            sort: *id005
+            value: ${mreq.mshr_id}
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: insert
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: complete
+          field: value
+          sort: *id004
+        right:
+          node: event_field
+          event_id: response
+          field: value
+          sort: *id004
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: insert
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: response
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: complete
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: response
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${mreq.mshr_id}].state
+        at: response
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: DRAIN_RPQ_LOADS
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: response
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      - state: MSHR.req[${mreq.op_id}].killed
+        at: response
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      exact: true
+      state_mode: guard
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+    - name: direct_load_response_state_${mreq.op_id}
+      inputs:
+      - role: response
+        type: MSHR.DirectLoadResponse
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      ensure: []
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: response
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      - state: MSHR[${mreq.mshr_id}].commit_line
+        at: response
+        value:
+          node: literal
+          sort: *id002
+          value: true
+    - name: direct_dequeue_${mreq.op_id}
+      inputs:
+      - role: response
+        type: MSHR.DirectLoadResponse
+      outputs:
+      - role: deq
+        type: MSHR.RPQDequeue
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: deq
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: deq
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: deq
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: deq
+          field: cycle
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: deq
+          field: disposition
+          sort: *id001
+        right:
+          node: literal
+          sort: *id001
+          value: direct
+    - name: respq_enqueue_${mreq.op_id}
+      inputs:
+      - role: response
+        type: MSHR.DirectLoadResponse
+      outputs:
+      - role: enq
+        type: MSHR.ResponseEnqueue
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: enq
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: enq
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: enq
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: value
+          sort: *id004
+        right:
+          node: event_field
+          event_id: enq
+          field: value
+          sort: *id004
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: response
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: enq
+          field: cycle
+          sort: *id005
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].responseq_valid
+        at: enq
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enq
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+    - name: respq_dequeue_${mreq.op_id}
+      inputs:
+      - role: enq
+        type: MSHR.ResponseEnqueue
+      outputs:
+      - role: deq
+        type: MSHR.ResponseDequeue
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enq
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enq
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: deq
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enq
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: deq
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enq
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: deq
+          field: address
+          sort: *id006
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: enq
+          field: value
+          sort: *id004
+        right:
+          node: event_field
+          event_id: deq
+          field: value
+          sort: *id004
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: enq
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: deq
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR.req[${mreq.op_id}].responseq_valid
+        at: deq
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      - state: MSHR.req[${mreq.op_id}].killed
+        at: deq
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].responseq_valid
+        at: deq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: deq
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+    - name: replay_${mreq.op_id}
+      inputs:
+      - role: insert
+        type: MSHR.RPQInsert
+      outputs:
+      - role: replay
+        type: MSHR.Replay
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: nary
+          op: or
+          operands:
+          - node: binary
+            op: ne
+            left:
+              node: literal
+              sort: *id001
+              value: ${mreq.mem_kind}
+            right:
+              node: literal
+              sort: *id001
+              value: load
+          - node: binary
+            op: eq
+            left:
+              node: literal
+              sort: *id001
+              value: ${mreq.mem_kind}
+            right:
+              node: literal
+              sort: *id001
+              value: lr
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: insert
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: insert
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: replay
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: insert
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: replay
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: insert
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: replay
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: insert
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: replay
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR[${mreq.mshr_id}].state
+        at: replay
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: DRAIN_RPQ
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: replay
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      - state: MSHR.req[${mreq.op_id}].killed
+        at: replay
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      exact: true
+      state_mode: guard
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+    - name: replay_state_${mreq.op_id}
+      inputs:
+      - role: replay
+        type: MSHR.Replay
+      outputs: []
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      ensure: []
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].rpq_valid
+        at: replay
+        value:
+          node: literal
+          sort: *id002
+          value: false
+    - name: replay_dequeue_${mreq.op_id}
+      inputs:
+      - role: replay
+        type: MSHR.Replay
+      outputs:
+      - role: deq
+        type: MSHR.RPQDequeue
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: deq
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: mshr_id
+          sort: *id005
+        right:
+          node: event_field
+          event_id: deq
+          field: mshr_id
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: deq
+          field: cycle
+          sort: *id005
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: deq
+          field: disposition
+          sort: *id001
+        right:
+          node: literal
+          sort: *id001
+          value: replay
+    - name: sdq_alloc_${mreq.op_id}
+      inputs:
+      - role: request
+        type: DCache.MSHRRequest
+      outputs:
+      - role: alloc
+        type: MSHR.SDQAllocate
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id001
+            value: ${mreq.mem_kind}
+          right:
+            node: literal
+            sort: *id001
+            value: store
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: request
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: alloc
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: alloc
+          field: sdq_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${mreq.sdq_id}
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: value
+          sort: *id004
+        right:
+          node: event_field
+          event_id: alloc
+          field: value
+          sort: *id004
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: alloc
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR.req[${mreq.op_id}].sdq_valid
+        at: request
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].sdq_valid
+        at: alloc
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: alloc
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+    - name: sdq_free_${mreq.op_id}
+      inputs:
+      - role: replay
+        type: MSHR.Replay
+      outputs:
+      - role: free
+        type: MSHR.SDQFree
+      when:
+        node: nary
+        op: and
+        operands:
+        - node: binary
+          op: eq
+          left:
+            node: literal
+            sort: *id001
+            value: ${mreq.mem_kind}
+          right:
+            node: literal
+            sort: *id001
+            value: store
+        - node: binary
+          op: eq
+          left:
+            node: event_field
+            event_id: replay
+            field: op_id
+            sort: *id003
+          right:
+            node: literal
+            sort: *id003
+            value: ${mreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: free
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: free
+          field: sdq_id
+          sort: *id005
+        right:
+          node: literal
+          sort: *id005
+          value: ${mreq.sdq_id}
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: replay
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: free
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: MSHR.req[${mreq.op_id}].sdq_valid
+        at: free
+        op: eq
+        value:
+          node: literal
+          sort: *id002
+          value: true
+      state_updates:
+      - state: MSHR.req[${mreq.op_id}].sdq_valid
+        at: free
+        value:
+          node: literal
+          sort: *id002
+          value: false
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: free
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${mreq.op_id}
+- over: io_requests
+  as: ioreq
+  include:
+    state_variables:
+    - name: IOMSHR[${ioreq.io_id}].state
+      sort: *id001
+      initial: IDLE
+    slots:
+    - id: io_access_${ioreq.repeat_index}
+      type: IOMSHR.MemAccess
+      required: false
+      fields:
+        op_id: ${ioreq.op_id}
+        address: ${ioreq.address}
+        mem_kind: ${ioreq.mem_kind}
+        io_id: ${ioreq.io_id}
+    - id: io_ack_${ioreq.repeat_index}
+      type: IOMSHR.MemAck
+      required: false
+      fields:
+        op_id: ${ioreq.op_id}
+        value: ${ioreq.value}
+        io_id: ${ioreq.io_id}
+    - id: io_resp_${ioreq.repeat_index}
+      type: IOMSHR.Response
+      required: false
+      fields:
+        op_id: ${ioreq.op_id}
+        value: ${ioreq.value}
+        io_id: ${ioreq.io_id}
+    transformations:
+    - name: io_access_${ioreq.op_id}
+      inputs:
+      - role: request
+        type: IOMSHR.Request
+      outputs:
+      - role: access
+        type: IOMSHR.MemAccess
+      when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${ioreq.op_id}
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: access
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: request
+          field: address
+          sort: *id006
+        right:
+          node: event_field
+          event_id: access
+          field: address
+          sort: *id006
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: request
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: access
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: IOMSHR[${ioreq.io_id}].state
+        at: request
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: IDLE
+      state_updates:
+      - state: IOMSHR[${ioreq.io_id}].state
+        at: access
+        value:
+          node: literal
+          sort: *id001
+          value: MEM_ACK
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: access
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${ioreq.op_id}
+    - name: io_ack_${ioreq.op_id}
+      inputs:
+      - role: access
+        type: IOMSHR.MemAccess
+      outputs:
+      - role: ack
+        type: IOMSHR.MemAck
+      when:
+        node: literal
+        sort: *id002
+        value: true
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: access
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: ack
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: access
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: ack
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: IOMSHR[${ioreq.io_id}].state
+        at: ack
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: MEM_ACK
+      state_updates:
+      - state: IOMSHR[${ioreq.io_id}].state
+        at: ack
+        value:
+          node: ite
+          condition:
+            node: binary
+            op: eq
+            left:
+              node: literal
+              sort: *id001
+              value: ${ioreq.mem_kind}
+            right:
+              node: literal
+              sort: *id001
+              value: load
+          then:
+            node: literal
+            sort: *id001
+            value: RESP
+          else:
+            node: literal
+            sort: *id001
+            value: IDLE
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: ack
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${ioreq.op_id}
+    - name: io_response_${ioreq.op_id}
+      inputs:
+      - role: ack
+        type: IOMSHR.MemAck
+      outputs:
+      - role: resp
+        type: IOMSHR.Response
+      when:
+        node: binary
+        op: eq
+        left:
+          node: literal
+          sort: *id001
+          value: ${ioreq.mem_kind}
+        right:
+          node: literal
+          sort: *id001
+          value: load
+      ensure:
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: ack
+          field: op_id
+          sort: *id003
+        right:
+          node: event_field
+          event_id: resp
+          field: op_id
+          sort: *id003
+      - node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: ack
+          field: value
+          sort: *id004
+        right:
+          node: event_field
+          event_id: resp
+          field: value
+          sort: *id004
+      - node: binary
+        op: lt
+        left:
+          node: event_field
+          event_id: ack
+          field: cycle
+          sort: *id005
+        right:
+          node: event_field
+          event_id: resp
+          field: cycle
+          sort: *id005
+      state_requirements:
+      - state: IOMSHR[${ioreq.io_id}].state
+        at: resp
+        op: eq
+        value:
+          node: literal
+          sort: *id001
+          value: RESP
+      state_updates:
+      - state: IOMSHR[${ioreq.io_id}].state
+        at: resp
+        value:
+          node: literal
+          sort: *id001
+          value: IDLE
+      exact: true
+      output_when:
+        node: binary
+        op: eq
+        left:
+          node: event_field
+          event_id: resp
+          field: op_id
+          sort: *id003
+        right:
+          node: literal
+          sort: *id003
+          value: ${ioreq.op_id}

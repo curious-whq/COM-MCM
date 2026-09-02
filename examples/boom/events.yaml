@@ -1,7 +1,7 @@
-schema_version: umcm.events.v0.12.0
+schema_version: umcm.events.v0.13.0
 metadata:
   model: boom-v4-memory
-  version: 0.12.0
+  version: 0.13.0
   scope: formal BOOM LSQ/L1/MSHR composition examples
 events:
 - name: Arch.CommitLoad
@@ -1524,3 +1524,724 @@ events:
       name: string
     required: true
   description: An uncommitted, unsuccessful STQ entry is invalidated by a core exception.
+- name: DCache.MSHRRequest
+  module: DCache
+  layer: l1-mshr-interface
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: false
+  - name: mem_kind
+    sort:
+      name: string
+    required: true
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: tag_match
+    sort:
+      name: bool
+    required: true
+  - name: old_line_dirty
+    sort:
+      name: bool
+    required: true
+  - name: needs_acquire
+    sort:
+      name: bool
+    required: true
+  - name: grant_has_data
+    sort:
+      name: bool
+    required: true
+  - name: secondary
+    sort:
+      name: bool
+    required: true
+  - name: requires_second_acquire
+    sort:
+      name: bool
+    required: true
+  - name: is_hit_again
+    sort:
+      name: bool
+    required: true
+  - name: is_probe
+    sort:
+      name: bool
+    required: true
+  - name: sdq_id
+    sort:
+      name: int
+    required: false
+  description: An accepted cacheable DCache miss/permission request at the BoomMSHRFile boundary, after an MSHR entry has
+    been selected or matched.
+- name: MSHR.SecondaryMissAccept
+  module: MSHR
+  layer: mshr
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mem_kind
+    sort:
+      name: string
+    required: true
+  description: A same-line cacheable request merges into an already active BoomMSHR.
+- name: MSHR.RPQDequeue
+  module: MSHR
+  layer: mshr-rpq
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: disposition
+    sort:
+      name: string
+    required: true
+  description: An RPQ entry is removed by direct load response, cache-pipeline replay, or kill.
+- name: MSHR.RPQKill
+  module: MSHR
+  layer: mshr-rpq
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: reason
+    sort:
+      name: string
+    required: true
+  description: BranchKillableQueue removes a speculative load entry because of branch recovery or exception flush.
+- name: MSHR.GrantNoData
+  module: MSHR
+  layer: tilelink
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: A TileLink Grant without data completes a permissions-only acquisition.
+- name: MSHR.LineBufferWrite
+  module: MSHR
+  layer: mshr-line-buffer
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  description: GrantData is captured into the per-MSHR line buffer; beat-level detail is abstracted by the address/value pair.
+- name: MSHR.DirectLoadResponse
+  module: MSHR
+  layer: mshr-rpq
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  description: A non-LR load is served directly from the line buffer while the MSHR is in s_drain_rpq_loads.
+- name: MSHR.Replay
+  module: MSHR
+  layer: mshr-dcache-interface
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: false
+  description: A non-directly-served RPQ request re-enters the DCache pipeline from s_drain_rpq.
+- name: MSHR.MetaReadRequest
+  module: MSHR
+  layer: mshr-meta
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: MSHR.MetaReadResponse
+  module: MSHR
+  layer: mshr-meta
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: valid
+    sort:
+      name: bool
+    required: true
+  - name: needs_writeback
+    sort:
+      name: bool
+    required: true
+- name: MSHR.MetaClear
+  module: MSHR
+  layer: mshr-meta
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: MSHR.WritebackRequest
+  module: MSHR
+  layer: mshr-writeback
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: MSHR.WritebackDone
+  module: MSHR
+  layer: mshr-writeback
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: MSHR.CommitLine
+  module: MSHR
+  layer: mshr-refill
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: MSHR.RefillWrite
+  module: MSHR
+  layer: mshr-l1-interface
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  description: The acquired line is written from the MSHR line buffer into the L1 data array; beat enumeration is hidden by
+    this summary event.
+- name: MSHR.MetaWrite
+  module: MSHR
+  layer: mshr-l1-interface
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: MSHR.MemFinish
+  module: MSHR
+  layer: tilelink
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+- name: MSHR.SDQAllocate
+  module: MSHRFile
+  layer: mshr-sdq
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: sdq_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: MSHR.SDQFree
+  module: MSHRFile
+  layer: mshr-sdq
+  visibility: internal
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: sdq_id
+    sort:
+      name: int
+    required: true
+    identity: true
+- name: MSHR.ResponseEnqueue
+  module: MSHRFile
+  layer: mshr-response-queue
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: MSHR.ResponseDequeue
+  module: MSHRFile
+  layer: mshr-response-queue
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+- name: MSHR.ProbeBlocked
+  module: MSHR
+  layer: mshr-probe-interface
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: reason
+    sort:
+      name: string
+    required: true
+- name: MSHR.FenceBlocked
+  module: MSHRFile
+  layer: ordering-interface
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: reason
+    sort:
+      name: string
+    required: true
+- name: IOMSHR.Request
+  module: IOMSHR
+  layer: mmio
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mem_kind
+    sort:
+      name: string
+    required: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: false
+  - name: io_id
+    sort:
+      name: int
+    required: true
+    identity: true
+- name: IOMSHR.MemAccess
+  module: IOMSHR
+  layer: mmio
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mem_kind
+    sort:
+      name: string
+    required: true
+  - name: io_id
+    sort:
+      name: int
+    required: true
+    identity: true
+- name: IOMSHR.MemAck
+  module: IOMSHR
+  layer: mmio
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: false
+  - name: io_id
+    sort:
+      name: int
+    required: true
+    identity: true
+- name: IOMSHR.Response
+  module: IOMSHR
+  layer: mmio
+  visibility: public
+  fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: value
+    sort:
+      name: value
+      width: 64
+    required: true
+  - name: io_id
+    sort:
+      name: int
+    required: true
+    identity: true
+- name: MSHR.PrimaryAccept
+  module: MSHR
+  layer: mshr-file-entry-interface
+  visibility: public
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mem_kind
+    sort:
+      name: string
+    required: true
+  - name: needs_acquire
+    sort:
+      name: bool
+    required: true
+  - name: old_line_dirty
+    sort:
+      name: bool
+    required: true
+  - name: grant_has_data
+    sort:
+      name: bool
+    required: true
+  description: An idle MSHR entry accepts a new primary request selected by BoomMSHRFile.
+- name: MSHR.RPQInsert
+  module: MSHR
+  layer: mshr-rpq
+  visibility: internal
+  fields:
+  - name: mshr_id
+    sort:
+      name: int
+    required: true
+    identity: true
+  - name: op_id
+    sort:
+      name: op_id
+    required: true
+    identity: true
+  - name: queue_kind
+    sort:
+      name: string
+    required: true
+  - name: queue_idx
+    sort:
+      name: int
+    required: true
+  - name: address
+    sort:
+      name: address
+      width: 64
+    required: true
+  - name: mem_kind
+    sort:
+      name: string
+    required: true
+  - name: admission
+    sort:
+      name: string
+    required: true

@@ -1,6 +1,6 @@
-# µMCM Foundation v0.12.0
+# µMCM Foundation v0.13.0
 
-v0.12 is the first release organized around a **current BOOM model** instead of one directory per development stage.
+v0.13 keeps the current-model layout introduced in v0.12 and adds a reusable BOOM MSHR/RPQ/SDQ/IOMSHR model grounded in the supplied Chisel.
 
 The project remains independent of FM-Agent.  Its job is to provide the deterministic infrastructure that later model-generation agents must target:
 
@@ -69,6 +69,15 @@ The current LSU/LSQ model is parameterized over all loads, stores and fences in 
 
 The model deliberately abstracts queue pointer implementation, repeated arbitration/backpressure cycles, detailed TLB fault causes, HellaCache/debug/performance paths, and optional load-to-store register-data forwarding.  These omissions do not mean the corresponding RTL does not exist; they are outside the current memory-order semantic surface.
 
+
+## v0.13 MSHR/RPQ model
+
+The current `model/mshr/module.yaml` is parameterized over bounded MSHR requests and persistent MSHR identities. It models primary/secondary miss admission, RPQ kill/drain, Acquire/Grant, line-buffer refill, direct load response, replay, response queueing, SDQ lifetime, dirty-victim writeback/finish, fence/probe readiness and IOMSHR loads.
+
+Standalone MSHR regression inputs live under `examples/boom/traces/mshr/`; generated witnesses live under `tests/regressions/boom/v0_13/mshr/`.
+
+The full BOOM Load–Load bug still produces the forbidden `fr → rfe → ppo` cycle using this formal MSHR model.
+
 ## Quick validation
 
 ```bash
@@ -78,7 +87,7 @@ PYTHONPATH=src pytest -q
 Expected:
 
 ```text
-111 passed
+120 passed
 ```
 
 ### LSQ-only examples

@@ -1,4 +1,4 @@
-schema_version: umcm.module.v0.12.0
+schema_version: umcm.module.v0.13.0
 name: dcache
 metadata:
   variant: shared
@@ -14,7 +14,9 @@ metadata:
   - visible_store.op_id
   - visible_store.value
   - init_write.value
-  version: 0.12.0
+  version: 0.13.0
+  source_sha256: 82d5562b6d6220be5714716c6b935a001ed6fc54747b4fc925603cabbde9aac4
+  status: v0.13 interface bridge; full L1 semantics scheduled for v0.14
 ports:
 - name: lsu_req_valid
   direction: input
@@ -22,9 +24,6 @@ ports:
 - name: lsu_load_executed
   direction: input
   event_type: LSU.LoadExecuted
-- name: mshr_drain_rpq_load
-  direction: input
-  event_type: MSHR.DrainRPQLoad
 - name: req_ready
   direction: output
   event_type: DCache.ReqReady
@@ -52,6 +51,12 @@ ports:
 - name: long_latency_response
   direction: output
   event_type: DCache.LongLatencyLoadResponse
+- name: mshr_request
+  direction: output
+  event_type: DCache.MSHRRequest
+- name: mshr_response
+  direction: input
+  event_type: MSHR.ResponseDequeue
 slots:
 - id: dcache_req_ready_0
   type: DCache.ReqReady
@@ -144,13 +149,36 @@ slots:
 - id: older_long_latency_response
   type: DCache.LongLatencyLoadResponse
   required: false
-  cycle: 17
+  cycle: 18
   fields:
     mshr_id: ${older_load.mshr_id}
     op_id: ${older_load.op_id}
     ldq_idx: ${older_load.ldq_idx}
     address: ${older_load.address}
     value: 1
+- id: older_mshr_request
+  type: DCache.MSHRRequest
+  required: false
+  cycle: 14
+  fields:
+    op_id: ${older_load.op_id}
+    queue_kind: ldq
+    queue_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    value: 0
+    mem_kind: load
+    mshr_id: ${older_load.mshr_id}
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: true
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+    sdq_id: 0
+  annotations:
+    role: mshr_file_request
 state_variables:
 - name: DCache.probe.pending
   sort:
@@ -973,18 +1001,100 @@ transformations:
   - causal-support
   - dcache-miss
   - module-boundary
-- name: long_latency_response_is_rpq_drain
+- name: load_miss_enters_mshr_file
+  inputs:
+  - role: miss
+    type: DCache.LoadMiss
+  outputs:
+  - role: request
+    type: DCache.MSHRRequest
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort: &id001
+        name: op_id
+    right:
+      node: literal
+      sort: *id001
+      value: ${older_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort: *id001
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort: *id001
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: address
+      sort: &id002
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort: *id002
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort: &id003
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort: *id003
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: mshr_id
+      sort: *id003
+    right:
+      node: literal
+      sort: *id003
+      value: ${older_load.mshr_id}
+  exact: true
+  tags:
+  - l1-mshr-interface
+  - temporary-v0.13-bridge
+- name: mshr_response_queue_to_lsu_long_latency
   inputs:
   - role: response
-    type: DCache.LongLatencyLoadResponse
+    type: MSHR.ResponseDequeue
   outputs:
-  - role: drain
-    type: MSHR.DrainRPQLoad
+  - role: ll
+    type: DCache.LongLatencyLoadResponse
   when:
-    node: literal
-    sort:
-      name: bool
-    value: true
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort: *id001
+    right:
+      node: literal
+      sort: *id001
+      value: ${older_load.op_id}
   ensure:
   - node: binary
     op: eq
@@ -992,92 +1102,91 @@ transformations:
       node: event_field
       event_id: response
       field: mshr_id
-      sort:
-        name: int
+      sort: *id003
     right:
       node: event_field
-      event_id: drain
+      event_id: ll
       field: mshr_id
-      sort:
-        name: int
+      sort: *id003
   - node: binary
     op: eq
     left:
       node: event_field
       event_id: response
       field: op_id
-      sort:
-        name: op_id
+      sort: *id001
     right:
       node: event_field
-      event_id: drain
+      event_id: ll
       field: op_id
-      sort:
-        name: op_id
+      sort: *id001
   - node: binary
     op: eq
     left:
       node: event_field
-      event_id: response
+      event_id: ll
       field: ldq_idx
       sort:
         name: bv
         width: 6
     right:
-      node: event_field
-      event_id: drain
-      field: ldq_idx
+      node: literal
       sort:
         name: bv
         width: 6
+      value: ${older_load.ldq_idx}
   - node: binary
     op: eq
     left:
       node: event_field
       event_id: response
       field: address
-      sort:
-        name: address
-        width: 64
+      sort: *id002
     right:
       node: event_field
-      event_id: drain
+      event_id: ll
       field: address
-      sort:
-        name: address
-        width: 64
+      sort: *id002
   - node: binary
     op: eq
     left:
       node: event_field
       event_id: response
       field: value
-      sort:
+      sort: &id004
         name: value
         width: 64
     right:
       node: event_field
-      event_id: drain
+      event_id: ll
       field: value
-      sort:
-        name: value
-        width: 64
+      sort: *id004
   - node: binary
     op: eq
     left:
       node: event_field
       event_id: response
       field: cycle
-      sort:
-        name: int
+      sort: *id003
     right:
       node: event_field
-      event_id: drain
+      event_id: ll
       field: cycle
-      sort:
-        name: int
+      sort: *id003
   exact: true
+  output_when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: ll
+      field: op_id
+      sort: *id001
+    right:
+      node: literal
+      sort: *id001
+      value: ${older_load.op_id}
   tags:
-  - interface-transition
-  - long-latency-response
+  - mshr-response-queue
+  - l1-lsu-interface
 constraints: []

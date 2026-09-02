@@ -236,7 +236,7 @@ def compose_modules(
         constraints=constraints,
         horizon=composition.horizon,
         metadata=metadata,
-        schema_version="umcm.completion.v0.12.0",
+        schema_version="umcm.completion.v0.13.0",
     )
     return CompositionResult(
         spec=composition,

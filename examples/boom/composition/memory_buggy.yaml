@@ -1,8 +1,8 @@
-schema_version: umcm.composition.v0.12.0
+schema_version: umcm.composition.v0.13.0
 name: boom-memory-buggy
-horizon: 20
+horizon: 24
 metadata:
-  version: 0.12.0
+  version: 0.13.0
   purpose: generic LSQ + current L1/MSHR witness support
 modules:
 - name: lsu
@@ -144,22 +144,6 @@ connections:
     module: lsu
     port: dcache_load_miss
   mode: shared_event
-- name: dcache_miss_to_mshr
-  source:
-    module: dcache
-    port: load_miss
-  target:
-    module: mshr
-    port: dcache_load_miss
-  mode: shared_event
-- name: mshr_drain_to_dcache
-  source:
-    module: mshr
-    port: drain_rpq_load
-  target:
-    module: dcache
-    port: mshr_drain_rpq_load
-  mode: shared_event
 - name: core_store_to_coherence
   source:
     module: rob
@@ -183,6 +167,38 @@ connections:
   target:
     module: coherence
     port: grant_data
+  mode: shared_event
+- name: dcache_mshr_request_to_mshr
+  source:
+    module: dcache
+    port: mshr_request
+  target:
+    module: mshr
+    port: request
+  mode: shared_event
+- name: mshr_response_to_dcache
+  source:
+    module: mshr
+    port: response
+  target:
+    module: dcache
+    port: mshr_response
+  mode: shared_event
+- name: core_branch_kill_to_mshr
+  source:
+    module: rob
+    port: branch_kill
+  target:
+    module: mshr
+    port: branch_kill
+  mode: shared_event
+- name: core_exception_to_mshr
+  source:
+    module: rob
+    port: exception
+  target:
+    module: mshr
+    port: exception
   mode: shared_event
 constraints:
 - node: binary
@@ -381,3 +397,51 @@ roles:
     program_index: fields.program_index
     cycle: cycle
     stq_idx: annotations.microarch.stq_idx
+- name: mshr_requests
+  event_type: Arch.Load
+  where:
+    annotations.microarch.uses_mshr: true
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    queue_kind: annotations.microarch.queue_kind
+    queue_idx: annotations.microarch.queue_idx
+    address: fields.address
+    value: annotations.microarch.value
+    mem_kind: annotations.microarch.mem_kind
+    mshr_id: annotations.microarch.mshr_id
+    tag_match: annotations.microarch.tag_match
+    old_line_dirty: annotations.microarch.old_line_dirty
+    needs_acquire: annotations.microarch.needs_acquire
+    grant_has_data: annotations.microarch.grant_has_data
+    secondary: annotations.microarch.secondary
+    requires_second_acquire: annotations.microarch.requires_second_acquire
+    is_hit_again: annotations.microarch.is_hit_again
+    is_probe: annotations.microarch.is_probe
+    sdq_id: annotations.microarch.sdq_id
+  description: All bounded cacheable operations explicitly routed through an MSHR in this trace.
+- name: mshr_instances
+  event_type: Arch.Load
+  where:
+    annotations.microarch.uses_mshr: true
+  cardinality: many
+  min_matches: 1
+  distinct_by: annotations.microarch.mshr_id
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    mshr_id: annotations.microarch.mshr_id
+    grant_has_data: annotations.microarch.grant_has_data
+    needs_acquire: annotations.microarch.needs_acquire
+  description: One representative primary request per concrete MSHR id.
+- name: io_requests
+  event_type: IOMSHR.Request
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+    mem_kind: fields.mem_kind
+    io_id: fields.io_id
