@@ -1,0 +1,167 @@
+schema_version: umcm.module.v0.10.0
+name: coherence
+metadata:
+  variant: shared
+  stage: 10
+  source: Existential coherence path used by the BOOM witness
+  parameterized: true
+  template_parameters:
+  - older_load.op_id
+  - older_load.address
+  - older_load.ldq_idx
+  - older_load.mshr_id
+  - younger_load.op_id
+  - younger_load.ldq_idx
+  - visible_store.op_id
+  - visible_store.value
+  - init_write.value
+ports:
+- name: visible_store
+  direction: input
+  event_type: Arch.Store
+- name: probe_receive
+  direction: input
+  event_type: DCache.ProbeReceive
+- name: grant_data
+  direction: input
+  event_type: MSHR.GrantData
+slots: []
+state_variables: []
+transformations:
+- name: probe_receive_requires_visible_external_store
+  inputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  outputs:
+  - role: store
+    type: Arch.Store
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: store
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: store
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: store
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: probe
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - coherence
+- name: grant_data_is_sourced_from_visible_store
+  inputs:
+  - role: grant
+    type: MSHR.GrantData
+  outputs:
+  - role: store
+    type: Arch.Store
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: store
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: store
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: store
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: store
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - coherence-path-summary
+  - data-source
+constraints: []

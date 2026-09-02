@@ -5,6 +5,12 @@ from umcm.composition.engine import (
     LoadedModule,
     compose_modules,
 )
+from umcm.composition.parameterization import (
+    TraceRoleSpec,
+    render_template,
+    resolve_trace_roles,
+    template_placeholders,
+)
 from umcm.composition.model import (
     COMPOSITION_SCHEMA_VERSION,
     MODULE_SCHEMA_VERSION,
@@ -31,5 +37,9 @@ __all__ = [
     "ModuleSpec",
     "PortDirection",
     "PortEndpoint",
+    "TraceRoleSpec",
+    "render_template",
+    "resolve_trace_roles",
+    "template_placeholders",
     "compose_modules",
 ]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from umcm.composition.model import (
     CompositionSpec,
@@ -14,11 +14,18 @@ from umcm.composition.model import (
     PortDirection,
 )
 from umcm.errors import CompositionError
+from umcm.composition.parameterization import (
+    render_template,
+    resolve_trace_roles,
+    template_placeholders,
+)
 from umcm.ir.completion import CompletionSpec, EventSlot
 from umcm.ir.event import EventCatalog
 from umcm.ir.expression import Binary, EventField
 from umcm.ir.sort import INT
 from umcm.ir.transformation import EventRole, Transformation
+from umcm.ir.trace import Trace
+from umcm.serialization import load_data
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +43,7 @@ class CompositionResult:
     modules: tuple[LoadedModule, ...]
     completion: CompletionSpec
     generated_transformations: tuple[str, ...]
+    resolved_roles: Mapping[str, Mapping[str, Any]]
 
     @property
     def manifest(self) -> dict[str, Any]:
@@ -56,6 +64,9 @@ class CompositionResult:
             ],
             "connections": [connection.to_dict() for connection in self.spec.connections],
             "generated_transformations": list(self.generated_transformations),
+            "resolved_roles": {
+                name: dict(values) for name, values in self.resolved_roles.items()
+            },
             "totals": {
                 "slots": len(self.completion.slots),
                 "state_variables": len(self.completion.state_variables),
@@ -69,8 +80,24 @@ class CompositionResult:
 def compose_modules(
     catalog: EventCatalog,
     composition: CompositionSpec,
+    trace: Trace | None = None,
 ) -> CompositionResult:
-    """Load, validate, wire, and merge all modules in ``composition``."""
+    """Load, instantiate, validate, wire, and merge all modules.
+
+    A trace is only required when the composition declares trace roles.  Old
+    concrete v0.9 compositions therefore remain source-compatible.
+    """
+
+    if composition.roles and trace is None:
+        raise CompositionError(
+            f"composition {composition.name!r} declares trace roles; provide "
+            "the partial trace used for finite instantiation"
+        )
+    resolved_roles = (
+        resolve_trace_roles(trace, composition.roles)
+        if composition.roles
+        else {}
+    )
 
     loaded: list[LoadedModule] = []
     modules: dict[str, ModuleSpec] = {}
@@ -80,7 +107,23 @@ def compose_modules(
             raise CompositionError(
                 f"module {reference.name!r} file does not exist: {path}"
             )
-        module = ModuleSpec.load(path)
+        raw_module = load_data(path)
+        placeholders = template_placeholders(raw_module)
+        if placeholders:
+            if not resolved_roles:
+                raise CompositionError(
+                    f"module {reference.name!r} contains template parameters "
+                    "but no trace roles were resolved: "
+                    + ", ".join(sorted(placeholders))
+                )
+            raw_module = render_template(raw_module, resolved_roles)
+            unresolved = template_placeholders(raw_module)
+            if unresolved:
+                raise CompositionError(
+                    f"module {reference.name!r} still contains unresolved "
+                    "template parameters: " + ", ".join(sorted(unresolved))
+                )
+        module = ModuleSpec.from_dict(raw_module)
         if module.name != reference.name:
             raise CompositionError(
                 f"module reference {reference.name!r} loads module "
@@ -166,6 +209,9 @@ def compose_modules(
     metadata = dict(composition.metadata)
     metadata["composition"] = {
         "name": composition.name,
+        "resolved_roles": {
+            name: dict(values) for name, values in resolved_roles.items()
+        },
         "modules": [item.reference_name for item in loaded],
         "connections": [
             {
@@ -186,13 +232,14 @@ def compose_modules(
         constraints=constraints,
         horizon=composition.horizon,
         metadata=metadata,
-        schema_version="umcm.completion.v0.9.0",
+        schema_version="umcm.completion.v0.10.0",
     )
     return CompositionResult(
         spec=composition,
         modules=tuple(loaded),
         completion=completion,
         generated_transformations=tuple(generated),
+        resolved_roles=resolved_roles,
     )
 
 

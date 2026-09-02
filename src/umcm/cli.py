@@ -85,6 +85,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="module/connector composition manifest YAML/JSON",
     )
     compose.add_argument(
+        "--trace",
+        help="partial trace used to instantiate parameterized module templates",
+    )
+    compose.add_argument(
         "--output",
         required=True,
         help="write the composed completion model to YAML/JSON",
@@ -206,7 +210,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "compose":
             catalog = EventCatalog.load(args.schema)
             manifest = CompositionSpec.load(args.composition)
-            composed = compose_modules(catalog, manifest)
+            instantiation_trace = Trace.load(args.trace) if args.trace else None
+            composed = compose_modules(catalog, manifest, instantiation_trace)
             output = Path(args.output)
             composed.completion.dump(output)
             totals = composed.manifest["totals"]
@@ -228,6 +233,11 @@ def main(argv: list[str] | None = None) -> int:
                     f"{len(module.state_variables)} state(s), "
                     f"{len(module.transformations)} transformation(s)"
                 )
+            for role_name, values in composed.resolved_roles.items():
+                rendered = ", ".join(
+                    f"{key}={value!r}" for key, value in sorted(values.items())
+                )
+                print(f"  role {role_name}: {rendered}")
             for connection in manifest.connections:
                 print(
                     f"  connection {connection.name}: "
@@ -243,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
             trace = Trace.load(args.trace)
             if args.composition:
                 manifest = CompositionSpec.load(args.composition)
-                composed = compose_modules(catalog, manifest)
+                composed = compose_modules(catalog, manifest, trace)
                 model = composed.completion
                 print(
                     f"COMPOSED {manifest.name}: "

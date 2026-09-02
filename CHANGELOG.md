@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+- 新增 Trace role 解析与有限参数绑定。
+- 新增类型保持的 `${role.field}` 模板替换；嵌入占位符可参数化状态名。
+- `CompositionSpec` 新增 `roles`，schema 更新为 `umcm.composition.v0.10.0`。
+- `compose_modules()` 可使用输入 Trace 实例化参数化模块；v0.9 concrete composition 保持兼容。
+- `umcm compose` 新增可选 `--trace`。
+- 新增参数化 LSU/DCache/MSHR/Coherence/ROB 模板。
+- 使用 LoadAlpha/LoadBeta/StoreGamma、LDQ[13]/LDQ[7]、MSHR[3] 重新发现相同 BOOM Load–Load violation。
+- fixed 参数化模型仍阻断错误退休并允许 recovery trace。
+- 测试增至 92 项。
+
 ## 0.9.0
 
 - 新增 `ModuleSpec / ModulePort`，可独立加载模块 slots、state、Transformation 与局部约束。

@@ -29,11 +29,12 @@ from umcm.ir.event import EventCatalog
 from umcm.ir.expression import Expr, expr_from_dict, expr_to_dict
 from umcm.ir.state import StateVariable
 from umcm.ir.transformation import Transformation
+from umcm.composition.parameterization import TraceRoleSpec
 from umcm.serialization import decode_value, dump_data, encode_value, load_data
 
 
 MODULE_SCHEMA_VERSION = "umcm.module.v0.9.0"
-COMPOSITION_SCHEMA_VERSION = "umcm.composition.v0.9.0"
+COMPOSITION_SCHEMA_VERSION = "umcm.composition.v0.10.0"
 
 
 class PortDirection(str, Enum):
@@ -413,6 +414,7 @@ class CompositionSpec:
     name: str
     modules: list[ModuleReference]
     connections: list[ConnectionSpec] = field(default_factory=list)
+    roles: list[TraceRoleSpec] = field(default_factory=list)
     constraints: list[Expr] = field(default_factory=list)
     horizon: int = 8
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -424,6 +426,7 @@ class CompositionSpec:
             raise SchemaError("composition name must be non-empty")
         self.modules = list(self.modules)
         self.connections = list(self.connections)
+        self.roles = list(self.roles)
         self.constraints = list(self.constraints)
         self.metadata = dict(self.metadata)
         if self.horizon < 0:
@@ -435,6 +438,10 @@ class CompositionSpec:
         _reject_duplicates(
             [connection.name for connection in self.connections],
             "composition contains duplicate connection(s)",
+        )
+        _reject_duplicates(
+            [role.name for role in self.roles],
+            "composition contains duplicate trace role(s)",
         )
         for constraint in self.constraints:
             if not constraint.sort.is_bool:
@@ -458,6 +465,7 @@ class CompositionSpec:
             "metadata": encode_value(self.metadata),
             "modules": [module.to_dict() for module in self.modules],
             "connections": [item.to_dict() for item in self.connections],
+            "roles": [item.to_dict() for item in self.roles],
             "constraints": [expr_to_dict(item) for item in self.constraints],
         }
 
@@ -467,7 +475,7 @@ class CompositionSpec:
             raise SerializationError("composition spec must be a mapping")
         allowed = {
             "schema_version", "name", "horizon", "metadata", "modules",
-            "connections", "constraints",
+            "connections", "roles", "constraints",
         }
         unknown = set(data) - allowed
         if unknown:
@@ -477,10 +485,12 @@ class CompositionSpec:
             )
         raw_modules = data.get("modules", [])
         raw_connections = data.get("connections", [])
+        raw_roles = data.get("roles", [])
         raw_constraints = data.get("constraints", [])
         for label, value in (
             ("modules", raw_modules),
             ("connections", raw_connections),
+            ("roles", raw_roles),
             ("constraints", raw_constraints),
         ):
             if not isinstance(value, list):
@@ -495,6 +505,7 @@ class CompositionSpec:
                 connections=[
                     ConnectionSpec.from_dict(item) for item in raw_connections
                 ],
+                roles=[TraceRoleSpec.from_dict(item) for item in raw_roles],
                 constraints=[expr_from_dict(item) for item in raw_constraints],
                 horizon=int(data.get("horizon", 8)),
                 metadata=metadata,
