@@ -1,0 +1,1083 @@
+schema_version: umcm.module.v0.12.0
+name: dcache
+metadata:
+  variant: shared
+  source: BOOM v4 non-blocking DCache and ProbeUnit abstraction
+  parameterized: true
+  template_parameters:
+  - older_load.op_id
+  - older_load.address
+  - older_load.ldq_idx
+  - older_load.mshr_id
+  - younger_load.op_id
+  - younger_load.ldq_idx
+  - visible_store.op_id
+  - visible_store.value
+  - init_write.value
+  version: 0.12.0
+ports:
+- name: lsu_req_valid
+  direction: input
+  event_type: LSU.DCacheReqValid
+- name: lsu_load_executed
+  direction: input
+  event_type: LSU.LoadExecuted
+- name: mshr_drain_rpq_load
+  direction: input
+  event_type: MSHR.DrainRPQLoad
+- name: req_ready
+  direction: output
+  event_type: DCache.ReqReady
+- name: req_fire
+  direction: output
+  event_type: LSU.DCacheReqFire
+- name: load_hit
+  direction: output
+  event_type: DCache.LoadHit
+- name: load_response
+  direction: output
+  event_type: DCache.LoadResponse
+- name: load_nack
+  direction: output
+  event_type: DCache.LoadNack
+- name: probe_receive
+  direction: output
+  event_type: DCache.ProbeReceive
+- name: probe_release
+  direction: output
+  event_type: DCache.ProbeRelease
+- name: load_miss
+  direction: output
+  event_type: DCache.LoadMiss
+- name: long_latency_response
+  direction: output
+  event_type: DCache.LongLatencyLoadResponse
+slots:
+- id: dcache_req_ready_0
+  type: DCache.ReqReady
+  required: false
+  fields:
+    port: 0
+  cycle: 12
+  annotations:
+    role: interface_ready
+- id: dcache_req_fire_0
+  type: LSU.DCacheReqFire
+  required: true
+  fields:
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  cycle: 12
+  annotations:
+    role: query_goal
+- id: younger_dcache_req_ready
+  type: DCache.ReqReady
+  required: false
+  fields:
+    port: 0
+  cycle: 4
+- id: younger_dcache_req_fire
+  type: LSU.DCacheReqFire
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  cycle: 4
+- id: younger_dcache_hit
+  type: DCache.LoadHit
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    value: 0
+    port: 0
+  cycle: 6
+- id: younger_dcache_response
+  type: DCache.LoadResponse
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    value: 0
+    port: 0
+  cycle: 7
+- id: probe_receive
+  type: DCache.ProbeReceive
+  required: false
+  fields:
+    source_op_id: ${visible_store.op_id}
+    address: ${older_load.address}
+  cycle: 9
+- id: probe_release
+  type: DCache.ProbeRelease
+  required: false
+  fields:
+    source_op_id: ${visible_store.op_id}
+    address: ${older_load.address}
+  cycle: 10
+- id: younger_dcache_nack
+  type: DCache.LoadNack
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  cycle: 6
+- id: older_dcache_miss
+  type: DCache.LoadMiss
+  required: false
+  cycle: 14
+  fields:
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  annotations:
+    role: selected_miss_path
+- id: older_long_latency_response
+  type: DCache.LongLatencyLoadResponse
+  required: false
+  cycle: 17
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    value: 1
+state_variables:
+- name: DCache.probe.pending
+  sort:
+    name: bool
+  initial: false
+- name: DCache.probe.address
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+- name: DCache.probe.source_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+transformations:
+- name: dcache_request_acceptance
+  inputs:
+  - role: valid
+    type: LSU.DCacheReqValid
+  - role: ready
+    type: DCache.ReqReady
+  outputs:
+  - role: fire
+    type: LSU.DCacheReqFire
+  when:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: port
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: port
+        sort:
+          name: int
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: valid
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: valid
+      field: port
+      sort:
+        name: int
+  exact: true
+  description: At one cycle and port, request valid plus receiver ready emits the accepted-request event. exact=true also
+    requires every observed fire to be justified by such a valid/ready transition.
+  tags:
+  - interface-transition
+  - definition
+- name: younger_hit_requires_accepted_executed_request
+  inputs:
+  - role: hit
+    type: DCache.LoadHit
+  outputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  - role: executed
+    type: LSU.LoadExecuted
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: ${younger_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: executed
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: executed
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: hit
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - dcache-hit
+  - module-boundary
+- name: successful_younger_hit_produces_response
+  inputs:
+  - role: hit
+    type: DCache.LoadHit
+  outputs:
+  - role: response
+    type: DCache.LoadResponse
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: ${younger_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: response
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: response
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: hit
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  tags:
+  - dcache-hit
+  - response
+- name: younger_nack_requires_accepted_executed_request
+  inputs:
+  - role: nack
+    type: DCache.LoadNack
+  outputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  - role: executed
+    type: LSU.LoadExecuted
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: ${younger_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: executed
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: executed
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: nack
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - state
+  - nack
+  - module-boundary
+- name: probe_receive_captures_pending_request
+  inputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  outputs: []
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: DCache.probe.pending
+    at: probe
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: DCache.probe.pending
+    at: probe
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: DCache.probe.address
+    at: probe
+    value:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: DCache.probe.source_op_id
+    at: probe
+    value:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+  tags:
+  - state
+  - probe-unit
+- name: probe_release_requires_received_probe
+  inputs:
+  - role: release
+    type: DCache.ProbeRelease
+  outputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: release
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: release
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: probe
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: release
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: DCache.probe.pending
+    at: release
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: DCache.probe.address
+    at: release
+    op: eq
+    value:
+      node: event_field
+      event_id: release
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: DCache.probe.source_op_id
+    at: release
+    op: eq
+    value:
+      node: event_field
+      event_id: release
+      field: source_op_id
+      sort:
+        name: op_id
+  state_updates:
+  - state: DCache.probe.pending
+    at: release
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - state
+  - probe-unit
+  - interface
+- name: older_miss_requires_accepted_executed_request
+  inputs:
+  - role: miss
+    type: DCache.LoadMiss
+  outputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: ${older_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - dcache-miss
+  - module-boundary
+- name: long_latency_response_is_rpq_drain
+  inputs:
+  - role: response
+    type: DCache.LongLatencyLoadResponse
+  outputs:
+  - role: drain
+    type: MSHR.DrainRPQLoad
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: drain
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: drain
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: drain
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: drain
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: drain
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: drain
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  tags:
+  - interface-transition
+  - long-latency-response
+constraints: []

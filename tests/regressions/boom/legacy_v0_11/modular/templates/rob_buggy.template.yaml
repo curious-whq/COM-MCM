@@ -1,0 +1,75 @@
+schema_version: umcm.module.v0.10.0
+name: rob
+metadata:
+  variant: buggy
+  stage: 10
+  source: Architectural operation and recovery boundary abstraction
+  parameterized: true
+  template_parameters:
+  - older_load.op_id
+  - older_load.address
+  - older_load.ldq_idx
+  - older_load.mshr_id
+  - younger_load.op_id
+  - younger_load.ldq_idx
+  - visible_store.op_id
+  - visible_store.value
+  - init_write.value
+ports:
+- name: memory_order_exception
+  direction: input
+  event_type: Core.MemoryOrderingException
+- name: arch_load
+  direction: output
+  event_type: Arch.Load
+- name: arch_store
+  direction: output
+  event_type: Arch.Store
+- name: commit_load
+  direction: output
+  event_type: Arch.CommitLoad
+- name: branch_kill
+  direction: output
+  event_type: Core.BranchKill
+- name: exception
+  direction: output
+  event_type: Core.Exception
+- name: squash_load
+  direction: output
+  event_type: Core.SquashLoad
+slots:
+- id: branch_kill_0
+  type: Core.BranchKill
+  required: false
+  fields:
+    op_id: ${older_load.op_id}
+  cycle: 3
+  annotations:
+    role: optional_defense
+- id: exception_0
+  type: Core.Exception
+  required: false
+  fields:
+    hart: 0
+  cycle: 3
+  annotations:
+    role: optional_defense
+- id: younger_mem_order_exception
+  type: Core.MemoryOrderingException
+  required: false
+  cycle: 14
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    cause: MINI_EXCEPTION_MEM_ORDERING
+- id: younger_squash
+  type: Core.SquashLoad
+  required: false
+  cycle: 15
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    reason: memory_ordering_exception
+state_variables: []
+transformations: []
+constraints: []

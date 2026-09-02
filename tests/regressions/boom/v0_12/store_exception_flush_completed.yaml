@@ -1,0 +1,319 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: uncommitted-store-exception-flush
+  expected: FEASIBLE and STQ entry invalidated
+  completion:
+    backend: z3
+    horizon: 20
+    model:
+      component: LSQ only
+      version: 0.12.0
+      composition:
+        name: boom-lsq
+        resolved_roles:
+          init_write: []
+          loads: []
+          local_stores:
+          - event_id: s0
+            event_type: Arch.Store
+            op_id: S0
+            address: x
+            value: 9
+            hart: 0
+            program_index: 0
+            byte_mask: 255
+            cycle: 0
+            stq_idx: 2
+            is_amo: false
+          fences: []
+        modules:
+        - lsu
+        connections: []
+        generated_transformations: []
+    selected_slots:
+    - stq_allocate_0
+    - stld_search_0
+    - store_flushed_0
+    state:
+      initial:
+        LSU.stq[2].valid: false
+        LSU.stq[2].addr_valid: false
+        LSU.stq[2].addr_is_virtual: false
+        LSU.stq[2].address: EMPTY_ADDR
+        LSU.stq[2].byte_mask: 0
+        LSU.stq[2].data_valid: false
+        LSU.stq[2].data: UNSET_VALUE
+        LSU.stq[2].committed: false
+        LSU.stq[2].succeeded: false
+        LSU.stq[2].can_execute: false
+        LSU.stq[2].cleared: false
+        LSU.stq[2].hart: -1
+        LSU.stq[2].program_index: -1
+        LSU.stq[2].is_amo: false
+      final:
+        LSU.stq[2].valid: false
+        LSU.stq[2].addr_valid: false
+        LSU.stq[2].addr_is_virtual: false
+        LSU.stq[2].address: x
+        LSU.stq[2].byte_mask: 255
+        LSU.stq[2].data_valid: false
+        LSU.stq[2].data: 9
+        LSU.stq[2].committed: false
+        LSU.stq[2].succeeded: false
+        LSU.stq[2].can_execute: false
+        LSU.stq[2].cleared: false
+        LSU.stq[2].hart: 0
+        LSU.stq[2].program_index: 0
+        LSU.stq[2].is_amo: false
+      steps:
+      - cycle: 0
+        before:
+          LSU.stq[2].valid: false
+          LSU.stq[2].addr_valid: false
+          LSU.stq[2].addr_is_virtual: false
+          LSU.stq[2].address: EMPTY_ADDR
+          LSU.stq[2].byte_mask: 0
+          LSU.stq[2].data_valid: false
+          LSU.stq[2].data: UNSET_VALUE
+          LSU.stq[2].committed: false
+          LSU.stq[2].succeeded: false
+          LSU.stq[2].can_execute: false
+          LSU.stq[2].cleared: false
+          LSU.stq[2].hart: -1
+          LSU.stq[2].program_index: -1
+          LSU.stq[2].is_amo: false
+        after:
+          LSU.stq[2].valid: true
+          LSU.stq[2].addr_valid: false
+          LSU.stq[2].addr_is_virtual: false
+          LSU.stq[2].address: EMPTY_ADDR
+          LSU.stq[2].byte_mask: 0
+          LSU.stq[2].data_valid: false
+          LSU.stq[2].data: UNSET_VALUE
+          LSU.stq[2].committed: false
+          LSU.stq[2].succeeded: false
+          LSU.stq[2].can_execute: false
+          LSU.stq[2].cleared: false
+          LSU.stq[2].hart: 0
+          LSU.stq[2].program_index: 0
+          LSU.stq[2].is_amo: false
+        active_requirements: []
+        active_updates:
+        - transformation.stq_allocate_S0.forward.0.s0.instance.0.stq_allocate_0.update.1
+        - transformation.stq_allocate_S0.forward.0.s0.instance.0.stq_allocate_0.update.3
+        - transformation.stq_allocate_S0.forward.0.s0.instance.0.stq_allocate_0.update.2
+        - transformation.stq_allocate_S0.forward.0.s0.instance.0.stq_allocate_0.update.0
+        changes:
+        - state: LSU.stq[2].hart
+          before: -1
+          after: 0
+          origins:
+          - transformation.stq_allocate_S0.forward.0.s0.instance.0.stq_allocate_0.update.1
+        - state: LSU.stq[2].program_index
+          before: -1
+          after: 0
+          origins:
+          - transformation.stq_allocate_S0.forward.0.s0.instance.0.stq_allocate_0.update.2
+        - state: LSU.stq[2].valid
+          before: false
+          after: true
+          origins:
+          - transformation.stq_allocate_S0.forward.0.s0.instance.0.stq_allocate_0.update.0
+      - cycle: 1
+        before:
+          LSU.stq[2].valid: true
+          LSU.stq[2].addr_valid: false
+          LSU.stq[2].addr_is_virtual: false
+          LSU.stq[2].address: EMPTY_ADDR
+          LSU.stq[2].byte_mask: 0
+          LSU.stq[2].data_valid: false
+          LSU.stq[2].data: UNSET_VALUE
+          LSU.stq[2].committed: false
+          LSU.stq[2].succeeded: false
+          LSU.stq[2].can_execute: false
+          LSU.stq[2].cleared: false
+          LSU.stq[2].hart: 0
+          LSU.stq[2].program_index: 0
+          LSU.stq[2].is_amo: false
+        after:
+          LSU.stq[2].valid: true
+          LSU.stq[2].addr_valid: true
+          LSU.stq[2].addr_is_virtual: false
+          LSU.stq[2].address: x
+          LSU.stq[2].byte_mask: 255
+          LSU.stq[2].data_valid: true
+          LSU.stq[2].data: 9
+          LSU.stq[2].committed: false
+          LSU.stq[2].succeeded: false
+          LSU.stq[2].can_execute: false
+          LSU.stq[2].cleared: false
+          LSU.stq[2].hart: 0
+          LSU.stq[2].program_index: 0
+          LSU.stq[2].is_amo: false
+        active_requirements:
+        - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.requirement.0
+        - transformation.store_data_ready_S0.forward.0.s0_data.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.update.1
+        - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.update.0
+        - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.update.2
+        - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.update.3
+        - transformation.store_data_ready_S0.forward.0.s0_data.instance.0.no-output.update.1
+        - transformation.store_data_ready_S0.forward.0.s0_data.instance.0.no-output.update.0
+        changes:
+        - state: LSU.stq[2].addr_valid
+          before: false
+          after: true
+          origins:
+          - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.update.0
+        - state: LSU.stq[2].address
+          before: EMPTY_ADDR
+          after: x
+          origins:
+          - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.update.2
+        - state: LSU.stq[2].byte_mask
+          before: 0
+          after: 255
+          origins:
+          - transformation.store_address_ready_S0.forward.0.s0_addr.instance.0.no-output.update.3
+        - state: LSU.stq[2].data
+          before: UNSET_VALUE
+          after: 9
+          origins:
+          - transformation.store_data_ready_S0.forward.0.s0_data.instance.0.no-output.update.1
+        - state: LSU.stq[2].data_valid
+          before: false
+          after: true
+          origins:
+          - transformation.store_data_ready_S0.forward.0.s0_data.instance.0.no-output.update.0
+      - cycle: 3
+        before:
+          LSU.stq[2].valid: true
+          LSU.stq[2].addr_valid: true
+          LSU.stq[2].addr_is_virtual: false
+          LSU.stq[2].address: x
+          LSU.stq[2].byte_mask: 255
+          LSU.stq[2].data_valid: true
+          LSU.stq[2].data: 9
+          LSU.stq[2].committed: false
+          LSU.stq[2].succeeded: false
+          LSU.stq[2].can_execute: false
+          LSU.stq[2].cleared: false
+          LSU.stq[2].hart: 0
+          LSU.stq[2].program_index: 0
+          LSU.stq[2].is_amo: false
+        after:
+          LSU.stq[2].valid: false
+          LSU.stq[2].addr_valid: false
+          LSU.stq[2].addr_is_virtual: false
+          LSU.stq[2].address: x
+          LSU.stq[2].byte_mask: 255
+          LSU.stq[2].data_valid: false
+          LSU.stq[2].data: 9
+          LSU.stq[2].committed: false
+          LSU.stq[2].succeeded: false
+          LSU.stq[2].can_execute: false
+          LSU.stq[2].cleared: false
+          LSU.stq[2].hart: 0
+          LSU.stq[2].program_index: 0
+          LSU.stq[2].is_amo: false
+        active_requirements: []
+        active_updates:
+        - transformation.store_flush_invalidates_entry_S0.forward.0.store_flushed_0.instance.0.no-output.update.1
+        - transformation.store_flush_invalidates_entry_S0.forward.0.store_flushed_0.instance.0.no-output.update.2
+        - transformation.store_flush_invalidates_entry_S0.forward.0.store_flushed_0.instance.0.no-output.update.0
+        changes:
+        - state: LSU.stq[2].addr_valid
+          before: true
+          after: false
+          origins:
+          - transformation.store_flush_invalidates_entry_S0.forward.0.store_flushed_0.instance.0.no-output.update.1
+        - state: LSU.stq[2].data_valid
+          before: true
+          after: false
+          origins:
+          - transformation.store_flush_invalidates_entry_S0.forward.0.store_flushed_0.instance.0.no-output.update.2
+        - state: LSU.stq[2].valid
+          before: true
+          after: false
+          origins:
+          - transformation.store_flush_invalidates_entry_S0.forward.0.store_flushed_0.instance.0.no-output.update.0
+events:
+- id: s0
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: S0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 9
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      stq_idx: 2
+      is_amo: false
+- id: s0_addr
+  type: LSU.StoreAddressReady
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 2
+    address: x
+    byte_mask: 255
+  cycle: 1
+- id: s0_data
+  type: LSU.StoreDataReady
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 2
+    value: 9
+  cycle: 1
+- id: xcpt
+  type: Core.Exception
+  occurs: true
+  fields:
+    hart: 0
+  cycle: 2
+- id: stq_allocate_0
+  type: LSU.STQAllocate
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 2
+  cycle: 0
+  annotations:
+    module_spec: lsu
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: stld_search_0
+  type: LSU.STLDSearch
+  occurs: true
+  fields:
+    store_op_id: S0
+    store_stq_idx: 2
+    address: x
+  cycle: 2
+  annotations:
+    module_spec: lsu
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: store_flushed_0
+  type: LSU.StoreFlushed
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 2
+    reason: exception
+  cycle: 3
+  annotations:
+    module_spec: lsu
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

@@ -13,6 +13,7 @@ from umcm.ir.expression import Expr
 from umcm.ir.trace import Trace
 from umcm.solver.evaluator import EvaluationContext, UNKNOWN, evaluate
 from umcm.solver.finite import FiniteStatus, solve_finite
+from umcm.solver.z3ctypes import solve_z3
 from umcm.solver.problem import BoundedProblem, build_problem
 
 
@@ -51,25 +52,28 @@ def complete_trace(
 ) -> CompletionResult:
     """Complete *trace* within the bounded event universe from *spec*.
 
-    ``auto`` currently selects the dependency-free finite backend.  The backend
-    boundary is explicit so an SMT implementation can consume the same
-    :class:`~umcm.solver.problem.BoundedProblem` later.
+    ``auto`` preserves the deterministic finite reference backend for backward
+    compatibility.  ``z3`` may be selected explicitly for larger bounded models.
     """
 
     normalized_backend = backend.lower()
     if normalized_backend == "auto":
         normalized_backend = "finite"
-    if normalized_backend != "finite":
+    if normalized_backend not in {"finite", "z3"}:
         raise SolverError(
-            f"unsupported completion backend {backend!r}; available: finite"
+            f"unsupported completion backend {backend!r}; available: finite, z3"
         )
 
     problem = build_problem(catalog, trace, spec)
-    solved = solve_finite(problem, node_limit=node_limit)
+    solved = (
+        solve_z3(problem)
+        if normalized_backend == "z3"
+        else solve_finite(problem, node_limit=node_limit)
+    )
     if solved.status is FiniteStatus.UNSAT:
         return CompletionResult(
             status=CompletionStatus.INFEASIBLE,
-            backend="finite",
+            backend=normalized_backend,
             explored_nodes=solved.explored_nodes,
             reason=solved.reason,
             instantiated_constraint_count=len(problem.constraints),
@@ -77,7 +81,7 @@ def complete_trace(
     if solved.status is FiniteStatus.UNKNOWN:
         return CompletionResult(
             status=CompletionStatus.UNKNOWN,
-            backend="finite",
+            backend=normalized_backend,
             explored_nodes=solved.explored_nodes,
             reason=solved.reason,
             instantiated_constraint_count=len(problem.constraints),
@@ -87,6 +91,7 @@ def complete_trace(
         problem,
         solved.assignment,
         state_result=solved.state_result,
+        backend=normalized_backend,
     )
     completed.validate(catalog, partial=False)
     selected_slot_ids = tuple(
@@ -96,7 +101,7 @@ def complete_trace(
     )
     return CompletionResult(
         status=CompletionStatus.FEASIBLE,
-        backend="finite",
+        backend=normalized_backend,
         completed_trace=completed,
         assignment=solved.assignment,
         added_event_ids=selected_slot_ids,
@@ -124,6 +129,7 @@ def _materialize_trace(
     problem: BoundedProblem,
     assignment: dict[str, Any],
     state_result: Any = None,
+    backend: str = "finite",
 ) -> Trace:
     context = EvaluationContext(events=problem.event_map, assignment=assignment)
     events: list[EventInstance] = []
@@ -164,7 +170,7 @@ def _materialize_trace(
 
     metadata = dict(problem.source_trace.metadata)
     metadata["completion"] = {
-        "backend": "finite",
+        "backend": backend,
         "horizon": problem.spec.horizon,
         "model": problem.spec.metadata,
         "selected_slots": [

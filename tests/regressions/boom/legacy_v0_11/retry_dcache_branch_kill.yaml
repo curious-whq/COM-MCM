@@ -1,0 +1,758 @@
+schema_version: umcm.completion.v0.3.1
+horizon: 6
+metadata:
+  model: boom-lsu-retry-killed-before-dcache-fire-v0.3.1
+  purpose: 'Negative composition query: force a matching branch kill between retry
+    enqueue and retry issue. The retry queue becomes invalid, so the required DCache
+    request-acceptance transition cannot be completed.'
+state_variables:
+- name: LSU.retry_queue.valid
+  sort: bool
+  initial: false
+- name: LSU.retry_queue.op_id
+  sort: op_id
+  initial: EMPTY
+- name: LSU.retry_queue.ldq_idx
+  sort:
+    name: bv
+    width: 6
+  initial: 63
+- name: LSU.retry_queue.vaddr
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+slots:
+- id: l0_tlb_miss
+  type: LSU.TLBMiss
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  annotations:
+    role: causal_predecessor
+- id: retry_enqueue_0
+  type: LSU.RetryEnqueue
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  annotations:
+    role: state_write
+- id: retry_issue_0
+  type: LSU.RetryIssue
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  annotations:
+    role: state_read_and_dequeue
+- id: l0_tlb_hit
+  type: LSU.TLBHit
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+    paddr: x
+  annotations:
+    role: translated_retry
+- id: dcache_req_valid_0
+  type: LSU.DCacheReqValid
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  annotations:
+    role: interface_valid
+- id: dcache_req_ready_0
+  type: DCache.ReqReady
+  fields:
+    port: 0
+  annotations:
+    role: interface_ready
+- id: dcache_req_fire_0
+  type: LSU.DCacheReqFire
+  required: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  annotations:
+    role: query_goal
+- id: branch_kill_0
+  type: Core.BranchKill
+  cycle: 3
+  fields:
+    op_id: L0
+  annotations:
+    role: optional_defense
+  required: true
+- id: exception_0
+  type: Core.Exception
+  cycle: 3
+  fields:
+    hart: 0
+  annotations:
+    role: optional_defense
+transformations:
+- name: dcache_request_acceptance
+  exact: true
+  tags:
+  - interface-transition
+  - definition
+  description: >-
+    At one cycle and port, request valid plus receiver ready emits the accepted-request
+    event. exact=true also requires every observed fire to be justified by such a
+    valid/ready transition.
+  inputs:
+  - role: valid
+    type: LSU.DCacheReqValid
+  - role: ready
+    type: DCache.ReqReady
+  outputs:
+  - role: fire
+    type: LSU.DCacheReqFire
+  when:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: cycle
+        sort: &id001
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: cycle
+        sort: *id001
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: port
+        sort: *id001
+      right:
+        node: event_field
+        event_id: ready
+        field: port
+        sort: *id001
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: cycle
+      sort: *id001
+    right:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort: *id001
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: op_id
+      sort: &id002
+        name: op_id
+    right:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort: *id002
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: ldq_idx
+      sort: &id003
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort: *id003
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: address
+      sort: &id004
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: valid
+      field: address
+      sort: *id004
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: port
+      sort: *id001
+    right:
+      node: event_field
+      event_id: valid
+      field: port
+      sort: *id001
+- name: dcache_valid_requires_retry_tlb_hit
+  tags:
+  - causal-support
+  - translation
+  inputs:
+  - role: valid
+    type: LSU.DCacheReqValid
+  outputs:
+  - role: issue
+    type: LSU.RetryIssue
+  - role: hit
+    type: LSU.TLBHit
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: issue
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: hit
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: issue
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: issue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: hit
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: hit
+      field: paddr
+      sort:
+        name: address
+        width: 64
+- name: retry_issue_requires_enqueue
+  tags:
+  - causal-support
+  inputs:
+  - role: issue
+    type: LSU.RetryIssue
+  outputs:
+  - role: enqueue
+    type: LSU.RetryEnqueue
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: enqueue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: enqueue
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: issue
+      field: cycle
+      sort:
+        name: int
+- name: retry_enqueue_requires_tlb_miss
+  tags:
+  - causal-support
+  inputs:
+  - role: enqueue
+    type: LSU.RetryEnqueue
+  outputs:
+  - role: miss
+    type: LSU.TLBMiss
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: miss
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: enqueue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: miss
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: enqueue
+      field: cycle
+      sort:
+        name: int
+- name: retry_enqueue_writes_state
+  tags:
+  - state
+  - retry-queue
+  inputs:
+  - role: enqueue
+    type: LSU.RetryEnqueue
+  state_requirements:
+  - state: LSU.retry_queue.valid
+    at: enqueue
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: enqueue
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.retry_queue.op_id
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - state: LSU.retry_queue.ldq_idx
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: LSU.retry_queue.vaddr
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+- name: retry_issue_reads_and_dequeues_state
+  tags:
+  - state
+  - retry-queue
+  inputs:
+  - role: issue
+    type: LSU.RetryIssue
+  state_requirements:
+  - state: LSU.retry_queue.valid
+    at: issue
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.retry_queue.op_id
+    at: issue
+    op: eq
+    value:
+      node: event_field
+      event_id: issue
+      field: op_id
+      sort:
+        name: op_id
+  - state: LSU.retry_queue.ldq_idx
+    at: issue
+    op: eq
+    value:
+      node: event_field
+      event_id: issue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: LSU.retry_queue.vaddr
+    at: issue
+    op: eq
+    value:
+      node: event_field
+      event_id: issue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: issue
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+- name: branch_kill_flushes_matching_retry
+  tags:
+  - state
+  - defense
+  inputs:
+  - role: kill
+    type: Core.BranchKill
+  state_requirements:
+  - state: LSU.retry_queue.valid
+    at: kill
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.retry_queue.op_id
+    at: kill
+    op: eq
+    value:
+      node: event_field
+      event_id: kill
+      field: op_id
+      sort:
+        name: op_id
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: kill
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+- name: exception_flushes_retry_queue
+  tags:
+  - state
+  - defense
+  inputs:
+  - role: exception
+    type: Core.Exception
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: exception
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l0_tlb_miss
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: retry_enqueue_0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: retry_issue_0
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: branch_kill_0
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: retry_enqueue_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: branch_kill_0
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: branch_kill_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: retry_issue_0
+        field: cycle
+        sort:
+          name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: exception_0
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: retry_enqueue_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: exception_0
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: exception_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: retry_issue_0
+        field: cycle
+        sort:
+          name: int

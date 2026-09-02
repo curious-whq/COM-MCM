@@ -1,0 +1,105 @@
+schema_version: umcm.trace.v0.1
+partial: true
+metadata:
+  case: boom-load-load-ordering
+  expected_architectural_outcome:
+    LoadAlpha: 1
+    LoadBeta: 0
+  note: 'Full microarchitectural witness target: L1 retires 0 and L0 reaches MSHR refill, receives 1, and retires.'
+  stage: 10
+  parameterization_probe:
+    older_op_id: LoadAlpha
+    younger_op_id: LoadBeta
+    store_op_id: StoreGamma
+    older_ldq_idx: 13
+    younger_ldq_idx: 7
+    mshr_id: 3
+events:
+- id: init_data
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitData
+    address: data0
+    value: 0
+- id: load_older
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    hart: 0
+    program_index: 0
+    address: data0
+  cycle: 0
+  annotations:
+    microarch:
+      ldq_idx: 13
+      mshr_id: 3
+- id: load_younger
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    hart: 0
+    program_index: 1
+    address: data0
+  cycle: 3
+  annotations:
+    microarch:
+      ldq_idx: 7
+- id: store_visible
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: StoreGamma
+    hart: 1
+    program_index: 0
+    address: data0
+    value: 1
+  cycle: 8
+- id: commit_older
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    value: 1
+  cycle: 18
+- id: commit_younger
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    value: 0
+  cycle: 19
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_older
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_younger
+    field: cycle
+    sort:
+      name: int
+- node: call
+  function: same_address
+  arguments:
+  - node: event_field
+    event_id: load_older
+    field: address
+    sort:
+      name: address
+      width: 64
+  - node: event_field
+    event_id: load_younger
+    field: address
+    sort:
+      name: address
+      width: 64
+  sort:
+    name: bool

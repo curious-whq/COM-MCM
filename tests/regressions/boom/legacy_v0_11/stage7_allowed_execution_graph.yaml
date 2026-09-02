@@ -1,0 +1,102 @@
+schema_version: umcm.execution_graph.v0.1
+candidate_id: 0
+metadata:
+  graph_model: rvwmo-load-load-fragment-v0.7
+  rf_assignment:
+    L0: InitX
+    L1: W1
+  co_orders:
+    x:
+    - InitX
+    - W1
+  memory_model_check:
+    status: allowed
+    candidate_count: 1
+    representative_candidate: 0
+    axioms:
+    - axiom: rvwmo_load_load_order_fragment
+      status: satisfied
+      kind: acyclic
+      relations:
+      - ppo
+      - rfe
+      - fr
+      - co
+operations:
+- id: InitX
+  kind: init_write
+  address: x
+  value: 0
+  source_event_id: init_x
+- id: L0
+  kind: read
+  address: x
+  value: 0
+  hart: 0
+  program_index: 0
+  source_event_id: load_l0
+  commit_event_id: commit_l0
+- id: L1
+  kind: read
+  address: x
+  value: 1
+  hart: 0
+  program_index: 1
+  source_event_id: load_l1
+  commit_event_id: commit_l1
+- id: W1
+  kind: write
+  address: x
+  value: 1
+  hart: 1
+  program_index: 0
+  source_event_id: store_w1
+relations:
+- name: ar
+  edges:
+  - from: InitX
+    to: L0
+  - from: InitX
+    to: W1
+  - from: L0
+    to: L1
+  - from: L0
+    to: W1
+  - from: W1
+    to: L1
+- name: co
+  edges:
+  - from: InitX
+    to: W1
+- name: fr
+  edges:
+  - from: L0
+    to: W1
+- name: hb
+  edges:
+  - from: InitX
+    to: L0
+  - from: L0
+    to: L1
+  - from: W1
+    to: L1
+- name: po
+  edges:
+  - from: L0
+    to: L1
+- name: ppo
+  edges:
+  - from: L0
+    to: L1
+- name: rf
+  edges:
+  - from: InitX
+    to: L0
+  - from: W1
+    to: L1
+- name: rfe
+  edges:
+  - from: InitX
+    to: L0
+  - from: W1
+    to: L1

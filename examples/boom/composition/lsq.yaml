@@ -1,0 +1,62 @@
+schema_version: umcm.composition.v0.12.0
+name: boom-lsq
+horizon: 20
+metadata:
+  component: LSQ only
+  version: 0.12.0
+modules:
+- name: lsu
+  path: ../model/lsu/module.yaml
+connections: []
+roles:
+- name: init_write
+  event_type: Arch.InitWrite
+  min_matches: 0
+  cardinality: many
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+- name: loads
+  event_type: Arch.Load
+  where:
+    fields.hart: 0
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    hart: fields.hart
+    program_index: fields.program_index
+    byte_mask: fields.byte_mask
+    cycle: cycle
+    ldq_idx: annotations.microarch.ldq_idx
+- name: local_stores
+  event_type: Arch.Store
+  where:
+    fields.hart: 0
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+    hart: fields.hart
+    program_index: fields.program_index
+    byte_mask: fields.byte_mask
+    cycle: cycle
+    stq_idx: annotations.microarch.stq_idx
+    is_amo: annotations.microarch.is_amo
+- name: fences
+  event_type: Arch.Fence
+  where:
+    fields.hart: 0
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    cycle: cycle
+    stq_idx: annotations.microarch.stq_idx
+constraints: []

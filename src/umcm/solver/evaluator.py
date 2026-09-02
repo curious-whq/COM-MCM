@@ -38,12 +38,30 @@ def _same_block(arguments: tuple[Any, ...]) -> bool:
     return left // size == right // size
 
 
+def _mask_overlap(arguments: tuple[Any, ...]) -> bool:
+    if len(arguments) != 2:
+        raise SolverError("mask_overlap expects two integer masks")
+    left, right = arguments
+    return (int(left) & int(right)) != 0
+
+
+def _mask_covers(arguments: tuple[Any, ...]) -> bool:
+    if len(arguments) != 2:
+        raise SolverError("mask_covers expects provider and consumer masks")
+    provider, consumer = arguments
+    provider = int(provider)
+    consumer = int(consumer)
+    return (provider & consumer) == consumer
+
+
 DEFAULT_FUNCTIONS: dict[str, Function] = {
     "same_address": _all_equal,
     "same_identity": _all_equal,
     "same_op": _all_equal,
     "same_value": _all_equal,
     "same_block": _same_block,
+    "mask_overlap": _mask_overlap,
+    "mask_covers": _mask_covers,
 }
 
 

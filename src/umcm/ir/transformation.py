@@ -87,6 +87,7 @@ class Transformation:
     state_requirements: tuple[StateRequirement, ...] = ()
     state_updates: tuple[StateUpdate, ...] = ()
     exact: bool = False
+    state_mode: str = "require"
     description: str = ""
     tags: tuple[str, ...] = ()
 
@@ -115,6 +116,27 @@ class Transformation:
             raise SchemaError(
                 f"exact transformation {self.name!r} must have exactly one output role"
             )
+        if self.state_mode not in {"require", "guard"}:
+            raise SchemaError(
+                f"transformation {self.name!r} state_mode must be require or guard"
+            )
+        if self.state_mode == "guard":
+            if not self.outputs:
+                raise SchemaError(
+                    f"state-guarded transformation {self.name!r} must have outputs"
+                )
+            if self.state_updates:
+                raise SchemaError(
+                    f"state-guarded transformation {self.name!r} cannot directly update state; "
+                    "attach updates to the derived output event in a separate transformation"
+                )
+            input_names = {role.name for role in self.inputs}
+            bad = [item.at for item in self.state_requirements if item.at not in input_names]
+            if bad:
+                raise SchemaError(
+                    f"state-guarded transformation {self.name!r} must anchor state guards "
+                    "to input roles only"
+                )
 
     @property
     def role_map(self) -> dict[str, EventRole]:
@@ -252,6 +274,8 @@ class Transformation:
             data["state_updates"] = [item.to_dict() for item in self.state_updates]
         if self.exact:
             data["exact"] = True
+        if self.state_mode != "require":
+            data["state_mode"] = self.state_mode
         if self.description:
             data["description"] = self.description
         if self.tags:
@@ -264,7 +288,7 @@ class Transformation:
             raise SerializationError("transformation must be a mapping")
         allowed = {
             "name", "inputs", "outputs", "when", "output_when", "ensure",
-            "state_requirements", "state_updates", "exact",
+            "state_requirements", "state_updates", "exact", "state_mode",
             "description", "tags",
         }
         unknown = set(data) - allowed
@@ -306,6 +330,7 @@ class Transformation:
                     StateUpdate.from_dict(item) for item in raw_updates
                 ),
                 exact=bool(data.get("exact", False)),
+                state_mode=str(data.get("state_mode", "require")),
                 description=str(data.get("description", "")),
                 tags=tuple(str(item) for item in data.get("tags", [])),
             )

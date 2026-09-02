@@ -11,9 +11,9 @@ def test_validate_cli(capsys) -> None:
         [
             "validate",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/partial_trace.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/partial_trace.yaml"),
         ]
     )
     captured = capsys.readouterr()
@@ -27,11 +27,11 @@ def test_complete_cli(capsys, tmp_path) -> None:
         [
             "complete",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/partial_trace.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/partial_trace.yaml"),
             "--model",
-            str(ROOT / "examples/boom_load_load/retry_completion.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/retry_completion.yaml"),
             "--output",
             str(output),
         ]
@@ -49,11 +49,11 @@ def test_complete_stage4_young_load_probe_cli(capsys, tmp_path) -> None:
         [
             "complete",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/stage4_trace.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage4_trace.yaml"),
             "--model",
-            str(ROOT / "examples/boom_load_load/young_load_probe_completion.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/young_load_probe_completion.yaml"),
             "--output",
             str(output),
         ]
@@ -70,11 +70,11 @@ def test_stage4_wrong_probe_address_cli_is_infeasible(capsys) -> None:
         [
             "complete",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/stage4_trace.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage4_trace.yaml"),
             "--model",
-            str(ROOT / "examples/boom_load_load/young_load_probe_address_mismatch.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/young_load_probe_address_mismatch.yaml"),
         ]
     )
     captured = capsys.readouterr()
@@ -88,10 +88,10 @@ def test_check_cli_reports_boom_violation(capsys, tmp_path) -> None:
     from umcm.ir.trace import Trace
     from umcm.solver.completion import CompletionStatus, complete_trace
 
-    catalog = EventCatalog.load(ROOT / "examples/boom_load_load/event_types.yaml")
-    trace = Trace.load(ROOT / "examples/boom_load_load/stage6_trace.yaml")
+    catalog = EventCatalog.load(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml")
+    trace = Trace.load(ROOT / "tests/regressions/boom/legacy_v0_11/stage6_trace.yaml")
     model = CompletionSpec.load(
-        ROOT / "examples/boom_load_load/load_load_buggy_mshr_completion.yaml"
+        ROOT / "tests/regressions/boom/legacy_v0_11/load_load_buggy_mshr_completion.yaml"
     )
     completed = complete_trace(catalog, trace, model)
     assert completed.status is CompletionStatus.FEASIBLE
@@ -104,11 +104,11 @@ def test_check_cli_reports_boom_violation(capsys, tmp_path) -> None:
         [
             "check",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
             str(trace_path),
             "--axioms",
-            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/rvwmo_load_load_fragment.yaml"),
             "--output",
             str(graph_path),
         ]
@@ -127,11 +127,11 @@ def test_check_cli_reports_allowed_control(capsys) -> None:
         [
             "check",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/stage7_allowed_trace.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage7_allowed_trace.yaml"),
             "--axioms",
-            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/rvwmo_load_load_fragment.yaml"),
         ]
     )
     captured = capsys.readouterr()
@@ -145,10 +145,10 @@ def test_check_cli_reports_fixed_recovery_allowed(capsys, tmp_path) -> None:
     from umcm.ir.trace import Trace
     from umcm.solver.completion import CompletionStatus, complete_trace
 
-    catalog = EventCatalog.load(ROOT / "examples/boom_load_load/event_types.yaml")
-    trace = Trace.load(ROOT / "examples/boom_load_load/stage6_recovery_trace.yaml")
+    catalog = EventCatalog.load(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml")
+    trace = Trace.load(ROOT / "tests/regressions/boom/legacy_v0_11/stage6_recovery_trace.yaml")
     model = CompletionSpec.load(
-        ROOT / "examples/boom_load_load/load_load_fixed_mshr_completion.yaml"
+        ROOT / "tests/regressions/boom/legacy_v0_11/load_load_fixed_mshr_completion.yaml"
     )
     completed = complete_trace(catalog, trace, model)
     assert completed.status is CompletionStatus.FEASIBLE
@@ -160,11 +160,11 @@ def test_check_cli_reports_fixed_recovery_allowed(capsys, tmp_path) -> None:
         [
             "check",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
             str(trace_path),
             "--axioms",
-            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/rvwmo_load_load_fragment.yaml"),
         ]
     )
     captured = capsys.readouterr()
@@ -179,13 +179,13 @@ def test_abstract_cli_preserves_boom_violation(capsys, tmp_path) -> None:
         [
             "abstract",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/stage7_buggy_completed.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage7_buggy_completed.yaml"),
             "--abstraction",
-            str(ROOT / "examples/boom_load_load/hierarchy_abstraction.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/hierarchy_abstraction.yaml"),
             "--axioms",
-            str(ROOT / "examples/boom_load_load/rvwmo_load_load_fragment.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/rvwmo_load_load_fragment.yaml"),
             "--output",
             str(output),
         ]
@@ -204,11 +204,11 @@ def test_refine_cli_accepts_generated_abstraction(capsys, tmp_path) -> None:
         [
             "abstract",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/stage7_buggy_completed.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage7_buggy_completed.yaml"),
             "--abstraction",
-            str(ROOT / "examples/boom_load_load/hierarchy_abstraction.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/hierarchy_abstraction.yaml"),
             "--output",
             str(abstract_path),
         ]
@@ -219,13 +219,13 @@ def test_refine_cli_accepts_generated_abstraction(capsys, tmp_path) -> None:
         [
             "refine",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--concrete",
-            str(ROOT / "examples/boom_load_load/stage7_buggy_completed.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage7_buggy_completed.yaml"),
             "--abstract-trace",
             str(abstract_path),
             "--abstraction",
-            str(ROOT / "examples/boom_load_load/hierarchy_abstraction.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/hierarchy_abstraction.yaml"),
         ]
     )
     captured = capsys.readouterr()
@@ -239,9 +239,9 @@ def test_compose_cli_writes_modular_boom_model(capsys, tmp_path) -> None:
         [
             "compose",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--composition",
-            str(ROOT / "examples/boom_load_load/modular/buggy_composition.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/modular/buggy_composition.yaml"),
             "--output",
             str(output),
         ]
@@ -260,11 +260,11 @@ def test_complete_cli_accepts_modular_composition(capsys, tmp_path) -> None:
         [
             "complete",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/stage6_trace.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage6_trace.yaml"),
             "--composition",
-            str(ROOT / "examples/boom_load_load/modular/buggy_composition.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/modular/buggy_composition.yaml"),
             "--output",
             str(output),
         ]
@@ -282,11 +282,11 @@ def test_compose_cli_prints_collection_roles(capsys, tmp_path) -> None:
         [
             "compose",
             "--schema",
-            str(ROOT / "examples/boom_load_load/event_types.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml"),
             "--composition",
-            str(ROOT / "examples/boom_load_load/modular/buggy_parameterized_composition.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/modular/buggy_parameterized_composition.yaml"),
             "--trace",
-            str(ROOT / "examples/boom_load_load/stage11_three_load_trace.yaml"),
+            str(ROOT / "tests/regressions/boom/legacy_v0_11/stage11_three_load_trace.yaml"),
             "--output",
             str(output),
         ]

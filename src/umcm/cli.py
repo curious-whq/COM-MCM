@@ -64,7 +64,7 @@ def _build_parser() -> argparse.ArgumentParser:
     complete.add_argument(
         "--backend",
         default="auto",
-        choices=("auto", "finite"),
+        choices=("auto", "finite", "z3"),
         help="feasibility backend (default: auto)",
     )
     complete.add_argument(

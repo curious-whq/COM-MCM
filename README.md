@@ -1,25 +1,73 @@
-# µMCM Foundation v0.11.0
+# µMCM Foundation v0.12.0
 
-v0.11 extends the parameterized/composable foundation with a **generic BOOM load-side LDQ model** grounded in the supplied LSU Chisel source.
+v0.12 is the first release organized around a **current BOOM model** instead of one directory per development stage.
 
-The key change is that the LSU no longer declares LDQ state only for the two witness loads. A collection role selects every `Arch.Load` in the bounded trace, and a declarative `repeat` block instantiates one LDQ state family and common lifecycle transformations for each observed load.
-
-## What is new
+The project remains independent of FM-Agent.  Its job is to provide the deterministic infrastructure that later model-generation agents must target:
 
 ```text
-v0.10:
-  one / older_load / younger_load roles
-  → concrete parameterized witness
-
-v0.11:
-  loads: cardinality=many
-  → repeat over every observed load
-  → LDQ[idx] state family
-  → generic allocation / TLB / retry / execute / nack / wakeup /
-     response / observed / order-fail / recovery / commit behavior
+partial microarchitectural Trace
+        ↓
+Event + State + Transformation semantics
+        ↓
+bounded feasibility / hidden-event completion
+        ↓
+module composition + hierarchy abstraction
+        ↓
+architectural Execution Graph
+        ↓
+rf / co / fr / po / ppo + axioms
+        ↓
+ALLOWED / FORBIDDEN
 ```
 
-The operational solver is still finite: repeat expansion happens before solving and produces an ordinary bounded `CompletionSpec`.
+## BOOM layout
+
+```text
+examples/boom/
+├── events.yaml
+├── model/
+│   ├── lsu/
+│   │   ├── module.yaml
+│   │   └── fixed_reference.yaml
+│   ├── l1/module.yaml
+│   ├── mshr/module.yaml
+│   ├── coherence/module.yaml
+│   └── rob/{buggy,fixed_reference}.yaml
+├── composition/
+│   ├── lsq.yaml
+│   ├── lsq_fixed_reference.yaml
+│   ├── memory_buggy.yaml
+│   └── memory_fixed_reference.yaml
+├── axioms/rvwmo_load_load_fragment.yaml
+├── abstraction/hierarchy.yaml
+└── traces/
+```
+
+Historical stage-by-stage examples from v0.11 and earlier live under:
+
+```text
+tests/regressions/boom/legacy_v0_11/
+```
+
+No new `stageXX` files should be added to `examples/boom/`.
+
+## v0.12 LSQ model
+
+The current LSU/LSQ model is parameterized over all loads, stores and fences in the bounded Trace.  It models the memory-order-relevant behavior of:
+
+- LDQ allocation and persistent state;
+- load TLB miss, retry, hit, issue, nack, wakeup and response;
+- release/observed state and generic pairwise LD-LD search;
+- the BOOM buggy LD-LD assertion-only path and a corrected reference recovery path;
+- STQ allocation, address/data arrival and store TLB miss/retry;
+- Store→Load forwarding and older-AMO blocking;
+- generic ST-LD ordering violations and `order_fail` provenance;
+- `order_fail → MINI_EXCEPTION_MEM_ORDERING`;
+- load/store branch/exception recovery;
+- store commit, drain, DCache acknowledgement and clear;
+- fence wait/release on `DCache.Ordered`.
+
+The model deliberately abstracts queue pointer implementation, repeated arbitration/backpressure cycles, detailed TLB fault causes, HellaCache/debug/performance paths, and optional load-to-store register-data forwarding.  These omissions do not mean the corresponding RTL does not exist; they are outside the current memory-order semantic surface.
 
 ## Quick validation
 
@@ -30,208 +78,55 @@ PYTHONPATH=src pytest -q
 Expected:
 
 ```text
-98 passed
+111 passed
 ```
 
-### Generic nack/wakeup path
+### LSQ-only examples
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
-  --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage11_load_side_nack_wakeup.yaml \
-  --composition examples/boom_load_load/modular/load_side_generic_composition.yaml \
-  --output stage11_load_side_completed.yaml
+  --schema examples/boom/events.yaml \
+  --trace examples/boom/traces/store_load_forward.yaml \
+  --composition examples/boom/composition/lsq.yaml \
+  --backend z3
 ```
-
-### Real bug with an unrelated third load
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
-  --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage11_three_load_trace.yaml \
-  --composition examples/boom_load_load/modular/buggy_parameterized_composition.yaml \
-  --output stage11_buggy_completed.yaml
+  --schema examples/boom/events.yaml \
+  --trace examples/boom/traces/store_tlb_retry.yaml \
+  --composition examples/boom/composition/lsq.yaml \
+  --backend z3
 ```
 
-Then check the graph as before with `rvwmo_load_load_fragment.yaml`.
-
-See `ITERATION_11_REPORT.md` for scope and source mapping.
-
----
-
-## Historical notes: v0.10.0
-
-这是第十轮底层基础设施，仍然与 FM-Agent 无关。
-
-当前主链路：
-
-```text
-Partial Trace
-   ↓ trace roles / finite parameter binding
-Parameterized LSU / DCache / MSHR / Coherence / ROB templates
-   ↓ explicit module composition
-Transformation + State feasibility
-   ↓
-Completed microarchitectural Trace
-   ↓ architectural projection
-rf / co / fr / po / ppo Execution Graph
-   ↓ axioms
-ALLOWED / FORBIDDEN
-```
-
-## v0.10 的核心变化
-
-v0.9 虽然已经把模型拆成 LSU、DCache、MSHR、Coherence、ROB，但模块 YAML 仍然是这一条 witness 的具体实例，例如：
-
-```text
-L0 / L1 / W1
-LSU.ldq.L0 / LSU.ldq.L1
-MSHR.0
-```
-
-v0.10 增加了 Trace-driven parameterization。模块模板现在写成：
-
-```text
-${older_load.op_id}
-${older_load.ldq_idx}
-${younger_load.op_id}
-${younger_load.ldq_idx}
-${older_load.mshr_id}
-${visible_store.op_id}
-```
-
-组合器从输入 Trace 中解析 semantic roles，再生成具体 `ModuleSpec`。
-
-## Trace role 示例
-
-```yaml
-roles:
-  - name: older_load
-    event_type: Arch.Load
-    where:
-      fields.hart: 0
-      fields.program_index: 0
-    exports:
-      op_id: fields.op_id
-      address: fields.address
-      ldq_idx: annotations.microarch.ldq_idx
-      mshr_id: annotations.microarch.mshr_id
-```
-
-精确占位符保留类型：
-
-```yaml
-ldq_idx: ${older_load.ldq_idx}
-```
-
-若 Trace 中该值为 `13`，实例化结果仍是整数 `13`。
-
-嵌入式占位符用于状态名：
-
-```text
-LSU.ldq[${older_load.ldq_idx}].valid
-MSHR[${older_load.mshr_id}].state
-```
-
-## 参数化 BOOM 模板
-
-```text
-examples/boom_load_load/modular/templates/
-├── lsu_buggy.template.yaml
-├── lsu_fixed.template.yaml
-├── dcache.template.yaml
-├── mshr.template.yaml
-├── coherence.template.yaml
-├── rob_buggy.template.yaml
-└── rob_fixed.template.yaml
-```
-
-对应组合：
-
-```text
-modular/buggy_parameterized_composition.yaml
-modular/fixed_parameterized_composition.yaml
-```
-
-## 证明没有写死 witness identity
-
-`stage10_parameterized_trace.yaml` 故意使用：
-
-```text
-older load    = LoadAlpha, LDQ[13]
-younger load  = LoadBeta,  LDQ[7]
-visible store = StoreGamma
-MSHR           = MSHR[3]
-address        = data0
-```
-
-而模板无需任何修改。
-
-Buggy completion 自动得到：
-
-```text
-LSU.ldq[13].executed = true
-LSU.ldq[7].observed = true
-MSHR[3].state = DRAIN_RPQ_LOADS
-```
-
-并生成：
-
-```text
-StoreGamma --rf--> LoadAlpha
-LoadAlpha  --ppo-> LoadBeta
-LoadBeta   --fr--> StoreGamma
-```
-
-因此仍然 `FORBIDDEN`。
-
-Fixed 模型对相同 `LoadBeta=0` 退休目标返回 `INFEASIBLE`；恢复 Trace 则 `ALLOWED`。
-
-## 运行
-
-测试：
-
-```bash
-PYTHONPATH=src pytest -q
-```
-
-参数化组合：
-
-```bash
-PYTHONPATH=src python3 -m umcm compose \
-  --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage10_parameterized_trace.yaml \
-  --composition examples/boom_load_load/modular/buggy_parameterized_composition.yaml \
-  --output composed_buggy.yaml
-```
-
-补全：
+### Full BOOM Load–Load witness
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
-  --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage10_parameterized_trace.yaml \
-  --composition examples/boom_load_load/modular/buggy_parameterized_composition.yaml \
+  --schema examples/boom/events.yaml \
+  --trace examples/boom/traces/load_load_bug.yaml \
+  --composition examples/boom/composition/memory_buggy.yaml \
+  --backend z3 \
   --output completed_buggy.yaml
-```
 
-检查执行图：
-
-```bash
 PYTHONPATH=src python3 -m umcm check \
-  --schema examples/boom_load_load/event_types.yaml \
+  --schema examples/boom/events.yaml \
   --trace completed_buggy.yaml \
-  --axioms examples/boom_load_load/rvwmo_load_load_fragment.yaml
+  --axioms examples/boom/axioms/rvwmo_load_load_fragment.yaml
 ```
 
-## 当前边界
+The buggy model admits the architectural result `older=1, younger=0` and produces the cycle:
 
-v0.10 做的是**有限、Trace 驱动的具体实例化**：
+```text
+LoadBeta -fr→ StoreGamma -rfe→ LoadAlpha -ppo→ LoadBeta
+```
 
-- 操作名不再写死；
-- LDQ/MSHR entry 编号不再写死在模板；
-- 当前示例从 Trace annotation 得到 `ldq_idx/mshr_id`；
-- 尚未让求解器自动选择未知的 LDQ/MSHR allocation；
-- 尚未把两条 load 的专用 witness 规则扩展成任意数量 Load 的完整 Load Queue 模型。
+The fixed-reference composition instead generates:
 
-下一轮 v0.11 将开始扩展通用 Load-side LSQ：allocation、地址翻译、retry/wakeup、response/nack、executed/succeeded、release/observed、LD–LD search、order failure 与 commit。
+```text
+LDLDConflict → LoadOrderFail → MemoryOrderingException → SquashLoad
+```
+
+and rejects the same bad younger-load retirement.
+
+See `ITERATION_12_REPORT.md` and `LSQ_V0.12_SOURCE_MAP.md` for implementation details and source grounding.

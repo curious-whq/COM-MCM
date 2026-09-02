@@ -1,0 +1,23 @@
+schema_version: umcm.composition.v0.11.0
+name: boom-lsu-load-side-generic-v0.11
+horizon: 12
+metadata:
+  stage: 11
+  purpose: Standalone finite instantiation of generic BOOM LDQ/load-side semantics from every Arch.Load in the trace.
+modules:
+- name: lsu_load_side
+  path: templates/lsu_load_side.template.yaml
+connections: []
+roles:
+- name: loads
+  event_type: Arch.Load
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    hart: fields.hart
+    program_index: fields.program_index
+    cycle: cycle
+    ldq_idx: annotations.microarch.ldq_idx
+constraints: []

@@ -1,0 +1,39 @@
+schema_version: umcm.trace.v0.12.0
+partial: true
+metadata:
+  case: store-commit-drain-ack-clear
+  expected: FEASIBLE
+events:
+- id: s0
+  type: Arch.Store
+  occurs: true
+  cycle: 0
+  fields: {op_id: S0, hart: 0, program_index: 0, address: x, value: 9, byte_mask: 255}
+  annotations:
+    microarch: {stq_idx: 2, is_amo: false}
+- id: s0_addr
+  type: LSU.StoreAddressReady
+  occurs: true
+  cycle: 1
+  fields: {op_id: S0, stq_idx: 2, address: x, byte_mask: 255}
+- id: s0_data
+  type: LSU.StoreDataReady
+  occurs: true
+  cycle: 1
+  fields: {op_id: S0, stq_idx: 2, value: 9}
+- id: commit_s0
+  type: Arch.CommitStore
+  occurs: true
+  cycle: 2
+  fields: {op_id: S0}
+- id: drain_s0
+  type: LSU.StoreDrainIssue
+  occurs: true
+  cycle: 3
+  fields: {op_id: S0, stq_idx: 2, address: x, value: 9}
+- id: ack_s0
+  type: DCache.StoreAck
+  occurs: true
+  cycle: 4
+  fields: {op_id: S0, stq_idx: 2, address: x}
+constraints: []

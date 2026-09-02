@@ -1,0 +1,151 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: fence-waits-for-dcache-ordered
+  expected: FEASIBLE
+  completion:
+    backend: z3
+    horizon: 20
+    model:
+      component: LSQ only
+      version: 0.12.0
+      composition:
+        name: boom-lsq
+        resolved_roles:
+          init_write: []
+          loads: []
+          local_stores: []
+          fences:
+          - event_id: f0
+            event_type: Arch.Fence
+            op_id: F0
+            hart: 0
+            program_index: 0
+            cycle: 0
+            stq_idx: 1
+        modules:
+        - lsu
+        connections: []
+        generated_transformations: []
+    selected_slots:
+    - fence_enqueue_0
+    - fence_wait_0
+    - fence_release_0
+    state:
+      initial:
+        LSU.fence[1].valid: false
+        LSU.fence[1].committed: false
+      final:
+        LSU.fence[1].valid: false
+        LSU.fence[1].committed: true
+      steps:
+      - cycle: 0
+        before:
+          LSU.fence[1].valid: false
+          LSU.fence[1].committed: false
+        after:
+          LSU.fence[1].valid: true
+          LSU.fence[1].committed: false
+        active_requirements: []
+        active_updates:
+        - transformation.fence_enqueue_F0.forward.0.f0.instance.0.fence_enqueue_0.update.0
+        changes:
+        - state: LSU.fence[1].valid
+          before: false
+          after: true
+          origins:
+          - transformation.fence_enqueue_F0.forward.0.f0.instance.0.fence_enqueue_0.update.0
+      - cycle: 2
+        before:
+          LSU.fence[1].valid: true
+          LSU.fence[1].committed: false
+        after:
+          LSU.fence[1].valid: true
+          LSU.fence[1].committed: true
+        active_requirements:
+        - transformation.fence_commit_F0.forward.0.commit_f0.instance.0.fence_wait_0.requirement.0
+        active_updates:
+        - transformation.fence_commit_F0.forward.0.commit_f0.instance.0.fence_wait_0.update.0
+        changes:
+        - state: LSU.fence[1].committed
+          before: false
+          after: true
+          origins:
+          - transformation.fence_commit_F0.forward.0.commit_f0.instance.0.fence_wait_0.update.0
+      - cycle: 18
+        before:
+          LSU.fence[1].valid: true
+          LSU.fence[1].committed: true
+        after:
+          LSU.fence[1].valid: false
+          LSU.fence[1].committed: true
+        active_requirements: []
+        active_updates:
+        - transformation.fence_release_deallocates_F0.forward.0.fence_release_0.instance.0.no-output.update.0
+        changes:
+        - state: LSU.fence[1].valid
+          before: true
+          after: false
+          origins:
+          - transformation.fence_release_deallocates_F0.forward.0.fence_release_0.instance.0.no-output.update.0
+events:
+- id: f0
+  type: Arch.Fence
+  occurs: true
+  fields:
+    op_id: F0
+    hart: 0
+    program_index: 0
+  cycle: 0
+  annotations:
+    microarch:
+      stq_idx: 1
+- id: commit_f0
+  type: Arch.CommitFence
+  occurs: true
+  fields:
+    op_id: F0
+  cycle: 2
+- id: ordered
+  type: DCache.Ordered
+  occurs: true
+  fields:
+    hart: 0
+  cycle: 4
+- id: fence_enqueue_0
+  type: LSU.FenceEnqueue
+  occurs: true
+  fields:
+    op_id: F0
+    stq_idx: 1
+  cycle: 0
+  annotations:
+    module_spec: lsu
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: fence_wait_0
+  type: LSU.FenceWait
+  occurs: true
+  fields:
+    op_id: F0
+    stq_idx: 1
+  cycle: 2
+  annotations:
+    module_spec: lsu
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: fence_release_0
+  type: LSU.FenceRelease
+  occurs: true
+  fields:
+    op_id: F0
+    stq_idx: 1
+  cycle: 18
+  annotations:
+    module_spec: lsu
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

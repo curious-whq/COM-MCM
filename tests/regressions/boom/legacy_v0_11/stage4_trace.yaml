@@ -1,0 +1,90 @@
+schema_version: umcm.trace.v0.1
+partial: true
+metadata:
+  case: boom-load-load-ordering
+  expected_architectural_outcome:
+    L0: 1
+    L1: 0
+  note: Hidden completion events establish L1=0, a later same-address probe release,
+    L1.observed, and only then the older L0 retry.
+  stage: 4
+events:
+- id: init_x
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitX
+    address: x
+    value: 0
+- id: load_l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+  cycle: 0
+- id: load_l1
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    address: x
+  cycle: 3
+- id: store_w1
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: W1
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+  cycle: 8
+- id: commit_l0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L0
+    value: 1
+- id: commit_l1
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L1
+    value: 0
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+- node: call
+  function: same_address
+  arguments:
+  - node: event_field
+    event_id: load_l0
+    field: address
+    sort:
+      name: address
+      width: 64
+  - node: event_field
+    event_id: load_l1
+    field: address
+    sort:
+      name: address
+      width: 64
+  sort:
+    name: bool

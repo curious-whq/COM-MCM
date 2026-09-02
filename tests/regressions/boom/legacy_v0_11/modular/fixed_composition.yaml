@@ -1,0 +1,492 @@
+schema_version: umcm.composition.v0.9.0
+name: boom-load-load-fixed-modular-v0.9
+horizon: 20
+metadata:
+  variant: fixed
+  stage: 9
+  purpose: Compose separately loaded LSU, DCache, MSHR, coherence and ROB models for
+    the BOOM load-load witness.
+  legacy_monolith: ../load_load_fixed_mshr_completion.yaml
+modules:
+- name: lsu
+  path: modules/lsu_fixed.yaml
+- name: dcache
+  path: modules/dcache.yaml
+- name: mshr
+  path: modules/mshr.yaml
+- name: coherence
+  path: modules/coherence.yaml
+- name: rob
+  path: modules/rob_fixed.yaml
+connections:
+- name: core_arch_load_to_lsu
+  source:
+    module: rob
+    port: arch_load
+  target:
+    module: lsu
+    port: arch_load
+  mode: shared_event
+- name: core_commit_load_to_lsu
+  source:
+    module: rob
+    port: commit_load
+  target:
+    module: lsu
+    port: commit_load
+  mode: shared_event
+- name: core_branch_kill_to_lsu
+  source:
+    module: rob
+    port: branch_kill
+  target:
+    module: lsu
+    port: branch_kill
+  mode: shared_event
+- name: core_exception_to_lsu
+  source:
+    module: rob
+    port: exception
+  target:
+    module: lsu
+    port: exception
+  mode: shared_event
+- name: lsu_memory_order_exception_to_rob
+  source:
+    module: lsu
+    port: memory_order_exception
+  target:
+    module: rob
+    port: memory_order_exception
+  mode: shared_event
+- name: rob_squash_to_lsu
+  source:
+    module: rob
+    port: squash_load
+  target:
+    module: lsu
+    port: squash_load
+  mode: shared_event
+- name: lsu_request_valid_to_dcache
+  source:
+    module: lsu
+    port: dcache_req_valid
+  target:
+    module: dcache
+    port: lsu_req_valid
+  mode: shared_event
+- name: dcache_ready_to_lsu
+  source:
+    module: dcache
+    port: req_ready
+  target:
+    module: lsu
+    port: dcache_req_ready
+  mode: shared_event
+- name: dcache_accept_to_lsu
+  source:
+    module: dcache
+    port: req_fire
+  target:
+    module: lsu
+    port: dcache_req_fire
+  mode: shared_event
+- name: lsu_executed_to_dcache
+  source:
+    module: lsu
+    port: load_executed
+  target:
+    module: dcache
+    port: lsu_load_executed
+  mode: shared_event
+- name: dcache_hit_to_lsu
+  source:
+    module: dcache
+    port: load_hit
+  target:
+    module: lsu
+    port: dcache_load_hit
+  mode: shared_event
+- name: dcache_hit_response_to_lsu
+  source:
+    module: dcache
+    port: load_response
+  target:
+    module: lsu
+    port: dcache_load_response
+  mode: shared_event
+- name: dcache_nack_to_lsu
+  source:
+    module: dcache
+    port: load_nack
+  target:
+    module: lsu
+    port: dcache_load_nack
+  mode: shared_event
+- name: dcache_probe_release_to_lsu
+  source:
+    module: dcache
+    port: probe_release
+  target:
+    module: lsu
+    port: dcache_probe_release
+  mode: shared_event
+- name: dcache_long_latency_response_to_lsu
+  source:
+    module: dcache
+    port: long_latency_response
+  target:
+    module: lsu
+    port: dcache_long_latency_response
+  mode: shared_event
+- name: dcache_miss_to_lsu
+  source:
+    module: dcache
+    port: load_miss
+  target:
+    module: lsu
+    port: dcache_load_miss
+  mode: shared_event
+- name: dcache_miss_to_mshr
+  source:
+    module: dcache
+    port: load_miss
+  target:
+    module: mshr
+    port: dcache_load_miss
+  mode: shared_event
+- name: mshr_drain_to_dcache
+  source:
+    module: mshr
+    port: drain_rpq_load
+  target:
+    module: dcache
+    port: mshr_drain_rpq_load
+  mode: shared_event
+- name: core_store_to_coherence
+  source:
+    module: rob
+    port: arch_store
+  target:
+    module: coherence
+    port: visible_store
+  mode: shared_event
+- name: dcache_probe_to_coherence
+  source:
+    module: dcache
+    port: probe_receive
+  target:
+    module: coherence
+    port: probe_receive
+  mode: shared_event
+- name: mshr_grant_to_coherence
+  source:
+    module: mshr
+    port: grant_data
+  target:
+    module: coherence
+    port: grant_data
+  mode: shared_event
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l0_tlb_miss
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: retry_enqueue_0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: retry_issue_0
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: branch_kill_0
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: retry_enqueue_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: branch_kill_0
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: branch_kill_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: retry_issue_0
+        field: cycle
+        sort:
+          name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: exception_0
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: retry_enqueue_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: exception_0
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: exception_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: retry_issue_0
+        field: cycle
+        sort:
+          name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: l1_load_succeeded
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: store_w1
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: store_w1
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: probe_receive_x
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: probe_release_x
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l1_load_observed
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: l1_load_observed
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: retry_issue_0
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: l1_dcache_req_fire
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: or
+    operands:
+    - node: event_field
+      event_id: l1_dcache_hit
+      field: occurs
+      sort:
+        name: bool
+    - node: event_field
+      event_id: l1_dcache_nack
+      field: occurs
+      sort:
+        name: bool
+- node: unary
+  op: not
+  operand:
+    node: nary
+    op: and
+    operands:
+    - node: event_field
+      event_id: l1_dcache_hit
+      field: occurs
+      sort:
+        name: bool
+    - node: event_field
+      event_id: l1_dcache_nack
+      field: occurs
+      sort:
+        name: bool
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: dcache_req_fire_0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l0_ldld_search
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: eq
+  left:
+    node: event_field
+    event_id: l0_ldld_search
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l0_l1_ldld_conflict
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: l0_l1_ldld_conflict
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: commit_l0
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: commit_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: commit_l1
+    field: cycle
+    sort:
+      name: int
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: ldld_assert_violation
+    field: occurs
+    sort:
+      name: bool
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: branch_kill_0
+    field: occurs
+    sort: &id001
+      name: bool
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: exception_0
+    field: occurs
+    sort: *id001
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: l1_dcache_nack
+    field: occurs
+    sort: *id001

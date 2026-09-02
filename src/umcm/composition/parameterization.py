@@ -128,7 +128,7 @@ def resolve_trace_roles(
 
     ``cardinality: one`` preserves the v0.10 behavior. ``cardinality: many``
     exports every matching event, ordered deterministically by cycle then id.
-    Collection roles are primarily used by v0.11 finite LDQ-family expansion.
+    Collection roles are primarily used by v0.12 finite LSQ-family expansion.
     """
 
     context: dict[str, Any] = {}
@@ -258,10 +258,13 @@ def expand_module_repeats(
         raise CompositionError("module template must be a mapping")
     data = dict(raw_module)
     raw_repeats = data.pop("repeat", [])
-    if not raw_repeats:
+    raw_products = data.pop("repeat_product", [])
+    if not raw_repeats and not raw_products:
         return data
     if not isinstance(raw_repeats, list):
         raise CompositionError("module repeat must be a list")
+    if not isinstance(raw_products, list):
+        raise CompositionError("module repeat_product must be a list")
     allowed_sections = {
         "ports", "slots", "state_variables", "transformations", "constraints"
     }
@@ -323,6 +326,94 @@ def expand_module_repeats(
                         f"module section {section!r} must be a list before repeat expansion"
                     )
                 current.extend(values)
+
+    # Cartesian-product expansion for pairwise/triple LSQ rules.
+    # Example:
+    #   repeat_product:
+    #     - axes:
+    #         - {over: loads, as: older}
+    #         - {over: loads, as: younger}
+    #       include: {transformations: [...]}
+    from itertools import product
+    for spec in raw_products:
+        if not isinstance(spec, Mapping):
+            raise CompositionError("module repeat_product item must be a mapping")
+        unknown = set(spec) - {"axes", "include"}
+        if unknown:
+            raise CompositionError(
+                "module repeat_product contains unknown key(s): "
+                + ", ".join(sorted(str(item) for item in unknown))
+            )
+        axes = spec.get("axes")
+        include = spec.get("include")
+        if not isinstance(axes, list) or not axes:
+            raise CompositionError("module repeat_product axes must be a non-empty list")
+        if not isinstance(include, Mapping):
+            raise CompositionError("module repeat_product include must be a mapping")
+        bad_sections = set(include) - allowed_sections
+        if bad_sections:
+            raise CompositionError(
+                "module repeat_product include contains unsupported section(s): "
+                + ", ".join(sorted(str(item) for item in bad_sections))
+            )
+        collections = []
+        aliases = []
+        for axis_index, axis in enumerate(axes):
+            if not isinstance(axis, Mapping):
+                raise CompositionError("module repeat_product axis must be a mapping")
+            unknown_axis = set(axis) - {"over", "as"}
+            if unknown_axis:
+                raise CompositionError(
+                    "module repeat_product axis contains unknown key(s): "
+                    + ", ".join(sorted(str(item) for item in unknown_axis))
+                )
+            try:
+                over = str(axis["over"])
+                alias = str(axis["as"])
+            except KeyError as exc:
+                raise CompositionError(
+                    f"module repeat_product axis is missing {exc.args[0]!r}"
+                ) from exc
+            if not alias or alias in aliases:
+                raise CompositionError("module repeat_product aliases must be non-empty and unique")
+            collection = _resolve_context_path(context, over)
+            if not isinstance(collection, list):
+                raise CompositionError(
+                    f"module repeat_product over {over!r} requires a cardinality=many role"
+                )
+            collections.append(collection)
+            aliases.append(alias)
+        product_index = 0
+        indexed_collections = [list(enumerate(collection)) for collection in collections]
+        for tuple_items in product(*indexed_collections):
+            local_context = dict(context)
+            for alias, (item_index, item) in zip(aliases, tuple_items):
+                if not isinstance(item, Mapping):
+                    raise CompositionError(
+                        f"module repeat_product alias {alias!r} item is not a mapping"
+                    )
+                local_item = dict(item)
+                # Preserve the collection position even when two role bindings
+                # happen to contain identical exported values.  list.index()
+                # would collapse those distinct dynamic entries onto the same
+                # repeat_index and produce colliding state/event names.
+                local_item["repeat_index"] = item_index
+                local_item["product_index"] = product_index
+                local_context[alias] = local_item
+            local_context["product"] = {"repeat_index": product_index}
+            rendered = render_template(dict(include), local_context)
+            for section, values in rendered.items():
+                if not isinstance(values, list):
+                    raise CompositionError(
+                        f"module repeat_product section {section!r} must render to a list"
+                    )
+                current = data.setdefault(section, [])
+                if not isinstance(current, list):
+                    raise CompositionError(
+                        f"module section {section!r} must be a list before repeat_product expansion"
+                    )
+                current.extend(values)
+            product_index += 1
     return data
 
 

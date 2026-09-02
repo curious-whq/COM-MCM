@@ -33,8 +33,8 @@ from umcm.composition.parameterization import TraceRoleSpec
 from umcm.serialization import decode_value, dump_data, encode_value, load_data
 
 
-MODULE_SCHEMA_VERSION = "umcm.module.v0.11.0"
-COMPOSITION_SCHEMA_VERSION = "umcm.composition.v0.11.0"
+MODULE_SCHEMA_VERSION = "umcm.module.v0.12.0"
+COMPOSITION_SCHEMA_VERSION = "umcm.composition.v0.12.0"
 
 
 class PortDirection(str, Enum):

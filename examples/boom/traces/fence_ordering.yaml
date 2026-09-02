@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.12.0
+partial: true
+metadata:
+  case: fence-waits-for-dcache-ordered
+  expected: FEASIBLE
+events:
+- id: f0
+  type: Arch.Fence
+  occurs: true
+  fields:
+    op_id: F0
+    hart: 0
+    program_index: 0
+  cycle: 0
+  annotations:
+    microarch:
+      stq_idx: 1
+- id: commit_f0
+  type: Arch.CommitFence
+  occurs: true
+  fields:
+    op_id: F0
+  cycle: 2
+- id: ordered
+  type: DCache.Ordered
+  occurs: true
+  fields:
+    hart: 0
+  cycle: 4
+constraints: []

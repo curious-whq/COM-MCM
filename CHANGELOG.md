@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.0
+
+- Reorganized the active BOOM model under `examples/boom/`; stage-by-stage artifacts moved to regression storage.
+- Added generic pairwise `repeat_product` expansion for LD-LD and ST-LD rules.
+- Added conditional `state_mode: guard` semantics and direct persistent-state encoding in the libz3 backend.
+- Generalized the BOOM LSQ model across LDQ, STQ/SDQ abstraction, load/store retry, forwarding, ordering recovery, commit/drain and fence lifecycle.
+- Added store TLB miss/retry, exception flush, and store commit→drain→ack→clear paths.
+- `LSU.LoadOrderFail` now carries `source_op_id` provenance, eliminating pairwise exact-support aliasing.
+- Corrected the LD-LD search timing/executing-window abstraction to match the one-cycle `s0_executing_loads → s1_executing_loads` path.
+- The real BOOM Load-Load bug remains feasible/forbidden; the fixed reference produces order-fail→exception→squash and blocks the bad retirement.
+- Test suite: 111 passing tests.
+
 ## 0.11.0
 
 - `TraceRoleSpec` adds `cardinality: many` for finite collection roles.

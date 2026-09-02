@@ -1,0 +1,925 @@
+schema_version: umcm.module.v0.12.0
+name: mshr
+metadata:
+  variant: shared
+  source: BOOM v4 BoomMSHR/BoomMSHRFile abstraction
+  parameterized: true
+  template_parameters:
+  - older_load.op_id
+  - older_load.address
+  - older_load.ldq_idx
+  - older_load.mshr_id
+  - younger_load.op_id
+  - younger_load.ldq_idx
+  - visible_store.op_id
+  - visible_store.value
+  - init_write.value
+  version: 0.12.0
+ports:
+- name: dcache_load_miss
+  direction: input
+  event_type: DCache.LoadMiss
+- name: primary_miss_accept
+  direction: output
+  event_type: MSHR.PrimaryMissAccept
+- name: grant_data
+  direction: output
+  event_type: MSHR.GrantData
+- name: drain_rpq_load
+  direction: output
+  event_type: MSHR.DrainRPQLoad
+slots:
+- id: older_mshr_primary_accept
+  type: MSHR.PrimaryMissAccept
+  required: false
+  cycle: 14
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+- id: older_mshr_rpq_enqueue
+  type: MSHR.RPQEnqueue
+  required: false
+  cycle: 14
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+- id: older_mshr_acquire
+  type: MSHR.AcquireBlock
+  required: false
+  cycle: 15
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    address: ${older_load.address}
+- id: older_mshr_grant_data
+  type: MSHR.GrantData
+  required: false
+  cycle: 16
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    source_op_id: ${visible_store.op_id}
+    address: ${older_load.address}
+    value: 1
+- id: older_mshr_refill_complete
+  type: MSHR.RefillComplete
+  required: false
+  cycle: 16
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    source_op_id: ${visible_store.op_id}
+    address: ${older_load.address}
+    value: 1
+- id: older_mshr_drain_rpq
+  type: MSHR.DrainRPQLoad
+  required: false
+  cycle: 17
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    value: 1
+state_variables:
+- name: MSHR[${older_load.mshr_id}].state
+  sort:
+    name: string
+  initial: INVALID
+- name: MSHR[${older_load.mshr_id}].req_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+- name: MSHR[${older_load.mshr_id}].req_ldq_idx
+  sort:
+    name: bv
+    width: 6
+  initial: 63
+- name: MSHR[${older_load.mshr_id}].req_address
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+- name: MSHR[${older_load.mshr_id}].rpq_valid
+  sort:
+    name: bool
+  initial: false
+- name: MSHR[${older_load.mshr_id}].rpq_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+- name: MSHR[${older_load.mshr_id}].rpq_ldq_idx
+  sort:
+    name: bv
+    width: 6
+  initial: 63
+- name: MSHR[${older_load.mshr_id}].rpq_address
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+- name: MSHR[${older_load.mshr_id}].line_value
+  sort:
+    name: value
+    width: 64
+  initial: UNSET_VALUE
+- name: MSHR[${older_load.mshr_id}].line_source_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+transformations:
+- name: primary_mshr_accept_requires_older_miss
+  inputs:
+  - role: accept
+    type: MSHR.PrimaryMissAccept
+  outputs:
+  - role: miss
+    type: DCache.LoadMiss
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: ${older_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: miss
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: miss
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: accept
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: INVALID
+  state_updates:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: accept
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_REQ
+  - state: MSHR[${older_load.mshr_id}].req_op_id
+    at: accept
+    value:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR[${older_load.mshr_id}].req_ldq_idx
+    at: accept
+    value:
+      node: event_field
+      event_id: accept
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: MSHR[${older_load.mshr_id}].req_address
+    at: accept
+    value:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+  tags:
+  - state
+  - mshr-allocation
+- name: primary_mshr_accept_enqueues_rpq
+  inputs:
+  - role: accept
+    type: MSHR.PrimaryMissAccept
+  outputs:
+  - role: enqueue
+    type: MSHR.RPQEnqueue
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: enqueue
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: enqueue
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: enqueue
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR[${older_load.mshr_id}].rpq_valid
+    at: enqueue
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: MSHR[${older_load.mshr_id}].rpq_valid
+    at: enqueue
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: MSHR[${older_load.mshr_id}].rpq_op_id
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR[${older_load.mshr_id}].rpq_ldq_idx
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: MSHR[${older_load.mshr_id}].rpq_address
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: address
+      sort:
+        name: address
+        width: 64
+  exact: true
+  tags:
+  - state
+  - rpq
+  - identity
+- name: mshr_acquire_requires_primary_accept
+  inputs:
+  - role: acquire
+    type: MSHR.AcquireBlock
+  outputs:
+  - role: accept
+    type: MSHR.PrimaryMissAccept
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: acquire
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: accept
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: acquire
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: acquire
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: accept
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: acquire
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: acquire
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_REQ
+  - state: MSHR[${older_load.mshr_id}].req_op_id
+    at: acquire
+    op: eq
+    value:
+      node: event_field
+      event_id: acquire
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR[${older_load.mshr_id}].req_address
+    at: acquire
+    op: eq
+    value:
+      node: event_field
+      event_id: acquire
+      field: address
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: acquire
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_RESP
+  tags:
+  - state
+  - mshr-fsm
+  - tilelink
+- name: grant_data_requires_matching_acquire
+  inputs:
+  - role: grant
+    type: MSHR.GrantData
+  outputs:
+  - role: acquire
+    type: MSHR.AcquireBlock
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: acquire
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: acquire
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: acquire
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: acquire
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: grant
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_RESP
+  - state: MSHR[${older_load.mshr_id}].req_op_id
+    at: grant
+    op: eq
+    value:
+      node: event_field
+      event_id: grant
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR[${older_load.mshr_id}].req_address
+    at: grant
+    op: eq
+    value:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+  tags:
+  - causal-support
+  - tilelink
+  - identity
+- name: refill_complete_requires_grant_data
+  inputs:
+  - role: complete
+    type: MSHR.RefillComplete
+  outputs:
+  - role: grant
+    type: MSHR.GrantData
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: grant
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: grant
+      field: source_op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: grant
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: complete
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_RESP
+  - state: MSHR[${older_load.mshr_id}].req_op_id
+    at: complete
+    op: eq
+    value:
+      node: event_field
+      event_id: complete
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR[${older_load.mshr_id}].req_address
+    at: complete
+    op: eq
+    value:
+      node: event_field
+      event_id: complete
+      field: address
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: complete
+    value:
+      node: literal
+      sort:
+        name: string
+      value: DRAIN_RPQ_LOADS
+  - state: MSHR[${older_load.mshr_id}].line_value
+    at: complete
+    value:
+      node: event_field
+      event_id: complete
+      field: value
+      sort:
+        name: value
+        width: 64
+  - state: MSHR[${older_load.mshr_id}].line_source_op_id
+    at: complete
+    value:
+      node: event_field
+      event_id: complete
+      field: source_op_id
+      sort:
+        name: op_id
+  tags:
+  - state
+  - mshr-fsm
+  - refill
+- name: drain_rpq_load_requires_completed_refill
+  inputs:
+  - role: drain
+    type: MSHR.DrainRPQLoad
+  outputs:
+  - role: complete
+    type: MSHR.RefillComplete
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: complete
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: complete
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: complete
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: complete
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: complete
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: drain
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR[${older_load.mshr_id}].state
+    at: drain
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: DRAIN_RPQ_LOADS
+  - state: MSHR[${older_load.mshr_id}].rpq_valid
+    at: drain
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: MSHR[${older_load.mshr_id}].rpq_op_id
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR[${older_load.mshr_id}].rpq_ldq_idx
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: MSHR[${older_load.mshr_id}].rpq_address
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: MSHR[${older_load.mshr_id}].line_value
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: value
+      sort:
+        name: value
+        width: 64
+  state_updates:
+  - state: MSHR[${older_load.mshr_id}].rpq_valid
+    at: drain
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - state
+  - rpq
+  - line-buffer
+constraints: []

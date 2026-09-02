@@ -1,0 +1,70 @@
+schema_version: umcm.trace.v0.12.0
+partial: true
+metadata:
+  case: store-load-forward
+  expected: FEASIBLE
+events:
+- id: s0
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: S0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 42
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      stq_idx: 2
+      is_amo: false
+- id: l0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 1
+    address: x
+    byte_mask: 255
+  cycle: 1
+  annotations:
+    microarch:
+      ldq_idx: 5
+- id: s0_addr
+  type: LSU.StoreAddressReady
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 2
+    address: x
+    byte_mask: 255
+  cycle: 2
+- id: s0_data
+  type: LSU.StoreDataReady
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 2
+    value: 42
+  cycle: 2
+- id: fwd
+  type: LSU.StoreLoadForward
+  occurs: true
+  fields:
+    store_op_id: S0
+    store_stq_idx: 2
+    load_op_id: L0
+    load_ldq_idx: 5
+    address: x
+    value: 42
+  cycle: 4
+- id: commit_l0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L0
+    value: 42
+  cycle: 6
+constraints: []

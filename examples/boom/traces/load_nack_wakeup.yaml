@@ -1,0 +1,117 @@
+schema_version: umcm.trace.v0.12.0
+partial: true
+metadata:
+  case: load-nack-wakeup-reexecute
+  expected: FEASIBLE
+events:
+- id: load_a
+  type: Arch.Load
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: LoadA
+    hart: 0
+    program_index: 0
+    address: x
+    byte_mask: 255
+  annotations:
+    microarch:
+      ldq_idx: 5
+- id: fire_a0
+  type: LSU.DCacheReqFire
+  occurs: true
+  cycle: 2
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: exec_a0
+  type: LSU.LoadExecuted
+  occurs: true
+  cycle: 3
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+- id: nack_a
+  type: DCache.LoadNack
+  occurs: true
+  cycle: 4
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: wakeup_a
+  type: LSU.LoadWakeup
+  occurs: true
+  cycle: 5
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: fire_a1
+  type: LSU.DCacheReqFire
+  occurs: true
+  cycle: 6
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: exec_a1
+  type: LSU.LoadExecuted
+  occurs: true
+  cycle: 7
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+- id: resp_a
+  type: DCache.LoadResponse
+  occurs: true
+  cycle: 8
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    value: 42
+    port: 0
+- id: success_a
+  type: LSU.LoadSucceeded
+  occurs: true
+  cycle: 8
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    value: 42
+    source: dcache
+- id: commit_a
+  type: Arch.CommitLoad
+  occurs: true
+  cycle: 9
+  fields:
+    op_id: LoadA
+    value: 42
+- id: search_a0
+  type: LSU.LDLDSearch
+  occurs: true
+  cycle: 3
+  fields:
+    searcher_op_id: LoadA
+    searcher_ldq_idx: 5
+    address: x
+    port: 0
+- id: search_a1
+  type: LSU.LDLDSearch
+  occurs: true
+  cycle: 7
+  fields:
+    searcher_op_id: LoadA
+    searcher_ldq_idx: 5
+    address: x
+    port: 0
+constraints: []

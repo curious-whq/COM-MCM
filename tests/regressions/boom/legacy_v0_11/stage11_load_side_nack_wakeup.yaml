@@ -1,0 +1,88 @@
+schema_version: umcm.trace.v0.1
+partial: true
+metadata:
+  stage: 11
+  case: generic-load-side-nack-wakeup
+  source: BOOM LSU load-side Chisel
+events:
+- id: load_a
+  type: Arch.Load
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: LoadA
+    hart: 0
+    program_index: 0
+    address: x
+  annotations:
+    microarch:
+      ldq_idx: 5
+- id: fire_a0
+  type: LSU.DCacheReqFire
+  occurs: true
+  cycle: 2
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: exec_a0
+  type: LSU.LoadExecuted
+  occurs: true
+  cycle: 3
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+- id: nack_a
+  type: DCache.LoadNack
+  occurs: true
+  cycle: 4
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: wakeup_a
+  type: LSU.LoadWakeup
+  occurs: true
+  cycle: 5
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: fire_a1
+  type: LSU.DCacheReqFire
+  occurs: true
+  cycle: 6
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    port: 0
+- id: exec_a1
+  type: LSU.LoadExecuted
+  occurs: true
+  cycle: 7
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+- id: success_a
+  type: LSU.LoadSucceeded
+  occurs: true
+  cycle: 8
+  fields:
+    op_id: LoadA
+    ldq_idx: 5
+    address: x
+    value: 42
+- id: commit_a
+  type: Arch.CommitLoad
+  occurs: true
+  cycle: 9
+  fields:
+    op_id: LoadA
+    value: 42
+constraints: []

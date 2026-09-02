@@ -1,0 +1,5170 @@
+schema_version: umcm.completion.v0.9.0
+horizon: 20
+metadata:
+  variant: fixed
+  stage: 9
+  purpose: Compose separately loaded LSU, DCache, MSHR, coherence and ROB models for
+    the BOOM load-load witness.
+  legacy_monolith: ../load_load_fixed_mshr_completion.yaml
+  composition:
+    name: boom-load-load-fixed-modular-v0.9
+    modules:
+    - lsu
+    - dcache
+    - mshr
+    - coherence
+    - rob
+    connections:
+    - name: core_arch_load_to_lsu
+      mode: shared_event
+      source: rob.arch_load
+      target: lsu.arch_load
+    - name: core_commit_load_to_lsu
+      mode: shared_event
+      source: rob.commit_load
+      target: lsu.commit_load
+    - name: core_branch_kill_to_lsu
+      mode: shared_event
+      source: rob.branch_kill
+      target: lsu.branch_kill
+    - name: core_exception_to_lsu
+      mode: shared_event
+      source: rob.exception
+      target: lsu.exception
+    - name: lsu_memory_order_exception_to_rob
+      mode: shared_event
+      source: lsu.memory_order_exception
+      target: rob.memory_order_exception
+    - name: rob_squash_to_lsu
+      mode: shared_event
+      source: rob.squash_load
+      target: lsu.squash_load
+    - name: lsu_request_valid_to_dcache
+      mode: shared_event
+      source: lsu.dcache_req_valid
+      target: dcache.lsu_req_valid
+    - name: dcache_ready_to_lsu
+      mode: shared_event
+      source: dcache.req_ready
+      target: lsu.dcache_req_ready
+    - name: dcache_accept_to_lsu
+      mode: shared_event
+      source: dcache.req_fire
+      target: lsu.dcache_req_fire
+    - name: lsu_executed_to_dcache
+      mode: shared_event
+      source: lsu.load_executed
+      target: dcache.lsu_load_executed
+    - name: dcache_hit_to_lsu
+      mode: shared_event
+      source: dcache.load_hit
+      target: lsu.dcache_load_hit
+    - name: dcache_hit_response_to_lsu
+      mode: shared_event
+      source: dcache.load_response
+      target: lsu.dcache_load_response
+    - name: dcache_nack_to_lsu
+      mode: shared_event
+      source: dcache.load_nack
+      target: lsu.dcache_load_nack
+    - name: dcache_probe_release_to_lsu
+      mode: shared_event
+      source: dcache.probe_release
+      target: lsu.dcache_probe_release
+    - name: dcache_long_latency_response_to_lsu
+      mode: shared_event
+      source: dcache.long_latency_response
+      target: lsu.dcache_long_latency_response
+    - name: dcache_miss_to_lsu
+      mode: shared_event
+      source: dcache.load_miss
+      target: lsu.dcache_load_miss
+    - name: dcache_miss_to_mshr
+      mode: shared_event
+      source: dcache.load_miss
+      target: mshr.dcache_load_miss
+    - name: mshr_drain_to_dcache
+      mode: shared_event
+      source: mshr.drain_rpq_load
+      target: dcache.mshr_drain_rpq_load
+    - name: core_store_to_coherence
+      mode: shared_event
+      source: rob.arch_store
+      target: coherence.visible_store
+    - name: dcache_probe_to_coherence
+      mode: shared_event
+      source: dcache.probe_receive
+      target: coherence.probe_receive
+    - name: mshr_grant_to_coherence
+      mode: shared_event
+      source: mshr.grant_data
+      target: coherence.grant_data
+    generated_transformations: []
+slots:
+- id: l0_tlb_miss
+  type: LSU.TLBMiss
+  required: false
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 1
+  annotations:
+    role: causal_predecessor
+    module_spec: lsu
+- id: retry_enqueue_0
+  type: LSU.RetryEnqueue
+  required: false
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 2
+  annotations:
+    role: state_write
+    module_spec: lsu
+- id: retry_issue_0
+  type: LSU.RetryIssue
+  required: false
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 12
+  annotations:
+    role: state_read_and_dequeue
+    module_spec: lsu
+- id: l0_tlb_hit
+  type: LSU.TLBHit
+  required: false
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+    paddr: x
+  cycle: 12
+  annotations:
+    role: translated_retry
+    module_spec: lsu
+- id: dcache_req_valid_0
+  type: LSU.DCacheReqValid
+  required: false
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 12
+  annotations:
+    role: interface_valid
+    module_spec: lsu
+- id: l1_dcache_req_valid
+  type: LSU.DCacheReqValid
+  required: false
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    port: 0
+  cycle: 4
+  annotations:
+    module_spec: lsu
+- id: l1_load_executed
+  type: LSU.LoadExecuted
+  required: false
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+  cycle: 5
+  annotations:
+    module_spec: lsu
+- id: l1_load_succeeded
+  type: LSU.LoadSucceeded
+  required: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    value: 0
+  cycle: 7
+  annotations:
+    role: query_goal_old_value
+    module_spec: lsu
+- id: l1_load_observed
+  type: LSU.LoadObserved
+  required: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+  cycle: 11
+  annotations:
+    role: query_goal_observed
+    module_spec: lsu
+- id: l0_ldld_search
+  type: LSU.LDLDSearch
+  required: true
+  fields:
+    searcher_op_id: L0
+    searcher_ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 13
+  annotations:
+    role: query_goal
+    source: older_retry_ldld_search
+    module_spec: lsu
+- id: l0_l1_ldld_conflict
+  type: LSU.LDLDConflict
+  required: true
+  fields:
+    older_op_id: L0
+    older_ldq_idx: 0
+    younger_op_id: L1
+    younger_ldq_idx: 1
+    address: x
+  cycle: 13
+  annotations:
+    role: query_goal
+    source: boom_ldld_guard
+    module_spec: lsu
+- id: ldld_assert_violation
+  type: LSU.AssertViolation
+  required: false
+  fields:
+    property: older_retry_found_observed_younger_load
+    older_op_id: L0
+    younger_op_id: L1
+    address: x
+  cycle: 13
+  annotations:
+    non_functional_monitor: true
+    module_spec: lsu
+- id: l1_order_fail
+  type: LSU.LoadOrderFail
+  required: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+  cycle: 13
+  annotations:
+    module_spec: lsu
+- id: l0_load_executed
+  type: LSU.LoadExecuted
+  required: false
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+  cycle: 13
+  annotations:
+    role: l0_ldq_executed
+    module_spec: lsu
+- id: l0_load_succeeded
+  type: LSU.LoadSucceeded
+  required: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    value: 1
+  cycle: 17
+  annotations:
+    role: query_goal_new_value
+    module_spec: lsu
+- id: dcache_req_ready_0
+  type: DCache.ReqReady
+  required: false
+  fields:
+    port: 0
+  cycle: 12
+  annotations:
+    role: interface_ready
+    module_spec: dcache
+- id: dcache_req_fire_0
+  type: LSU.DCacheReqFire
+  required: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 12
+  annotations:
+    role: query_goal
+    module_spec: dcache
+- id: l1_dcache_req_ready
+  type: DCache.ReqReady
+  required: false
+  fields:
+    port: 0
+  cycle: 4
+  annotations:
+    module_spec: dcache
+- id: l1_dcache_req_fire
+  type: LSU.DCacheReqFire
+  required: false
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    port: 0
+  cycle: 4
+  annotations:
+    module_spec: dcache
+- id: l1_dcache_hit
+  type: DCache.LoadHit
+  required: false
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    value: 0
+    port: 0
+  cycle: 6
+  annotations:
+    module_spec: dcache
+- id: l1_dcache_response
+  type: DCache.LoadResponse
+  required: false
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    value: 0
+    port: 0
+  cycle: 7
+  annotations:
+    module_spec: dcache
+- id: probe_receive_x
+  type: DCache.ProbeReceive
+  required: false
+  fields:
+    source_op_id: W1
+    address: x
+  cycle: 9
+  annotations:
+    module_spec: dcache
+- id: probe_release_x
+  type: DCache.ProbeRelease
+  required: false
+  fields:
+    source_op_id: W1
+    address: x
+  cycle: 10
+  annotations:
+    module_spec: dcache
+- id: l1_dcache_nack
+  type: DCache.LoadNack
+  required: false
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    port: 0
+  cycle: 6
+  annotations:
+    module_spec: dcache
+- id: l0_dcache_miss
+  type: DCache.LoadMiss
+  required: false
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 14
+  annotations:
+    role: selected_miss_path
+    module_spec: dcache
+- id: l0_long_latency_response
+  type: DCache.LongLatencyLoadResponse
+  required: false
+  fields:
+    mshr_id: 0
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    value: 1
+  cycle: 17
+  annotations:
+    module_spec: dcache
+- id: l0_mshr_primary_accept
+  type: MSHR.PrimaryMissAccept
+  required: false
+  fields:
+    mshr_id: 0
+    op_id: L0
+    ldq_idx: 0
+    address: x
+  cycle: 14
+  annotations:
+    module_spec: mshr
+- id: l0_mshr_rpq_enqueue
+  type: MSHR.RPQEnqueue
+  required: false
+  fields:
+    mshr_id: 0
+    op_id: L0
+    ldq_idx: 0
+    address: x
+  cycle: 14
+  annotations:
+    module_spec: mshr
+- id: l0_mshr_acquire
+  type: MSHR.AcquireBlock
+  required: false
+  fields:
+    mshr_id: 0
+    op_id: L0
+    address: x
+  cycle: 15
+  annotations:
+    module_spec: mshr
+- id: l0_mshr_grant_data
+  type: MSHR.GrantData
+  required: false
+  fields:
+    mshr_id: 0
+    op_id: L0
+    source_op_id: W1
+    address: x
+    value: 1
+  cycle: 16
+  annotations:
+    module_spec: mshr
+- id: l0_mshr_refill_complete
+  type: MSHR.RefillComplete
+  required: false
+  fields:
+    mshr_id: 0
+    op_id: L0
+    source_op_id: W1
+    address: x
+    value: 1
+  cycle: 16
+  annotations:
+    module_spec: mshr
+- id: l0_mshr_drain_rpq
+  type: MSHR.DrainRPQLoad
+  required: false
+  fields:
+    mshr_id: 0
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    value: 1
+  cycle: 17
+  annotations:
+    module_spec: mshr
+- id: branch_kill_0
+  type: Core.BranchKill
+  required: false
+  fields:
+    op_id: L0
+  cycle: 3
+  annotations:
+    role: optional_defense
+    module_spec: rob
+- id: exception_0
+  type: Core.Exception
+  required: false
+  fields:
+    hart: 0
+  cycle: 3
+  annotations:
+    role: optional_defense
+    module_spec: rob
+- id: l1_mem_order_exception
+  type: Core.MemoryOrderingException
+  required: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    cause: MINI_EXCEPTION_MEM_ORDERING
+  cycle: 14
+  annotations:
+    module_spec: rob
+- id: l1_squash
+  type: Core.SquashLoad
+  required: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    reason: memory_ordering_exception
+  cycle: 15
+  annotations:
+    module_spec: rob
+state_variables:
+- name: LSU.retry_queue.valid
+  sort:
+    name: bool
+  initial: false
+- name: LSU.retry_queue.op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+- name: LSU.retry_queue.ldq_idx
+  sort:
+    name: bv
+    width: 6
+  initial: 63
+- name: LSU.retry_queue.vaddr
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+- name: LSU.ldq.L1.valid
+  sort:
+    name: bool
+  initial: true
+- name: LSU.ldq.L1.addr_valid
+  sort:
+    name: bool
+  initial: true
+- name: LSU.ldq.L1.addr_is_virtual
+  sort:
+    name: bool
+  initial: false
+- name: LSU.ldq.L1.address
+  sort:
+    name: address
+    width: 64
+  initial: x
+- name: LSU.ldq.L1.executed
+  sort:
+    name: bool
+  initial: false
+- name: LSU.ldq.L1.succeeded
+  sort:
+    name: bool
+  initial: false
+- name: LSU.ldq.L1.observed
+  sort:
+    name: bool
+  initial: false
+- name: LSU.ldq.L1.value
+  sort:
+    name: value
+    width: 64
+  initial: UNSET_VALUE
+- name: LSU.ldq.L1.order_fail
+  sort:
+    name: bool
+  initial: false
+  description: Whether the younger L1 entry has been marked as a memory-order failure.
+- name: LSU.ldq.L1.squashed
+  sort:
+    name: bool
+  initial: false
+  description: Whether recovery has invalidated the dynamic younger load.
+- name: LSU.ldq.L1.executing_now
+  sort:
+    name: bool
+  initial: false
+  description: Abstraction of s1_executing_loads(L1) at the older load search cycle.
+- name: LSU.ldq.L0.valid
+  sort:
+    name: bool
+  initial: true
+- name: LSU.ldq.L0.executed
+  sort:
+    name: bool
+  initial: false
+- name: LSU.ldq.L0.succeeded
+  sort:
+    name: bool
+  initial: false
+- name: LSU.ldq.L0.value
+  sort:
+    name: value
+    width: 64
+  initial: UNSET_VALUE
+- name: DCache.probe.pending
+  sort:
+    name: bool
+  initial: false
+- name: DCache.probe.address
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+- name: DCache.probe.source_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+- name: MSHR.0.state
+  sort:
+    name: string
+  initial: INVALID
+- name: MSHR.0.req_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+- name: MSHR.0.req_ldq_idx
+  sort:
+    name: bv
+    width: 6
+  initial: 63
+- name: MSHR.0.req_address
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+- name: MSHR.0.rpq_valid
+  sort:
+    name: bool
+  initial: false
+- name: MSHR.0.rpq_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+- name: MSHR.0.rpq_ldq_idx
+  sort:
+    name: bv
+    width: 6
+  initial: 63
+- name: MSHR.0.rpq_address
+  sort:
+    name: address
+    width: 64
+  initial: EMPTY_ADDR
+- name: MSHR.0.line_value
+  sort:
+    name: value
+    width: 64
+  initial: UNSET_VALUE
+- name: MSHR.0.line_source_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
+transformations:
+- name: dcache_valid_requires_retry_tlb_hit
+  inputs:
+  - role: valid
+    type: LSU.DCacheReqValid
+  outputs:
+  - role: issue
+    type: LSU.RetryIssue
+  - role: hit
+    type: LSU.TLBHit
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: issue
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: hit
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: issue
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: issue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: hit
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: hit
+      field: paddr
+      sort:
+        name: address
+        width: 64
+  description: Only L0 in this witness is generated from the retry queue.
+  tags:
+  - causal-support
+  - translation
+  - module:lsu
+- name: retry_issue_requires_enqueue
+  inputs:
+  - role: issue
+    type: LSU.RetryIssue
+  outputs:
+  - role: enqueue
+    type: LSU.RetryEnqueue
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: issue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: enqueue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: enqueue
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: issue
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - module:lsu
+- name: retry_enqueue_requires_tlb_miss
+  inputs:
+  - role: enqueue
+    type: LSU.RetryEnqueue
+  outputs:
+  - role: miss
+    type: LSU.TLBMiss
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: miss
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: enqueue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: miss
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: enqueue
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - module:lsu
+- name: retry_enqueue_writes_state
+  inputs:
+  - role: enqueue
+    type: LSU.RetryEnqueue
+  outputs: []
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.retry_queue.valid
+    at: enqueue
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: enqueue
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.retry_queue.op_id
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - state: LSU.retry_queue.ldq_idx
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: LSU.retry_queue.vaddr
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  tags:
+  - state
+  - retry-queue
+  - module:lsu
+- name: retry_issue_reads_and_dequeues_state
+  inputs:
+  - role: issue
+    type: LSU.RetryIssue
+  outputs: []
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.retry_queue.valid
+    at: issue
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.retry_queue.op_id
+    at: issue
+    op: eq
+    value:
+      node: event_field
+      event_id: issue
+      field: op_id
+      sort:
+        name: op_id
+  - state: LSU.retry_queue.ldq_idx
+    at: issue
+    op: eq
+    value:
+      node: event_field
+      event_id: issue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: LSU.retry_queue.vaddr
+    at: issue
+    op: eq
+    value:
+      node: event_field
+      event_id: issue
+      field: vaddr
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: issue
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - state
+  - retry-queue
+  - module:lsu
+- name: branch_kill_flushes_matching_retry
+  inputs:
+  - role: kill
+    type: Core.BranchKill
+  outputs: []
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.retry_queue.valid
+    at: kill
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.retry_queue.op_id
+    at: kill
+    op: eq
+    value:
+      node: event_field
+      event_id: kill
+      field: op_id
+      sort:
+        name: op_id
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: kill
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - state
+  - defense
+  - module:lsu
+- name: exception_flushes_retry_queue
+  inputs:
+  - role: exception
+    type: Core.Exception
+  outputs: []
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_updates:
+  - state: LSU.retry_queue.valid
+    at: exception
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - state
+  - defense
+  - module:lsu
+- name: l1_request_requires_arch_load
+  inputs:
+  - role: valid
+    type: LSU.DCacheReqValid
+  outputs:
+  - role: load
+    type: Arch.Load
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: load
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: load
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: valid
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: load
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - l1
+  - module:lsu
+- name: l1_accepted_request_marks_executed
+  inputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  outputs:
+  - role: executed
+    type: LSU.LoadExecuted
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: executed
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: executed
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L1.valid
+    at: executed
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.addr_valid
+    at: executed
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.addr_is_virtual
+    at: executed
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  - state: LSU.ldq.L1.address
+    at: executed
+    op: eq
+    value:
+      node: event_field
+      event_id: executed
+      field: address
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: LSU.ldq.L1.executed
+    at: executed
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  exact: true
+  tags:
+  - state
+  - ldq
+  - l1
+  - module:lsu
+- name: l1_response_marks_succeeded
+  inputs:
+  - role: response
+    type: DCache.LoadResponse
+  outputs:
+  - role: succeeded
+    type: LSU.LoadSucceeded
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: succeeded
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: succeeded
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: succeeded
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: succeeded
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: succeeded
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: succeeded
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L1.valid
+    at: succeeded
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.executed
+    at: succeeded
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.address
+    at: succeeded
+    op: eq
+    value:
+      node: event_field
+      event_id: succeeded
+      field: address
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: LSU.ldq.L1.succeeded
+    at: succeeded
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.value
+    at: succeeded
+    value:
+      node: event_field
+      event_id: succeeded
+      field: value
+      sort:
+        name: value
+        width: 64
+  exact: true
+  tags:
+  - state
+  - ldq
+  - response
+  - module:lsu
+- name: load_observed_requires_matching_release
+  inputs:
+  - role: observed
+    type: LSU.LoadObserved
+  outputs:
+  - role: release
+    type: DCache.ProbeRelease
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: observed
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: call
+    function: same_block
+    arguments:
+    - node: event_field
+      event_id: observed
+      field: address
+      sort:
+        name: address
+        width: 64
+    - node: event_field
+      event_id: release
+      field: address
+      sort:
+        name: address
+        width: 64
+    sort:
+      name: bool
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: release
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: observed
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L1.valid
+    at: observed
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.addr_valid
+    at: observed
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.addr_is_virtual
+    at: observed
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  - state: LSU.ldq.L1.address
+    at: observed
+    op: eq
+    value:
+      node: event_field
+      event_id: observed
+      field: address
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: LSU.ldq.L1.observed
+    at: observed
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  tags:
+  - state
+  - ldq
+  - coherence
+  - module:lsu
+- name: older_retry_request_produces_ldld_search
+  inputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  outputs:
+  - role: search
+    type: LSU.LDLDSearch
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: search
+      field: searcher_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: search
+      field: searcher_ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: search
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: search
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: search
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  tags:
+  - ldld
+  - retry
+  - lcam
+  - module:lsu
+- name: older_search_detects_observed_younger_load
+  inputs:
+  - role: search
+    type: LSU.LDLDSearch
+  - role: older
+    type: Arch.Load
+  - role: younger
+    type: Arch.Load
+  outputs:
+  - role: conflict
+    type: LSU.LDLDConflict
+  when:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: search
+        field: searcher_op_id
+        sort:
+          name: op_id
+      right:
+        node: event_field
+        event_id: older
+        field: op_id
+        sort:
+          name: op_id
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: older
+        field: op_id
+        sort:
+          name: op_id
+      right:
+        node: literal
+        sort:
+          name: op_id
+        value: L0
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: younger
+        field: op_id
+        sort:
+          name: op_id
+      right:
+        node: literal
+        sort:
+          name: op_id
+        value: L1
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: older
+        field: hart
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: younger
+        field: hart
+        sort:
+          name: int
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: older
+        field: program_index
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: younger
+        field: program_index
+        sort:
+          name: int
+    - node: call
+      function: same_address
+      arguments:
+      - node: event_field
+        event_id: search
+        field: address
+        sort:
+          name: address
+          width: 64
+      - node: event_field
+        event_id: older
+        field: address
+        sort:
+          name: address
+          width: 64
+      sort:
+        name: bool
+    - node: call
+      function: same_address
+      arguments:
+      - node: event_field
+        event_id: search
+        field: address
+        sort:
+          name: address
+          width: 64
+      - node: event_field
+        event_id: younger
+        field: address
+        sort:
+          name: address
+          width: 64
+      sort:
+        name: bool
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: conflict
+      field: older_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: older
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: conflict
+      field: older_ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: search
+      field: searcher_ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: conflict
+      field: younger_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: younger
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: conflict
+      field: younger_ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: literal
+      sort:
+        name: bv
+        width: 6
+      value: 1
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: conflict
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: search
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: conflict
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: search
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L1.valid
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.addr_valid
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.addr_is_virtual
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  - state: LSU.ldq.L1.address
+    at: conflict
+    op: eq
+    value:
+      node: event_field
+      event_id: conflict
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: LSU.ldq.L1.executed
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.succeeded
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.observed
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.executing_now
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  - state: LSU.ldq.L1.order_fail
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  - state: LSU.ldq.L1.squashed
+    at: conflict
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  exact: true
+  tags:
+  - ldld
+  - same-address
+  - observed-younger
+  - module:lsu
+- name: l1_commit_requires_valid_executed_succeeded_load
+  inputs:
+  - role: commit
+    type: Arch.CommitLoad
+  outputs: []
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: commit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.ldq.L1.valid
+    at: commit
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.executed
+    at: commit
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.succeeded
+    at: commit
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.value
+    at: commit
+    op: eq
+    value:
+      node: event_field
+      event_id: commit
+      field: value
+      sort:
+        name: value
+        width: 64
+  state_updates:
+  - state: LSU.ldq.L1.valid
+    at: commit
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - retirement
+  - architectural-boundary
+  - boom-lsu-commit-guard
+  - module:lsu
+- name: l0_accepted_request_marks_executed
+  inputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  outputs:
+  - role: executed
+    type: LSU.LoadExecuted
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: executed
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: executed
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L0.valid
+    at: executed
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  state_updates:
+  - state: LSU.ldq.L0.executed
+    at: executed
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  exact: true
+  tags:
+  - state
+  - ldq
+  - l0
+  - module:lsu
+- name: l0_long_latency_response_marks_succeeded
+  inputs:
+  - role: succeeded
+    type: LSU.LoadSucceeded
+  outputs:
+  - role: response
+    type: DCache.LongLatencyLoadResponse
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: succeeded
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: succeeded
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: succeeded
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: response
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: succeeded
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: succeeded
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: succeeded
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L0.valid
+    at: succeeded
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L0.executed
+    at: succeeded
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L0.succeeded
+    at: succeeded
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: LSU.ldq.L0.succeeded
+    at: succeeded
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L0.value
+    at: succeeded
+    value:
+      node: event_field
+      event_id: succeeded
+      field: value
+      sort:
+        name: value
+        width: 64
+  exact: true
+  tags:
+  - state
+  - ldq
+  - long-latency-response
+  - module:lsu
+- name: l0_commit_requires_valid_executed_succeeded_load
+  inputs:
+  - role: commit
+    type: Arch.CommitLoad
+  outputs: []
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: commit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.ldq.L0.valid
+    at: commit
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L0.executed
+    at: commit
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L0.succeeded
+    at: commit
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L0.value
+    at: commit
+    op: eq
+    value:
+      node: event_field
+      event_id: commit
+      field: value
+      sort:
+        name: value
+        width: 64
+  state_updates:
+  - state: LSU.ldq.L0.valid
+    at: commit
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - retirement
+  - architectural-boundary
+  - boom-lsu-commit-guard
+  - module:lsu
+- name: fixed_conflict_marks_younger_order_fail
+  inputs:
+  - role: conflict
+    type: LSU.LDLDConflict
+  outputs:
+  - role: fail
+    type: LSU.LoadOrderFail
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fail
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: conflict
+      field: younger_op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fail
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: conflict
+      field: younger_ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fail
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: conflict
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fail
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: conflict
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L1.order_fail
+    at: fail
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: LSU.ldq.L1.order_fail
+    at: fail
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  exact: true
+  tags:
+  - fixed
+  - order-fail
+  - module:lsu
+- name: order_fail_raises_memory_ordering_exception
+  inputs:
+  - role: fail
+    type: LSU.LoadOrderFail
+  outputs:
+  - role: exception
+    type: Core.MemoryOrderingException
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: exception
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: fail
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: exception
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: fail
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: fail
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: exception
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: LSU.ldq.L1.order_fail
+    at: exception
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  exact: true
+  tags:
+  - fixed
+  - exception
+  - module:lsu
+- name: l1_hit_requires_executed_ldq_state
+  inputs:
+  - role: hit
+    type: DCache.LoadHit
+  outputs: []
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.ldq.L1.executed
+    at: hit
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  description: LSU-local state effect for l1_hit_requires_accepted_executed_request.
+  tags:
+  - state
+  - lsu-local
+  - module-boundary
+  - module:lsu
+- name: l1_nack_clears_executed_ldq_state
+  inputs:
+  - role: nack
+    type: DCache.LoadNack
+  outputs: []
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.ldq.L1.executed
+    at: nack
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.succeeded
+    at: nack
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: LSU.ldq.L1.executed
+    at: nack
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  description: LSU-local state effect for l1_nack_requires_accepted_executed_request.
+  tags:
+  - state
+  - lsu-local
+  - module-boundary
+  - module:lsu
+- name: l0_miss_requires_executed_ldq_state
+  inputs:
+  - role: miss
+    type: DCache.LoadMiss
+  outputs: []
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.ldq.L0.executed
+    at: miss
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  description: LSU-local state effect for l0_miss_requires_accepted_executed_request.
+  tags:
+  - state
+  - lsu-local
+  - module-boundary
+  - module:lsu
+- name: squash_invalidates_younger_load
+  inputs:
+  - role: squash
+    type: Core.SquashLoad
+  outputs: []
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: LSU.ldq.L1.order_fail
+    at: squash
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.valid
+    at: squash
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.squashed
+    at: squash
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: LSU.ldq.L1.squashed
+    at: squash
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: LSU.ldq.L1.valid
+    at: squash
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  description: LSU consumes the recovery squash and invalidates the matching younger
+    LDQ entry.
+  tags:
+  - fixed
+  - lsu-recovery
+  - module-boundary
+  - module:lsu
+- name: dcache_request_acceptance
+  inputs:
+  - role: valid
+    type: LSU.DCacheReqValid
+  - role: ready
+    type: DCache.ReqReady
+  outputs:
+  - role: fire
+    type: LSU.DCacheReqFire
+  when:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: port
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: port
+        sort:
+          name: int
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: valid
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: valid
+      field: port
+      sort:
+        name: int
+  exact: true
+  description: At one cycle and port, request valid plus receiver ready emits the
+    accepted-request event. exact=true also requires every observed fire to be justified
+    by such a valid/ready transition.
+  tags:
+  - interface-transition
+  - definition
+  - module:dcache
+- name: l1_hit_requires_accepted_executed_request
+  inputs:
+  - role: hit
+    type: DCache.LoadHit
+  outputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  - role: executed
+    type: LSU.LoadExecuted
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: executed
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: executed
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: hit
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - dcache-hit
+  - module-boundary
+  - module:dcache
+- name: successful_l1_hit_produces_response
+  inputs:
+  - role: hit
+    type: DCache.LoadHit
+  outputs:
+  - role: response
+    type: DCache.LoadResponse
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: response
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: response
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: hit
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  tags:
+  - dcache-hit
+  - response
+  - module:dcache
+- name: l1_nack_requires_accepted_executed_request
+  inputs:
+  - role: nack
+    type: DCache.LoadNack
+  outputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  - role: executed
+    type: LSU.LoadExecuted
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L1
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: executed
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: executed
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: executed
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: executed
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: nack
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - state
+  - nack
+  - module-boundary
+  - module:dcache
+- name: probe_receive_captures_pending_request
+  inputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  outputs: []
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure: []
+  state_requirements:
+  - state: DCache.probe.pending
+    at: probe
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: DCache.probe.pending
+    at: probe
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: DCache.probe.address
+    at: probe
+    value:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: DCache.probe.source_op_id
+    at: probe
+    value:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+  tags:
+  - state
+  - probe-unit
+  - module:dcache
+- name: probe_release_requires_received_probe
+  inputs:
+  - role: release
+    type: DCache.ProbeRelease
+  outputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: release
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: release
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: probe
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: release
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: DCache.probe.pending
+    at: release
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: DCache.probe.address
+    at: release
+    op: eq
+    value:
+      node: event_field
+      event_id: release
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: DCache.probe.source_op_id
+    at: release
+    op: eq
+    value:
+      node: event_field
+      event_id: release
+      field: source_op_id
+      sort:
+        name: op_id
+  state_updates:
+  - state: DCache.probe.pending
+    at: release
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - state
+  - probe-unit
+  - interface
+  - module:dcache
+- name: l0_miss_requires_accepted_executed_request
+  inputs:
+  - role: miss
+    type: DCache.LoadMiss
+  outputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - dcache-miss
+  - module-boundary
+  - module:dcache
+- name: long_latency_response_is_rpq_drain
+  inputs:
+  - role: response
+    type: DCache.LongLatencyLoadResponse
+  outputs:
+  - role: drain
+    type: MSHR.DrainRPQLoad
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: drain
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: drain
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: drain
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: drain
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: drain
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: drain
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  tags:
+  - interface-transition
+  - long-latency-response
+  - module:dcache
+- name: primary_mshr_accept_requires_l0_miss
+  inputs:
+  - role: accept
+    type: MSHR.PrimaryMissAccept
+  outputs:
+  - role: miss
+    type: DCache.LoadMiss
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: L0
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: miss
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: miss
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR.0.state
+    at: accept
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: INVALID
+  state_updates:
+  - state: MSHR.0.state
+    at: accept
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_REQ
+  - state: MSHR.0.req_op_id
+    at: accept
+    value:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR.0.req_ldq_idx
+    at: accept
+    value:
+      node: event_field
+      event_id: accept
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: MSHR.0.req_address
+    at: accept
+    value:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+  tags:
+  - state
+  - mshr-allocation
+  - module:mshr
+- name: primary_mshr_accept_enqueues_rpq
+  inputs:
+  - role: accept
+    type: MSHR.PrimaryMissAccept
+  outputs:
+  - role: enqueue
+    type: MSHR.RPQEnqueue
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: enqueue
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: enqueue
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: accept
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: enqueue
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR.0.rpq_valid
+    at: enqueue
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: MSHR.0.rpq_valid
+    at: enqueue
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: MSHR.0.rpq_op_id
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR.0.rpq_ldq_idx
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: MSHR.0.rpq_address
+    at: enqueue
+    value:
+      node: event_field
+      event_id: enqueue
+      field: address
+      sort:
+        name: address
+        width: 64
+  exact: true
+  tags:
+  - state
+  - rpq
+  - identity
+  - module:mshr
+- name: mshr_acquire_requires_primary_accept
+  inputs:
+  - role: acquire
+    type: MSHR.AcquireBlock
+  outputs:
+  - role: accept
+    type: MSHR.PrimaryMissAccept
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: acquire
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: accept
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: acquire
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: accept
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: acquire
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: accept
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: accept
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: acquire
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR.0.state
+    at: acquire
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_REQ
+  - state: MSHR.0.req_op_id
+    at: acquire
+    op: eq
+    value:
+      node: event_field
+      event_id: acquire
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR.0.req_address
+    at: acquire
+    op: eq
+    value:
+      node: event_field
+      event_id: acquire
+      field: address
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: MSHR.0.state
+    at: acquire
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_RESP
+  tags:
+  - state
+  - mshr-fsm
+  - tilelink
+  - module:mshr
+- name: grant_data_requires_matching_acquire
+  inputs:
+  - role: grant
+    type: MSHR.GrantData
+  outputs:
+  - role: acquire
+    type: MSHR.AcquireBlock
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: acquire
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: acquire
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: acquire
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: acquire
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR.0.state
+    at: grant
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_RESP
+  - state: MSHR.0.req_op_id
+    at: grant
+    op: eq
+    value:
+      node: event_field
+      event_id: grant
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR.0.req_address
+    at: grant
+    op: eq
+    value:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+  tags:
+  - causal-support
+  - tilelink
+  - identity
+  - module:mshr
+- name: refill_complete_requires_grant_data
+  inputs:
+  - role: complete
+    type: MSHR.RefillComplete
+  outputs:
+  - role: grant
+    type: MSHR.GrantData
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: grant
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: grant
+      field: source_op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: grant
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: complete
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR.0.state
+    at: complete
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: REFILL_RESP
+  - state: MSHR.0.req_op_id
+    at: complete
+    op: eq
+    value:
+      node: event_field
+      event_id: complete
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR.0.req_address
+    at: complete
+    op: eq
+    value:
+      node: event_field
+      event_id: complete
+      field: address
+      sort:
+        name: address
+        width: 64
+  state_updates:
+  - state: MSHR.0.state
+    at: complete
+    value:
+      node: literal
+      sort:
+        name: string
+      value: DRAIN_RPQ_LOADS
+  - state: MSHR.0.line_value
+    at: complete
+    value:
+      node: event_field
+      event_id: complete
+      field: value
+      sort:
+        name: value
+        width: 64
+  - state: MSHR.0.line_source_op_id
+    at: complete
+    value:
+      node: event_field
+      event_id: complete
+      field: source_op_id
+      sort:
+        name: op_id
+  tags:
+  - state
+  - mshr-fsm
+  - refill
+  - module:mshr
+- name: drain_rpq_load_requires_completed_refill
+  inputs:
+  - role: drain
+    type: MSHR.DrainRPQLoad
+  outputs:
+  - role: complete
+    type: MSHR.RefillComplete
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: mshr_id
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: complete
+      field: mshr_id
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: complete
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: complete
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: drain
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: complete
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: complete
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: drain
+      field: cycle
+      sort:
+        name: int
+  state_requirements:
+  - state: MSHR.0.state
+    at: drain
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: string
+      value: DRAIN_RPQ_LOADS
+  - state: MSHR.0.rpq_valid
+    at: drain
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: MSHR.0.rpq_op_id
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: op_id
+      sort:
+        name: op_id
+  - state: MSHR.0.rpq_ldq_idx
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - state: MSHR.0.rpq_address
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: MSHR.0.line_value
+    at: drain
+    op: eq
+    value:
+      node: event_field
+      event_id: drain
+      field: value
+      sort:
+        name: value
+        width: 64
+  state_updates:
+  - state: MSHR.0.rpq_valid
+    at: drain
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  tags:
+  - state
+  - rpq
+  - line-buffer
+  - module:mshr
+- name: probe_receive_requires_visible_external_store
+  inputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  outputs:
+  - role: store
+    type: Arch.Store
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: store
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: store
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: store
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: probe
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - causal-support
+  - coherence
+  - module:coherence
+- name: grant_data_is_sourced_from_visible_store
+  inputs:
+  - role: grant
+    type: MSHR.GrantData
+  outputs:
+  - role: store
+    type: Arch.Store
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: store
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: store
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: grant
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: store
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: store
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: grant
+      field: cycle
+      sort:
+        name: int
+  tags:
+  - coherence-path-summary
+  - data-source
+  - module:coherence
+- name: memory_ordering_exception_emits_squash
+  inputs:
+  - role: exception
+    type: Core.MemoryOrderingException
+  outputs:
+  - role: squash
+    type: Core.SquashLoad
+  when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  output_when:
+    node: literal
+    sort:
+      name: bool
+    value: true
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: squash
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: exception
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: squash
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: exception
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: exception
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: squash
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  description: ROB/recovery converts the LSU memory-ordering exception into a squash
+    event.
+  tags:
+  - fixed
+  - rob-recovery
+  - module-boundary
+  - module:rob
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l0_tlb_miss
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: retry_enqueue_0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_l1
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: retry_issue_0
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: branch_kill_0
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: retry_enqueue_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: branch_kill_0
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: branch_kill_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: retry_issue_0
+        field: cycle
+        sort:
+          name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: exception_0
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: retry_enqueue_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: exception_0
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: lt
+      left:
+        node: event_field
+        event_id: exception_0
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: retry_issue_0
+        field: cycle
+        sort:
+          name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: l1_load_succeeded
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: store_w1
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: store_w1
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: probe_receive_x
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: probe_release_x
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l1_load_observed
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: l1_load_observed
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: retry_issue_0
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: implies
+  left:
+    node: event_field
+    event_id: l1_dcache_req_fire
+    field: occurs
+    sort:
+      name: bool
+  right:
+    node: nary
+    op: or
+    operands:
+    - node: event_field
+      event_id: l1_dcache_hit
+      field: occurs
+      sort:
+        name: bool
+    - node: event_field
+      event_id: l1_dcache_nack
+      field: occurs
+      sort:
+        name: bool
+- node: unary
+  op: not
+  operand:
+    node: nary
+    op: and
+    operands:
+    - node: event_field
+      event_id: l1_dcache_hit
+      field: occurs
+      sort:
+        name: bool
+    - node: event_field
+      event_id: l1_dcache_nack
+      field: occurs
+      sort:
+        name: bool
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: dcache_req_fire_0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l0_ldld_search
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: eq
+  left:
+    node: event_field
+    event_id: l0_ldld_search
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: l0_l1_ldld_conflict
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: l0_l1_ldld_conflict
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: commit_l0
+    field: cycle
+    sort:
+      name: int
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: commit_l0
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: commit_l1
+    field: cycle
+    sort:
+      name: int
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: ldld_assert_violation
+    field: occurs
+    sort:
+      name: bool
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: branch_kill_0
+    field: occurs
+    sort:
+      name: bool
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: exception_0
+    field: occurs
+    sort:
+      name: bool
+- node: unary
+  op: not
+  operand:
+    node: event_field
+    event_id: l1_dcache_nack
+    field: occurs
+    sort:
+      name: bool

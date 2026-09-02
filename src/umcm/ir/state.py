@@ -86,7 +86,7 @@ class StateRequirement:
             raise SchemaError("state requirement must name a state variable")
         if not self.at:
             raise SchemaError("state requirement must name an anchor role")
-        if self.op not in {"eq", "ne"}:
+        if self.op not in {"eq", "ne", "lt", "le", "gt", "ge"}:
             raise SchemaError(
                 f"unsupported state requirement operator {self.op!r}; "
                 "available: eq, ne"

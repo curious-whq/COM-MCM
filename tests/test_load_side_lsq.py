@@ -8,7 +8,7 @@ from umcm.ir.trace import Trace
 from umcm.solver.completion import CompletionStatus, complete_trace
 
 ROOT = Path(__file__).resolve().parents[1]
-EXAMPLE = ROOT / "examples" / "boom_load_load"
+EXAMPLE = ROOT / "tests" / "regressions" / "boom" / "legacy_v0_11"
 
 
 def test_generic_load_side_nack_wakeup_reexecute_commit() -> None:

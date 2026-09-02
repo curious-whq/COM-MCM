@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_boom_example_validates_and_roundtrips(tmp_path: Path) -> None:
-    catalog = EventCatalog.load(ROOT / "examples/boom_load_load/event_types.yaml")
-    trace = Trace.load(ROOT / "examples/boom_load_load/partial_trace.yaml")
+    catalog = EventCatalog.load(ROOT / "tests/regressions/boom/legacy_v0_11/event_types.yaml")
+    trace = Trace.load(ROOT / "tests/regressions/boom/legacy_v0_11/partial_trace.yaml")
     trace.validate(catalog)
 
     assert len(catalog.event_types) == 41

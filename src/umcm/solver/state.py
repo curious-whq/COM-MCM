@@ -134,16 +134,17 @@ def check_state_semantics(
         updates_by_cycle.setdefault(cycle, []).append((update, value))
 
     steps: list[StateStep] = []
-    active_cycles = sorted(set(requirements_by_cycle) | set(updates_by_cycle))
-    for cycle in active_cycles:
+    pre_state_by_cycle: dict[int, dict[str, Any]] = {}
+    active_cycles = set(requirements_by_cycle) | set(updates_by_cycle)
+    for cycle in range(problem.spec.horizon + 1):
         before = dict(state)
+        pre_state_by_cycle[cycle] = before
         active_requirement_names: list[str] = []
         for requirement, expected in requirements_by_cycle.get(cycle, []):
             active_requirement_names.append(requirement.name)
             actual = state[requirement.state]
-            holds = actual == expected if requirement.op == "eq" else actual != expected
+            holds, relation = _compare_state(requirement.op, actual, expected)
             if not holds:
-                relation = "==" if requirement.op == "eq" else "!="
                 return StateCheckResult(
                     feasible=False,
                     initial_state=initial,
@@ -193,15 +194,28 @@ def check_state_semantics(
                     )
                 )
 
-        steps.append(
-            StateStep(
-                cycle=cycle,
-                before=before,
-                after=dict(state),
-                active_requirements=tuple(active_requirement_names),
-                active_updates=tuple(active_update_names),
-                changes=tuple(changes),
+        if cycle in active_cycles:
+            steps.append(
+                StateStep(
+                    cycle=cycle,
+                    before=before,
+                    after=dict(state),
+                    active_requirements=tuple(active_requirement_names),
+                    active_updates=tuple(active_update_names),
+                    changes=tuple(changes),
+                )
             )
+
+    guarded_error = _check_guarded_transitions(
+        problem, context, pre_state_by_cycle
+    )
+    if guarded_error:
+        return StateCheckResult(
+            feasible=False,
+            initial_state=initial,
+            final_state=dict(state),
+            steps=tuple(steps),
+            reason=guarded_error,
         )
 
     return StateCheckResult(
@@ -210,6 +224,80 @@ def check_state_semantics(
         final_state=dict(state),
         steps=tuple(steps),
     )
+
+
+def _compare_state(op: str, actual: Any, expected: Any) -> tuple[bool, str]:
+    comparators = {
+        "eq": (lambda a, b: a == b, "=="),
+        "ne": (lambda a, b: a != b, "!="),
+        "lt": (lambda a, b: a < b, "<"),
+        "le": (lambda a, b: a <= b, "<="),
+        "gt": (lambda a, b: a > b, ">"),
+        "ge": (lambda a, b: a >= b, ">="),
+    }
+    predicate, relation = comparators[op]
+    return bool(predicate(actual, expected)), relation
+
+
+def _guard_predicates_hold(predicates, context, pre_state_by_cycle, horizon: int):
+    for predicate in predicates:
+        cycle = _concrete(predicate.cycle, context)
+        expected = _concrete(predicate.expected, context)
+        if not _valid_cycle(cycle, horizon) or expected is UNKNOWN:
+            return None, f"guard predicate for {predicate.state} remained unresolved"
+        actual = pre_state_by_cycle[cycle][predicate.state]
+        holds, _ = _compare_state(predicate.op, actual, expected)
+        if not holds:
+            return False, ""
+    return True, ""
+
+
+def _check_guarded_transitions(problem, context, pre_state_by_cycle) -> str:
+    for item in problem.guarded_forwards:
+        antecedent = _concrete(item.antecedent, context)
+        if antecedent is UNKNOWN:
+            return f"state-guarded transition {item.name} antecedent remained unresolved"
+        if antecedent is not True:
+            continue
+        guards, error = _guard_predicates_hold(
+            item.predicates, context, pre_state_by_cycle, problem.spec.horizon
+        )
+        if error:
+            return f"state-guarded transition {item.name}: {error}"
+        if guards is not True:
+            continue
+        consequent = _concrete(item.consequent, context)
+        if consequent is not True:
+            return (
+                f"state-guarded transition {item.name} is enabled by pre-state "
+                "but no matching output event occurs"
+            )
+
+    for item in problem.guarded_supports:
+        antecedent = _concrete(item.antecedent, context)
+        if antecedent is UNKNOWN:
+            return f"state-guarded support {item.name} antecedent remained unresolved"
+        if antecedent is not True:
+            continue
+        supported = False
+        for candidate in item.supports:
+            expression = _concrete(candidate.expression, context)
+            if expression is not True:
+                continue
+            guards, error = _guard_predicates_hold(
+                candidate.predicates, context, pre_state_by_cycle, problem.spec.horizon
+            )
+            if error:
+                return f"state-guarded support {item.name}: {error}"
+            if guards is True:
+                supported = True
+                break
+        if not supported:
+            return (
+                f"state-guarded support {item.name} has an occurring output "
+                "without an enabled input/state witness"
+            )
+    return ""
 
 
 def _concrete(value: Any, context: EvaluationContext) -> Any:
