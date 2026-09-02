@@ -16,7 +16,7 @@ from umcm.ir.transformation import Transformation
 from umcm.serialization import decode_value, dump_data, encode_value, load_data
 
 
-COMPLETION_SCHEMA_VERSION = "umcm.completion.v0.5.0"
+COMPLETION_SCHEMA_VERSION = "umcm.completion.v0.6.0"
 
 
 @dataclass(frozen=True, slots=True)

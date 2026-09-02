@@ -195,14 +195,19 @@ def _instantiate_transformation(
                 EventField(event_id, "occurs", BOOL)
                 for event_id in output_binding.values()
             )
+            output_guard = substitute_event_ids(
+                transformation.output_when, complete_mapping
+            )
             ensured = tuple(
                 substitute_event_ids(expression, complete_mapping)
                 for expression in transformation.ensure
             )
-            output_alternative = conjunction((*output_occurs, *ensured))
+            output_alternative = conjunction(
+                (*output_occurs, output_guard, *ensured)
+            )
             alternatives.append(output_alternative)
             activation = conjunction(
-                (*input_occurs, guard, *output_occurs, *ensured)
+                (*input_occurs, guard, *output_occurs, output_guard, *ensured)
             )
             bound_outputs = (
                 ",".join(output_binding.values())
@@ -276,6 +281,9 @@ def _instantiate_transformation(
                 EventField(event_id, "occurs", BOOL)
                 for event_id in output_binding.values()
             )
+            output_scope = substitute_event_ids(
+                transformation.output_when, output_binding
+            )
             supports: list[Expr] = []
             for input_binding in input_bindings:
                 all_ids = (*input_binding.values(), *output_binding.values())
@@ -305,7 +313,9 @@ def _instantiate_transformation(
                         f"{output_index}.{bound_outputs}"
                     ),
                     expression=Binary(
-                        "implies", output_occurs, disjunction(supports)
+                        "implies",
+                        conjunction((output_occurs, output_scope)),
+                        disjunction(supports),
                     ),
                     origin=f"transformation:{transformation.name}",
                 )

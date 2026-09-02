@@ -1,186 +1,160 @@
-# µMCM Foundation v0.5.0
+# µMCM Foundation v0.6.0
 
-这是第五轮底层基础设施。项目仍然与 FM-Agent 无关：当前使用手写的
-`Event + Transformation + State + Trace`，逐步构造 BOOM Load–Load 顺序错误的
-微架构可行执行。
+这是第六轮底层基础设施。项目仍与 FM-Agent 无关：BOOM 模型继续由 YAML
+中的 `Event + Transformation + State + Trace` 手工描述，Python 只提供通用加载、
+实例化、有限补全和状态执行引擎。
 
-v0.5.0 在 v0.4.0 已完成的路径上加入了真正的 LD–LD 搜索和恢复差分：
-
-```text
-L1 hit old value 0
-→ L1.executed = true
-→ L1.succeeded = true
-→ Probe/Release
-→ L1.observed = true
-
-L0 TLB retry
-→ DCache request accepted
-→ LD–LD search
-→ same-address observed-younger conflict
-```
-
-随后分别建立两个模型：
+v0.6 在 v0.5 的真实 LD–LD 冲突路径之后，补齐 older load `L0` 通过 MSHR
+得到新值 `1` 并退休的路径：
 
 ```text
-buggy:
-  conflict → assert monitor
-  order_fail 保持 false
-  L1=0 可以退休
-
-fixed reference:
-  conflict → order_fail
-           → MINI_EXCEPTION_MEM_ORDERING
-           → squash L1
-  同一个 L1=0 退休目标不可行
+L0 DCache request
+→ DCache miss
+→ primary MSHR accept
+→ RPQ retain L0 identity
+→ AcquireBlock
+→ GrantData(x=1, source=W1)
+→ refill complete
+→ s_drain_rpq_loads
+→ long-latency response(L0,1)
+→ L0.succeeded/value := true/1
+→ CommitLoad(L0,1)
 ```
 
-这里的 `LSU.AssertViolation` 被明确建模为**非功能性监视事件**。它记录
-`assert(false.B)` 被触发，但不会自动产生 `order_fail`、exception 或 squash。
+与既有路径组合后，buggy 模型现在能够补全完整架构结果：
 
-当前版本仍未生成最终的 `rf/co/fr/ppo/hb` Execution Graph；下一轮将把本轮的
-微架构 witness 投影到架构事件并检测 `rf → ppo → fr` 环。
+```text
+L0 = 1
+L1 = 0
+两条 load 均退休
+```
+
+fixed reference 模型仍会通过 `order_fail → exception → squash` 阻止 L1=0
+退休，但不会阻止更老的 L0 经 MSHR 得到 1。
+
+> v0.6 仍只检查微架构 Trace 可行性。`rf/co/fr/ppo` Execution Graph 和
+> RVWMO 公理检查留到下一轮。
 
 ## 1. 新增事件
 
 ```text
-LSU.LDLDSearch
-LSU.LDLDConflict
-LSU.AssertViolation
-LSU.LoadOrderFail
-Core.MemoryOrderingException
-Core.SquashLoad
+DCache.LoadMiss
+MSHR.PrimaryMissAccept
+MSHR.RPQEnqueue
+MSHR.AcquireBlock
+MSHR.GrantData
+MSHR.RefillComplete
+MSHR.DrainRPQLoad
+DCache.LongLatencyLoadResponse
 ```
 
-关键字段保留：
+关键身份始终保留：
 
 ```text
-older/younger op_id
-older/younger ldq_idx
+mshr_id
+op_id
+ldq_idx
 address
-exception cause
-squash reason
+source_op_id
+value
 ```
 
-## 2. 新增状态
+## 2. 新增 MSHR 状态摘要
 
 ```text
-LSU.ldq.L1.order_fail
-LSU.ldq.L1.squashed
-LSU.ldq.L1.executing_now
+MSHR.0.state
+MSHR.0.req_op_id / req_ldq_idx / req_address
+MSHR.0.rpq_valid / rpq_op_id / rpq_ldq_idx / rpq_address
+MSHR.0.line_value / line_source_op_id
 ```
 
-其中 `executing_now = false` 对应源码中的：
-
-```scala
-!s1_executing_loads(i)
-```
-
-本轮路径使用更强但足够的 witness 条件：
+本轮只建模一个 primary miss 和一个 RPQ load entry，但状态转换是真实持久状态：
 
 ```text
-L1.valid
-∧ L1.addr_valid
-∧ !L1.addr_is_virtual
-∧ L1.executed
-∧ L1.succeeded
-∧ L1.observed
-∧ !L1.executing_now
-∧ same_address(L0, L1)
-∧ older(L0, L1)
+INVALID
+→ REFILL_REQ
+→ REFILL_RESP
+→ DRAIN_RPQ_LOADS
 ```
 
-## 3. Buggy 模型
+同时为 L0 加入：
 
-运行：
+```text
+LSU.ldq.L0.valid
+LSU.ldq.L0.executed
+LSU.ldq.L0.succeeded
+LSU.ldq.L0.value
+```
+
+## 3. scoped exact Transformation
+
+v0.6 新增 `output_when`。它解决同一种输出事件由多条路径产生时的组合问题。
+例如 L0 和 L1 都会产生 `LSU.LoadExecuted`，但分别由 retry-MSHR 路径和普通
+hit 路径支持：
+
+```yaml
+exact: true
+output_when:
+  node: binary
+  op: eq
+  left:  executed.op_id
+  right: L0
+```
+
+含义是：该 Transformation 只对满足 `executed.op_id == L0` 的输出承担
+“必须存在输入支持”的 exact 义务；L1 输出由另一条 Transformation 负责。
+
+## 4. 运行完整 buggy witness
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage5_trace.yaml \
-  --model examples/boom_load_load/load_load_buggy_completion.yaml \
-  --output completed_stage5_buggy.yaml
+  --trace examples/boom_load_load/stage6_trace.yaml \
+  --model examples/boom_load_load/load_load_buggy_mshr_completion.yaml \
+  --output completed_stage6_buggy.yaml
 ```
 
 预期：
 
 ```text
 FEASIBLE
+36 total events
+30 hidden events added
 
-cycle 13: LDLDSearch(L0)
-cycle 13: LDLDConflict(L0,L1)
-cycle 13: AssertViolation
-
-order_fail = false
-squashed   = false
-CommitLoad(L1,0) 可发生
+cycle 14: DCache.LoadMiss(L0)
+cycle 14: MSHR.PrimaryMissAccept(L0)
+cycle 14: MSHR.RPQEnqueue(L0)
+cycle 15: MSHR.AcquireBlock(L0)
+cycle 16: MSHR.GrantData(L0, source=W1, value=1)
+cycle 16: MSHR.RefillComplete(L0, value=1)
+cycle 17: MSHR.DrainRPQLoad(L0, value=1)
+cycle 17: DCache.LongLatencyLoadResponse(L0, value=1)
+cycle 17: LSU.LoadSucceeded(L0, value=1)
+cycle 18: CommitLoad(L0,1)
+cycle 19: CommitLoad(L1,0)
 ```
 
-## 4. Fixed recovery 模型
+## 5. 运行 fixed differential
 
-先只检查恢复路径，不要求错误 load 退休：
+允许 L0 完成、但不要求 L1 退休：
 
 ```bash
 PYTHONPATH=src python3 -m umcm complete \
   --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage5_recovery_trace.yaml \
-  --model examples/boom_load_load/load_load_fixed_completion.yaml \
-  --output completed_stage5_fixed_recovery.yaml
+  --trace examples/boom_load_load/stage6_recovery_trace.yaml \
+  --model examples/boom_load_load/load_load_fixed_mshr_completion.yaml \
+  --output completed_stage6_fixed_recovery.yaml
 ```
 
-预期：
+预期 `FEASIBLE`：L0 仍通过 MSHR 得到 1，L1 被 squash。
 
-```text
-FEASIBLE
-
-cycle 13: LDLDConflict
-cycle 13: LoadOrderFail(L1)
-cycle 14: MemoryOrderingException(L1)
-cycle 15: SquashLoad(L1)
-
-order_fail = true
-squashed   = true
-valid      = false
-```
-
-再对同一个错误退休目标运行 fixed 模型：
-
-```bash
-PYTHONPATH=src python3 -m umcm complete \
-  --schema examples/boom_load_load/event_types.yaml \
-  --trace examples/boom_load_load/stage5_trace.yaml \
-  --model examples/boom_load_load/load_load_fixed_completion.yaml
-```
-
-预期退出码为 `1`：
+再对要求两条 load 都退休的 `stage6_trace.yaml` 运行 fixed 模型，预期退出码 1：
 
 ```text
 INFEASIBLE
-
-CommitLoad(L1,0) requires LSU.ldq.L1.valid == true,
-but recovery has already squashed L1 and made valid == false.
+L1 commit requires valid LDQ entry,
+but order-fail recovery already made L1.valid = false.
 ```
-
-## 5. 源码对应关系
-
-本轮模型依据给定 BOOM v4 LSU 源码：
-
-```text
-lsu.scala:1117–1120
-  retry load 在翻译成功后触发 do_ld_search
-
-lsu.scala:1238–1255
-  older search + same address/mask + younger executed/succeeded
-  + !s1_executing_loads + observed
-  当前仅 assert(false.B)，order_fail/failed_load 赋值被注释
-
-lsu.scala:1458–1475
-  ldq_order_fail 会生成 MINI_EXCEPTION_MEM_ORDERING
-
-lsu.scala:1749–1765
-  load 退休要求 LDQ entry 有效、executed/forwarded 且 succeeded
-```
-
-`exception → squash` 是父级恢复逻辑的抽象边界摘要；本轮不展开整个 ROB。
 
 ## 6. 测试
 
@@ -191,15 +165,13 @@ PYTHONPATH=src pytest -q
 预期：
 
 ```text
-47 passed
+54 passed
 ```
 
-测试覆盖：
+测试额外覆盖：
 
-- buggy conflict → assertion-only 路径可行；
-- assertion 不更新 `order_fail`；
-- buggy 路径允许 `CommitLoad(L1,0)`；
-- fixed 路径产生 order-fail、exception 和 squash；
-- fixed 模型阻止相同错误退休结果；
-- 没有 `observed` 状态时不能形成本轮 LD–LD conflict；
-- v0.1–v0.4 所有回归继续通过。
+- MSHR 请求/RPQ/response 始终保持 L0 身份；
+- GrantData 必须与可见 store `W1` 的地址和值一致；
+- RPQ 身份错配会阻断 long-latency response；
+- L0/L1 两条 exact producer 可组合，不再互相错误约束；
+- fixed 模型保留 L0=1 路径，同时阻止 L1=0 退休。

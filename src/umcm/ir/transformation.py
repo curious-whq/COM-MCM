@@ -68,9 +68,10 @@ class Transformation:
                occurs(o...) and ensure(i..., o...)
 
     When ``exact`` is true, the single output is a derived event: every
-    occurring output must also be supported by a matching enabled input
-    binding.  This expresses definitions such as ``fire iff valid && ready``
-    without introducing a separate handshake language.
+    occurring output satisfying ``output_when`` must also be supported by a
+    matching enabled input binding.  The output-side guard scopes exactness
+    when several transformations produce the same event type (for example,
+    hit and MSHR paths both producing load-success events).
 
     State requirements and updates may be anchored to either input or output
     roles.  When outputs are present, state effects activate only for a complete
@@ -81,6 +82,7 @@ class Transformation:
     inputs: tuple[EventRole, ...]
     outputs: tuple[EventRole, ...] = ()
     when: Expr = field(default_factory=lambda: Literal(True, BOOL))
+    output_when: Expr = field(default_factory=lambda: Literal(True, BOOL))
     ensure: tuple[Expr, ...] = ()
     state_requirements: tuple[StateRequirement, ...] = ()
     state_updates: tuple[StateUpdate, ...] = ()
@@ -99,6 +101,10 @@ class Transformation:
         if not self.when.sort.is_bool:
             raise SchemaError(
                 f"transformation {self.name!r} guard must be bool"
+            )
+        if not self.output_when.sort.is_bool:
+            raise SchemaError(
+                f"transformation {self.name!r} output guard must be bool"
             )
         for expression in self.ensure:
             if not expression.sort.is_bool:
@@ -125,6 +131,7 @@ class Transformation:
     ) -> None:
         roles = self.role_map
         input_names = {role.name for role in self.inputs}
+        output_names = {role.name for role in self.outputs}
         all_role_names = set(roles)
         for role in roles.values():
             catalog.resolve(role.event_type)
@@ -137,7 +144,18 @@ class Transformation:
                 f"{', '.join(sorted(illegal_guard_refs))}"
             )
 
-        for expression in (self.when, *self.ensure):
+        output_guard_refs = {
+            field.event_id for field in iter_event_fields(self.output_when)
+        }
+        illegal_output_guard_refs = output_guard_refs - output_names
+        if illegal_output_guard_refs:
+            raise SchemaError(
+                f"transformation {self.name!r} output guard references "
+                f"non-output role(s): "
+                f"{', '.join(sorted(illegal_output_guard_refs))}"
+            )
+
+        for expression in (self.when, self.output_when, *self.ensure):
             self._validate_role_expression(expression, roles, catalog)
 
         state_map = dict(state_variables or {})
@@ -223,6 +241,7 @@ class Transformation:
             "inputs": [role.to_dict() for role in self.inputs],
             "outputs": [role.to_dict() for role in self.outputs],
             "when": expr_to_dict(self.when),
+            "output_when": expr_to_dict(self.output_when),
             "ensure": [expr_to_dict(expression) for expression in self.ensure],
         }
         if self.state_requirements:
@@ -244,7 +263,7 @@ class Transformation:
         if not isinstance(data, Mapping):
             raise SerializationError("transformation must be a mapping")
         allowed = {
-            "name", "inputs", "outputs", "when", "ensure",
+            "name", "inputs", "outputs", "when", "output_when", "ensure",
             "state_requirements", "state_updates", "exact",
             "description", "tags",
         }
@@ -275,6 +294,9 @@ class Transformation:
                 outputs=tuple(EventRole.from_dict(item) for item in raw_outputs),
                 when=expr_from_dict(
                     data.get("when", Literal(True, BOOL).to_dict())
+                ),
+                output_when=expr_from_dict(
+                    data.get("output_when", Literal(True, BOOL).to_dict())
                 ),
                 ensure=tuple(expr_from_dict(item) for item in raw_ensure),
                 state_requirements=tuple(

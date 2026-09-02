@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+- 补齐 L0 的 DCache miss → MSHR → AcquireBlock → GrantData → RPQ direct response 路径。
+- 新增 8 类 DCache/MSHR 事件及 14 个 L0/MSHR 持久状态。
+- GrantData 通过 source/address/value 与 Hart1 的 W1(x=1) 连接。
+- L0 long-latency response 现在真实更新 executed/succeeded/value 并约束退休。
+- 新增 `Transformation.output_when`，支持同一输出事件类型的 scoped exact producers。
+- buggy 模型可补全 L0=1、L1=0 且均退休的完整微架构 Trace。
+- fixed 模型保留 L0=1 路径，同时通过 order-fail recovery 阻止 L1=0 退休。
+- Completion schema 与 package version 更新为 0.6.0。
+- 测试增至 54 项。
+
 ## 0.5.0
 
 - 新增 `LSU.LDLDSearch / LSU.LDLDConflict`。

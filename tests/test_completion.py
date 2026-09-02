@@ -437,3 +437,149 @@ def test_v05_models_roundtrip(tmp_path: Path) -> None:
         assert loaded.to_dict() == spec.to_dict()
         assert loaded.schema_version == "umcm.completion.v0.5.0"
         assert len(loaded.state_variables) == 18
+
+
+
+def _v06_inputs(
+    model: str = "load_load_buggy_mshr_completion.yaml",
+    trace_name: str = "stage6_trace.yaml",
+) -> tuple[EventCatalog, Trace, CompletionSpec]:
+    return (
+        EventCatalog.load(EXAMPLE / "event_types.yaml"),
+        Trace.load(EXAMPLE / trace_name),
+        CompletionSpec.load(EXAMPLE / model),
+    )
+
+
+def test_buggy_full_mshr_path_completes_l0_new_value_and_both_retire() -> None:
+    catalog, trace, spec = _v06_inputs()
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.completed_trace is not None
+    completed = result.completed_trace
+
+    expected_path = (
+        "l0_dcache_miss",
+        "l0_mshr_primary_accept",
+        "l0_mshr_rpq_enqueue",
+        "l0_mshr_acquire",
+        "l0_mshr_grant_data",
+        "l0_mshr_refill_complete",
+        "l0_mshr_drain_rpq",
+        "l0_long_latency_response",
+        "l0_load_succeeded",
+    )
+    for event_id in expected_path:
+        assert event_id in result.added_event_ids
+
+    assert completed.get("l0_dcache_miss").cycle == 14
+    assert completed.get("l0_mshr_primary_accept").cycle == 14
+    assert completed.get("l0_mshr_acquire").cycle == 15
+    assert completed.get("l0_mshr_grant_data").cycle == 16
+    assert completed.get("l0_mshr_drain_rpq").cycle == 17
+    assert completed.get("l0_load_succeeded").fields["value"] == 1
+    assert completed.get("commit_l0").fields["value"] == 1
+    assert completed.get("commit_l1").fields["value"] == 0
+
+    assert result.final_state["MSHR.0.req_op_id"] == "L0"
+    assert result.final_state["MSHR.0.req_ldq_idx"] == 0
+    assert result.final_state["MSHR.0.rpq_valid"] is False
+    assert result.final_state["MSHR.0.line_value"] == 1
+    assert result.final_state["MSHR.0.line_source_op_id"] == "W1"
+    assert result.final_state["LSU.ldq.L0.succeeded"] is True
+    assert result.final_state["LSU.ldq.L0.value"] == 1
+    assert result.final_state["LSU.ldq.L0.valid"] is False
+
+
+def test_scoped_exact_producers_allow_l0_and_l1_executed_events() -> None:
+    catalog, trace, spec = _v06_inputs()
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.completed_trace is not None
+    assert result.completed_trace.get("l0_load_executed").fields["op_id"] == "L0"
+    assert result.completed_trace.get("l1_load_executed").fields["op_id"] == "L1"
+
+    l0_rule = next(
+        item for item in spec.transformations
+        if item.name == "l0_accepted_request_marks_executed"
+    )
+    l1_rule = next(
+        item for item in spec.transformations
+        if item.name == "l1_accepted_request_marks_executed"
+    )
+    assert l0_rule.exact and l1_rule.exact
+    assert l0_rule.output_when.to_dict() != l1_rule.output_when.to_dict()
+
+
+def test_grant_data_must_be_sourced_from_the_visible_store() -> None:
+    catalog, trace, spec = _v06_inputs()
+    spec.slots = [
+        replace(
+            slot,
+            fields={**slot.fields, "source_op_id": "InitX"},
+        )
+        if slot.id == "l0_mshr_grant_data"
+        else slot
+        for slot in spec.slots
+    ]
+
+    result = complete_trace(catalog, trace, spec)
+    assert result.status is CompletionStatus.INFEASIBLE
+
+
+def test_rpq_identity_mismatch_blocks_long_latency_response() -> None:
+    catalog, trace, spec = _v06_inputs()
+    spec.slots = [
+        replace(slot, fields={**slot.fields, "ldq_idx": 1})
+        if slot.id == "l0_mshr_rpq_enqueue"
+        else slot
+        for slot in spec.slots
+    ]
+
+    result = complete_trace(catalog, trace, spec)
+    assert result.status is CompletionStatus.INFEASIBLE
+
+
+def test_fixed_full_path_keeps_l0_refill_but_squashes_l1() -> None:
+    catalog, trace, spec = _v06_inputs(
+        "load_load_fixed_mshr_completion.yaml",
+        "stage6_recovery_trace.yaml",
+    )
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.FEASIBLE
+    assert result.completed_trace is not None
+    completed_ids = {event.id for event in result.completed_trace.events}
+    assert "l0_load_succeeded" in completed_ids
+    assert "commit_l0" in completed_ids
+    assert "l1_order_fail" in completed_ids
+    assert "l1_mem_order_exception" in completed_ids
+    assert "l1_squash" in completed_ids
+    assert "commit_l1" not in completed_ids
+    assert result.final_state["LSU.ldq.L0.value"] == 1
+    assert result.final_state["LSU.ldq.L1.squashed"] is True
+
+
+def test_fixed_full_model_blocks_same_forbidden_two_load_retirement() -> None:
+    catalog, trace, spec = _v06_inputs("load_load_fixed_mshr_completion.yaml")
+    result = complete_trace(catalog, trace, spec)
+
+    assert result.status is CompletionStatus.INFEASIBLE
+    assert "l1_commit_requires_valid_executed_succeeded_load" in result.reason
+    assert "LSU.ldq.L1.valid == True" in result.reason
+
+
+def test_v06_models_roundtrip(tmp_path: Path) -> None:
+    for model in (
+        "load_load_buggy_mshr_completion.yaml",
+        "load_load_fixed_mshr_completion.yaml",
+    ):
+        _, _, spec = _v06_inputs(model)
+        path = tmp_path / f"{model}.json"
+        spec.dump(path)
+        loaded = CompletionSpec.load(path)
+        assert loaded.to_dict() == spec.to_dict()
+        assert loaded.schema_version == "umcm.completion.v0.6.0"
+        assert len(loaded.state_variables) == 32
