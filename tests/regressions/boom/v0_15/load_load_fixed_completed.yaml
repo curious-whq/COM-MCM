@@ -1,0 +1,4151 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: boom-load-load-ordering-fixed-reference
+  expected: ALLOWED after younger load squash
+  query_goal: exercise older-load TLB retry and the observed-younger LD-LD conflict
+  completion:
+    backend: z3
+    horizon: 24
+    model:
+      version: 0.15.0
+      purpose: generic fixed-reference LSQ + current L1/MSHR witness support
+      encapsulation: strict
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          lsu:
+            public_ports:
+            - name: arch_load
+              direction: input
+              event_type: Arch.Load
+              required_connection: false
+            - name: commit_load
+              direction: input
+              event_type: Arch.CommitLoad
+              required_connection: false
+            - name: branch_kill
+              direction: input
+              event_type: Core.BranchKill
+              required_connection: false
+            - name: exception
+              direction: input
+              event_type: Core.Exception
+              required_connection: false
+            - name: squash_load
+              direction: input
+              event_type: Core.SquashLoad
+              required_connection: false
+            - name: dcache_req_fire
+              direction: input
+              event_type: LSU.DCacheReqFire
+              required_connection: false
+            - name: dcache_req_ready
+              direction: input
+              event_type: DCache.ReqReady
+              required_connection: false
+            - name: dcache_probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: dcache_long_latency_response
+              direction: input
+              event_type: DCache.LongLatencyLoadResponse
+              required_connection: false
+            - name: dcache_req_valid
+              direction: output
+              event_type: LSU.DCacheReqValid
+              required_connection: false
+            - name: memory_order_exception
+              direction: output
+              event_type: Core.MemoryOrderingException
+              required_connection: false
+            - name: dcache_load_nack
+              direction: input
+              event_type: DCache.LoadNack
+              required_connection: false
+            - name: arch_store
+              direction: input
+              event_type: Arch.Store
+              required_connection: false
+            - name: commit_store
+              direction: input
+              event_type: Arch.CommitStore
+              required_connection: false
+            - name: arch_fence
+              direction: input
+              event_type: Arch.Fence
+              required_connection: false
+            - name: commit_fence
+              direction: input
+              event_type: Arch.CommitFence
+              required_connection: false
+            - name: dcache_store_ack
+              direction: input
+              event_type: DCache.StoreAck
+              required_connection: false
+            - name: dcache_ordered
+              direction: input
+              event_type: DCache.Ordered
+              required_connection: false
+            - name: probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: dcache_load_response
+              direction: input
+              event_type: DCache.LoadResponse
+              required_connection: false
+            - name: dcache_ll_response
+              direction: input
+              event_type: DCache.LongLatencyLoadResponse
+              required_connection: false
+            - name: store_drain
+              direction: output
+              event_type: LSU.StoreDrainIssue
+              required_connection: false
+            - name: fence_release
+              direction: output
+              event_type: LSU.FenceRelease
+              required_connection: false
+            public_event_types:
+            - Arch.CommitFence
+            - Arch.CommitLoad
+            - Arch.CommitStore
+            - Arch.Fence
+            - Arch.Load
+            - Arch.Store
+            - Core.BranchKill
+            - Core.Exception
+            - Core.MemoryOrderingException
+            - Core.SquashLoad
+            - DCache.LoadNack
+            - DCache.LoadResponse
+            - DCache.LongLatencyLoadResponse
+            - DCache.Ordered
+            - DCache.ProbeRelease
+            - DCache.ReqReady
+            - DCache.StoreAck
+            - LSU.DCacheReqFire
+            - LSU.DCacheReqValid
+            - LSU.FenceRelease
+            - LSU.StoreDrainIssue
+            private_slot_ids:
+            - ldld_assert_0_0
+            - ldld_assert_0_1
+            - ldld_assert_1_0
+            - ldld_assert_1_1
+            - ldld_conflict_0_0
+            - ldld_conflict_0_1
+            - ldld_conflict_1_0
+            - ldld_conflict_1_1
+            - ldld_order_fail_0_0
+            - ldld_order_fail_0_1
+            - ldld_order_fail_1_0
+            - ldld_order_fail_1_1
+            - ldld_search_0_0
+            - ldld_search_0_1
+            - ldld_search_1_0
+            - ldld_search_1_1
+            - ldq_allocate_0
+            - ldq_allocate_1
+            - load_executed_0
+            - load_executed_1
+            - load_nack_seen_0
+            - load_nack_seen_1
+            - load_observed_0
+            - load_observed_1
+            - load_sleep_0
+            - load_sleep_1
+            - load_succeeded_hit_0
+            - load_succeeded_hit_1
+            - load_succeeded_ll_0
+            - load_succeeded_ll_1
+            - load_wakeup_0
+            - load_wakeup_1
+            - retry_enqueue_0
+            - retry_enqueue_1
+            - retry_issue_0
+            - retry_issue_1
+            - tlb_hit_0
+            - tlb_hit_1
+            - tlb_miss_0
+            - tlb_miss_1
+            private_event_types:
+            - LSU.AssertViolation
+            - LSU.LDLDConflict
+            - LSU.LDLDSearch
+            - LSU.LDQAllocate
+            - LSU.LoadExecuted
+            - LSU.LoadNackSeen
+            - LSU.LoadObserved
+            - LSU.LoadOrderFail
+            - LSU.LoadSleep
+            - LSU.LoadSucceeded
+            - LSU.LoadWakeup
+            - LSU.RetryEnqueue
+            - LSU.RetryIssue
+            - LSU.STLDViolation
+            - LSU.STQAllocate
+            - LSU.StoreAddressReady
+            - LSU.StoreCleared
+            - LSU.StoreCommitted
+            - LSU.StoreDataReady
+            - LSU.StoreFlushed
+            - LSU.StoreLoadForward
+            - LSU.StoreRetryEnqueue
+            - LSU.StoreRetryIssue
+            - LSU.StoreTLBHit
+            - LSU.StoreTLBMiss
+            - LSU.TLBHit
+            - LSU.TLBMiss
+            private_state_names:
+            - LSU.ldq[13].addr_is_uncacheable
+            - LSU.ldq[13].addr_is_virtual
+            - LSU.ldq[13].addr_valid
+            - LSU.ldq[13].address
+            - LSU.ldq[13].commit_eligible
+            - LSU.ldq[13].executed
+            - LSU.ldq[13].executing_now
+            - LSU.ldq[13].forward_std_val
+            - LSU.ldq[13].forward_store_program_index
+            - LSU.ldq[13].forward_stq_idx
+            - LSU.ldq[13].hart
+            - LSU.ldq[13].ld_byte_mask
+            - LSU.ldq[13].observed
+            - LSU.ldq[13].order_fail
+            - LSU.ldq[13].performed
+            - LSU.ldq[13].program_index
+            - LSU.ldq[13].squashed
+            - LSU.ldq[13].succeeded
+            - LSU.ldq[13].valid
+            - LSU.ldq[13].value
+            - LSU.ldq[7].addr_is_uncacheable
+            - LSU.ldq[7].addr_is_virtual
+            - LSU.ldq[7].addr_valid
+            - LSU.ldq[7].address
+            - LSU.ldq[7].commit_eligible
+            - LSU.ldq[7].executed
+            - LSU.ldq[7].executing_now
+            - LSU.ldq[7].forward_std_val
+            - LSU.ldq[7].forward_store_program_index
+            - LSU.ldq[7].forward_stq_idx
+            - LSU.ldq[7].hart
+            - LSU.ldq[7].ld_byte_mask
+            - LSU.ldq[7].observed
+            - LSU.ldq[7].order_fail
+            - LSU.ldq[7].performed
+            - LSU.ldq[7].program_index
+            - LSU.ldq[7].squashed
+            - LSU.ldq[7].succeeded
+            - LSU.ldq[7].valid
+            - LSU.ldq[7].value
+            private_transformation_names:
+            - accepted_request_marks_executed_LoadAlpha
+            - accepted_request_marks_executed_LoadBeta
+            - branch_kill_invalidates_load_LoadAlpha
+            - branch_kill_invalidates_load_LoadBeta
+            - commit_requires_valid_executed_succeeded_LoadAlpha
+            - commit_requires_valid_executed_succeeded_LoadBeta
+            - dcache_fire_records_load_address_LoadAlpha
+            - dcache_fire_records_load_address_LoadBeta
+            - dcache_nack_clears_executed_LoadAlpha
+            - dcache_nack_clears_executed_LoadBeta
+            - dcache_response_to_success_LoadAlpha
+            - dcache_response_to_success_LoadBeta
+            - dcache_valid_requires_tlb_hit_LoadAlpha
+            - dcache_valid_requires_tlb_hit_LoadBeta
+            - exception_flush_invalidates_load_LoadAlpha
+            - exception_flush_invalidates_load_LoadBeta
+            - executed_load_generates_ldld_search_LoadAlpha
+            - executed_load_generates_ldld_search_LoadBeta
+            - fixed_ldld_order_fail_LoadAlpha_LoadAlpha
+            - fixed_ldld_order_fail_LoadAlpha_LoadBeta
+            - fixed_ldld_order_fail_LoadBeta_LoadAlpha
+            - fixed_ldld_order_fail_LoadBeta_LoadBeta
+            - ldld_conflict_LoadAlpha_LoadAlpha
+            - ldld_conflict_LoadAlpha_LoadBeta
+            - ldld_conflict_LoadBeta_LoadAlpha
+            - ldld_conflict_LoadBeta_LoadBeta
+            - ldld_search_ends_executing_window_LoadAlpha
+            - ldld_search_ends_executing_window_LoadBeta
+            - ldq_allocate_LoadAlpha
+            - ldq_allocate_LoadBeta
+            - ll_response_to_success_LoadAlpha
+            - ll_response_to_success_LoadBeta
+            - load_executed_sets_ldq_bit_LoadAlpha
+            - load_executed_sets_ldq_bit_LoadBeta
+            - load_observed_sets_ldq_bit_LoadAlpha
+            - load_observed_sets_ldq_bit_LoadBeta
+            - load_order_fail_raises_memory_ordering_exception_LoadAlpha
+            - load_order_fail_raises_memory_ordering_exception_LoadBeta
+            - load_order_fail_sets_ldq_bit_LoadAlpha
+            - load_order_fail_sets_ldq_bit_LoadBeta
+            - load_succeeded_sets_value_LoadAlpha
+            - load_succeeded_sets_value_LoadBeta
+            - load_wakeup_requires_sleeping_entry_LoadAlpha
+            - load_wakeup_requires_sleeping_entry_LoadBeta
+            - matching_release_marks_observed_LoadAlpha
+            - matching_release_marks_observed_LoadBeta
+            - nack_seen_LoadAlpha
+            - nack_seen_LoadBeta
+            - retry_enqueue_clears_ldq_address_LoadAlpha
+            - retry_enqueue_clears_ldq_address_LoadBeta
+            - retry_enqueue_requires_tlb_miss_LoadAlpha
+            - retry_enqueue_requires_tlb_miss_LoadBeta
+            - retry_issue_requires_enqueue_LoadAlpha
+            - retry_issue_requires_enqueue_LoadBeta
+            - squash_invalidates_load_LoadAlpha
+            - squash_invalidates_load_LoadBeta
+            - tlb_hit_records_physical_address_LoadAlpha
+            - tlb_hit_records_physical_address_LoadBeta
+            - tlb_miss_records_virtual_address_LoadAlpha
+            - tlb_miss_records_virtual_address_LoadBeta
+          dcache:
+            public_ports:
+            - name: lsu_req_valid
+              direction: input
+              event_type: LSU.DCacheReqValid
+              required_connection: true
+            - name: req_ready
+              direction: output
+              event_type: DCache.ReqReady
+              required_connection: false
+            - name: req_fire
+              direction: output
+              event_type: LSU.DCacheReqFire
+              required_connection: false
+            - name: load_response
+              direction: output
+              event_type: DCache.LoadResponse
+              required_connection: false
+            - name: load_nack
+              direction: output
+              event_type: DCache.LoadNack
+              required_connection: false
+            - name: probe_receive
+              direction: input
+              event_type: DCache.ProbeReceive
+              required_connection: true
+            - name: probe_release
+              direction: output
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: long_latency_response
+              direction: output
+              event_type: DCache.LongLatencyLoadResponse
+              required_connection: false
+            - name: mshr_request
+              direction: output
+              event_type: DCache.MSHRRequest
+              required_connection: false
+            - name: mshr_response
+              direction: input
+              event_type: MSHR.ResponseDequeue
+              required_connection: true
+            public_event_types:
+            - DCache.LoadNack
+            - DCache.LoadResponse
+            - DCache.LongLatencyLoadResponse
+            - DCache.MSHRRequest
+            - DCache.ProbeReceive
+            - DCache.ProbeRelease
+            - DCache.ReqReady
+            - LSU.DCacheReqFire
+            - LSU.DCacheReqValid
+            - MSHR.ResponseDequeue
+            private_slot_ids:
+            - older_dcache_miss
+            - younger_dcache_hit
+            private_event_types:
+            - DCache.LoadHit
+            - DCache.LoadMiss
+            private_state_names:
+            - DCache.probe.address
+            - DCache.probe.pending
+            - DCache.probe.source_op_id
+            private_transformation_names:
+            - accepted_older_request_reaches_private_miss
+            - accepted_younger_request_reaches_private_hit
+            - dcache_request_acceptance
+            - load_miss_enters_mshr_file
+            - mshr_response_queue_to_lsu_long_latency
+            - private_nack_requires_prior_accepted_request
+            - probe_receive_captures_pending_request
+            - probe_release_requires_received_probe
+            - successful_younger_hit_produces_response
+          mshr:
+            public_ports:
+            - name: request
+              direction: input
+              event_type: DCache.MSHRRequest
+              required_connection: false
+            - name: branch_kill
+              direction: input
+              event_type: Core.BranchKill
+              required_connection: false
+            - name: exception
+              direction: input
+              event_type: Core.Exception
+              required_connection: false
+            - name: grant_data
+              direction: output
+              event_type: MSHR.GrantData
+              required_connection: false
+            - name: grant_no_data
+              direction: output
+              event_type: MSHR.GrantNoData
+              required_connection: false
+            - name: response
+              direction: output
+              event_type: MSHR.ResponseDequeue
+              required_connection: false
+            - name: replay
+              direction: output
+              event_type: MSHR.Replay
+              required_connection: false
+            - name: refill
+              direction: output
+              event_type: MSHR.RefillWrite
+              required_connection: false
+            - name: meta_write
+              direction: output
+              event_type: MSHR.MetaWrite
+              required_connection: false
+            - name: wb_req
+              direction: output
+              event_type: MSHR.WritebackRequest
+              required_connection: false
+            - name: mem_finish
+              direction: output
+              event_type: MSHR.MemFinish
+              required_connection: false
+            - name: probe_blocked
+              direction: output
+              event_type: MSHR.ProbeBlocked
+              required_connection: false
+            - name: fence_blocked
+              direction: output
+              event_type: MSHR.FenceBlocked
+              required_connection: false
+            - name: io_request
+              direction: input
+              event_type: IOMSHR.Request
+              required_connection: false
+            - name: io_response
+              direction: output
+              event_type: IOMSHR.Response
+              required_connection: false
+            public_event_types:
+            - Core.BranchKill
+            - Core.Exception
+            - DCache.MSHRRequest
+            - IOMSHR.Request
+            - IOMSHR.Response
+            - MSHR.FenceBlocked
+            - MSHR.GrantData
+            - MSHR.GrantNoData
+            - MSHR.MemFinish
+            - MSHR.MetaWrite
+            - MSHR.ProbeBlocked
+            - MSHR.RefillWrite
+            - MSHR.Replay
+            - MSHR.ResponseDequeue
+            - MSHR.WritebackRequest
+            private_slot_ids:
+            - deq_direct_0
+            - deq_replay_0
+            - direct_0
+            - mshr_acquire_0
+            - mshr_commit_line_0
+            - mshr_lb_write_0
+            - mshr_meta_clear_0
+            - mshr_meta_read_0
+            - mshr_meta_resp_clean_0
+            - mshr_meta_resp_dirty_0
+            - mshr_refill_complete_0
+            - mshr_wb_done_0
+            - primary_0
+            - resp_enq_0
+            - rpq_insert_primary_0
+            - rpq_insert_secondary_0
+            - rpq_kill_branch_0
+            - rpq_kill_exception_0
+            - sdq_alloc_0
+            - sdq_free_0
+            - secondary_0
+            private_event_types:
+            - MSHR.AcquireBlock
+            - MSHR.CommitLine
+            - MSHR.DirectLoadResponse
+            - MSHR.LineBufferWrite
+            - MSHR.MetaClear
+            - MSHR.MetaReadRequest
+            - MSHR.MetaReadResponse
+            - MSHR.PrimaryAccept
+            - MSHR.RPQDequeue
+            - MSHR.RPQInsert
+            - MSHR.RPQKill
+            - MSHR.RefillComplete
+            - MSHR.ResponseEnqueue
+            - MSHR.SDQAllocate
+            - MSHR.SDQFree
+            - MSHR.SecondaryMissAccept
+            - MSHR.WritebackDone
+            private_state_names:
+            - MSHR.req[LoadAlpha].killed
+            - MSHR.req[LoadAlpha].responseq_valid
+            - MSHR.req[LoadAlpha].rpq_valid
+            - MSHR.req[LoadAlpha].sdq_valid
+            - MSHR[3].commit_line
+            - MSHR[3].grant_had_data
+            - MSHR[3].grantack_valid
+            - MSHR[3].line_source_op_id
+            - MSHR[3].line_value
+            - MSHR[3].probe_rdy
+            - MSHR[3].req_address
+            - MSHR[3].req_kind
+            - MSHR[3].req_needs_wb
+            - MSHR[3].req_op_id
+            - MSHR[3].state
+            private_transformation_names:
+            - acquire_3
+            - clean_meta_commit_3
+            - commit_after_wb_3
+            - commit_refill_3
+            - direct_dequeue_LoadAlpha
+            - direct_load_response_LoadAlpha
+            - direct_load_response_state_LoadAlpha
+            - dirty_meta_clear_3
+            - fence_blocked_3
+            - grant_data_3
+            - grant_no_data_3
+            - grant_writes_lb_3
+            - mem_finish_3
+            - meta_read_when_rpq_empty_3
+            - meta_write_after_refill_3
+            - primary_accept_LoadAlpha
+            - primary_rpq_insert_LoadAlpha
+            - probe_blocked_3
+            - refill_complete_3
+            - replay_LoadAlpha
+            - replay_dequeue_LoadAlpha
+            - replay_state_LoadAlpha
+            - respq_dequeue_LoadAlpha
+            - respq_enqueue_LoadAlpha
+            - rpq_branch_kill_LoadAlpha
+            - rpq_branch_kill_state_LoadAlpha
+            - rpq_exception_kill_LoadAlpha
+            - rpq_exception_kill_state_LoadAlpha
+            - sdq_alloc_LoadAlpha
+            - sdq_free_LoadAlpha
+            - secondary_accept_LoadAlpha
+            - secondary_rpq_insert_LoadAlpha
+            - wb_done_3
+            - wb_request_3
+          coherence:
+            public_ports:
+            - name: visible_store
+              direction: input
+              event_type: Arch.Store
+              required_connection: true
+            - name: probe_receive
+              direction: output
+              event_type: DCache.ProbeReceive
+              required_connection: false
+            - name: grant_data
+              direction: input
+              event_type: MSHR.GrantData
+              required_connection: true
+            public_event_types:
+            - Arch.Store
+            - DCache.ProbeReceive
+            - MSHR.GrantData
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names:
+            - grant_data_is_sourced_from_visible_store
+            - visible_external_store_can_produce_probe_receive
+          rob:
+            public_ports:
+            - name: memory_order_exception
+              direction: input
+              event_type: Core.MemoryOrderingException
+              required_connection: true
+            - name: arch_load
+              direction: output
+              event_type: Arch.Load
+              required_connection: false
+            - name: arch_store
+              direction: output
+              event_type: Arch.Store
+              required_connection: false
+            - name: commit_load
+              direction: output
+              event_type: Arch.CommitLoad
+              required_connection: false
+            - name: branch_kill
+              direction: output
+              event_type: Core.BranchKill
+              required_connection: false
+            - name: exception
+              direction: output
+              event_type: Core.Exception
+              required_connection: false
+            - name: squash_load
+              direction: output
+              event_type: Core.SquashLoad
+              required_connection: false
+            public_event_types:
+            - Arch.CommitLoad
+            - Arch.Load
+            - Arch.Store
+            - Core.BranchKill
+            - Core.Exception
+            - Core.MemoryOrderingException
+            - Core.SquashLoad
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names:
+            - memory_ordering_exception_emits_squash
+      composition:
+        name: boom-memory-fixed-reference
+        resolved_roles:
+          init_write:
+            event_id: init_data
+            event_type: Arch.InitWrite
+            op_id: InitData
+            address: data0
+            value: 0
+          older_load:
+            event_id: load_older
+            event_type: Arch.Load
+            op_id: LoadAlpha
+            address: data0
+            ldq_idx: 13
+            mshr_id: 3
+          younger_load:
+            event_id: load_younger
+            event_type: Arch.Load
+            op_id: LoadBeta
+            address: data0
+            ldq_idx: 7
+          visible_store:
+            event_id: store_visible
+            event_type: Arch.Store
+            op_id: StoreGamma
+            address: data0
+            value: 1
+          loads:
+          - event_id: load_older
+            event_type: Arch.Load
+            op_id: LoadAlpha
+            address: data0
+            hart: 0
+            program_index: 0
+            cycle: 0
+            ldq_idx: 13
+            byte_mask: 255
+          - event_id: load_younger
+            event_type: Arch.Load
+            op_id: LoadBeta
+            address: data0
+            hart: 0
+            program_index: 1
+            cycle: 3
+            ldq_idx: 7
+            byte_mask: 255
+          local_stores: []
+          fences: []
+          mshr_requests:
+          - event_id: load_older
+            event_type: Arch.Load
+            op_id: LoadAlpha
+            queue_kind: ldq
+            queue_idx: 13
+            address: data0
+            value: 0
+            mem_kind: load
+            mshr_id: 3
+            tag_match: false
+            old_line_dirty: false
+            needs_acquire: true
+            grant_has_data: true
+            secondary: false
+            requires_second_acquire: false
+            is_hit_again: false
+            is_probe: false
+            sdq_id: 0
+          mshr_instances:
+          - event_id: load_older
+            event_type: Arch.Load
+            op_id: LoadAlpha
+            address: data0
+            mshr_id: 3
+            grant_has_data: true
+            needs_acquire: true
+          io_requests: []
+        modules:
+        - lsu
+        - dcache
+        - mshr
+        - coherence
+        - rob
+        connections:
+        - name: core_arch_load_to_lsu
+          mode: shared_event
+          source: rob.arch_load
+          target: lsu.arch_load
+        - name: core_commit_load_to_lsu
+          mode: shared_event
+          source: rob.commit_load
+          target: lsu.commit_load
+        - name: core_branch_kill_to_lsu
+          mode: shared_event
+          source: rob.branch_kill
+          target: lsu.branch_kill
+        - name: core_exception_to_lsu
+          mode: shared_event
+          source: rob.exception
+          target: lsu.exception
+        - name: lsu_memory_order_exception_to_rob
+          mode: shared_event
+          source: lsu.memory_order_exception
+          target: rob.memory_order_exception
+        - name: rob_squash_to_lsu
+          mode: shared_event
+          source: rob.squash_load
+          target: lsu.squash_load
+        - name: lsu_request_valid_to_dcache
+          mode: shared_event
+          source: lsu.dcache_req_valid
+          target: dcache.lsu_req_valid
+        - name: dcache_ready_to_lsu
+          mode: shared_event
+          source: dcache.req_ready
+          target: lsu.dcache_req_ready
+        - name: dcache_accept_to_lsu
+          mode: shared_event
+          source: dcache.req_fire
+          target: lsu.dcache_req_fire
+        - name: dcache_hit_response_to_lsu
+          mode: shared_event
+          source: dcache.load_response
+          target: lsu.dcache_load_response
+        - name: dcache_nack_to_lsu
+          mode: shared_event
+          source: dcache.load_nack
+          target: lsu.dcache_load_nack
+        - name: dcache_probe_release_to_lsu
+          mode: shared_event
+          source: dcache.probe_release
+          target: lsu.dcache_probe_release
+        - name: dcache_long_latency_response_to_lsu
+          mode: shared_event
+          source: dcache.long_latency_response
+          target: lsu.dcache_long_latency_response
+        - name: core_store_to_coherence
+          mode: shared_event
+          source: rob.arch_store
+          target: coherence.visible_store
+        - name: coherence_probe_to_dcache
+          mode: shared_event
+          source: coherence.probe_receive
+          target: dcache.probe_receive
+        - name: mshr_grant_to_coherence
+          mode: shared_event
+          source: mshr.grant_data
+          target: coherence.grant_data
+        - name: dcache_mshr_request_to_mshr
+          mode: shared_event
+          source: dcache.mshr_request
+          target: mshr.request
+        - name: mshr_response_to_dcache
+          mode: shared_event
+          source: mshr.response
+          target: dcache.mshr_response
+        - name: core_branch_kill_to_mshr
+          mode: shared_event
+          source: rob.branch_kill
+          target: mshr.branch_kill
+        - name: core_exception_to_mshr
+          mode: shared_event
+          source: rob.exception
+          target: mshr.exception
+        generated_transformations: []
+    selected_slots:
+    - ldq_allocate_0
+    - dcache_req_valid_0
+    - load_executed_0
+    - load_succeeded_ll_0
+    - ldld_search_0_0
+    - ldq_allocate_1
+    - tlb_hit_1
+    - dcache_req_valid_1
+    - load_executed_1
+    - load_succeeded_hit_1
+    - load_observed_1
+    - memory_order_exception_1
+    - ldld_search_1_0
+    - ldld_order_fail_0_1
+    - dcache_req_ready_0
+    - dcache_req_fire_0
+    - younger_dcache_req_ready
+    - younger_dcache_req_fire
+    - younger_dcache_hit
+    - younger_dcache_response
+    - probe_receive
+    - probe_release
+    - older_dcache_miss
+    - older_long_latency_response
+    - older_mshr_request
+    - mshr_acquire_0
+    - mshr_grant_data_0
+    - mshr_lb_write_0
+    - mshr_refill_complete_0
+    - primary_0
+    - rpq_insert_primary_0
+    - direct_0
+    - deq_direct_0
+    - resp_enq_0
+    - resp_deq_0
+    - younger_squash
+    state:
+      initial:
+        LSU.ldq[13].valid: false
+        LSU.ldq[13].addr_valid: false
+        LSU.ldq[13].addr_is_virtual: false
+        LSU.ldq[13].addr_is_uncacheable: false
+        LSU.ldq[13].address: EMPTY_ADDR
+        LSU.ldq[13].executed: false
+        LSU.ldq[13].succeeded: false
+        LSU.ldq[13].order_fail: false
+        LSU.ldq[13].observed: false
+        LSU.ldq[13].forward_std_val: false
+        LSU.ldq[13].forward_stq_idx: 63
+        LSU.ldq[13].ld_byte_mask: 0
+        LSU.ldq[13].value: UNSET_VALUE
+        LSU.ldq[13].squashed: false
+        LSU.ldq[13].executing_now: false
+        LSU.ldq[13].hart: -1
+        LSU.ldq[13].program_index: -1
+        LSU.ldq[13].performed: false
+        LSU.ldq[13].commit_eligible: false
+        LSU.ldq[13].forward_store_program_index: -1
+        LSU.ldq[7].valid: false
+        LSU.ldq[7].addr_valid: false
+        LSU.ldq[7].addr_is_virtual: false
+        LSU.ldq[7].addr_is_uncacheable: false
+        LSU.ldq[7].address: EMPTY_ADDR
+        LSU.ldq[7].executed: false
+        LSU.ldq[7].succeeded: false
+        LSU.ldq[7].order_fail: false
+        LSU.ldq[7].observed: false
+        LSU.ldq[7].forward_std_val: false
+        LSU.ldq[7].forward_stq_idx: 63
+        LSU.ldq[7].ld_byte_mask: 0
+        LSU.ldq[7].value: UNSET_VALUE
+        LSU.ldq[7].squashed: false
+        LSU.ldq[7].executing_now: false
+        LSU.ldq[7].hart: -1
+        LSU.ldq[7].program_index: -1
+        LSU.ldq[7].performed: false
+        LSU.ldq[7].commit_eligible: false
+        LSU.ldq[7].forward_store_program_index: -1
+        DCache.probe.pending: false
+        DCache.probe.address: EMPTY_ADDR
+        DCache.probe.source_op_id: EMPTY
+        MSHR[3].state: INVALID
+        MSHR[3].req_op_id: EMPTY
+        MSHR[3].req_address: EMPTY_ADDR
+        MSHR[3].req_kind: NONE
+        MSHR[3].req_needs_wb: false
+        MSHR[3].grant_had_data: false
+        MSHR[3].line_value: UNSET_VALUE
+        MSHR[3].line_source_op_id: EMPTY
+        MSHR[3].grantack_valid: false
+        MSHR[3].commit_line: false
+        MSHR[3].probe_rdy: true
+        MSHR.req[LoadAlpha].rpq_valid: false
+        MSHR.req[LoadAlpha].killed: false
+        MSHR.req[LoadAlpha].responseq_valid: false
+        MSHR.req[LoadAlpha].sdq_valid: false
+      final:
+        LSU.ldq[13].valid: false
+        LSU.ldq[13].addr_valid: true
+        LSU.ldq[13].addr_is_virtual: false
+        LSU.ldq[13].addr_is_uncacheable: false
+        LSU.ldq[13].address: data0
+        LSU.ldq[13].executed: true
+        LSU.ldq[13].succeeded: true
+        LSU.ldq[13].order_fail: false
+        LSU.ldq[13].observed: false
+        LSU.ldq[13].forward_std_val: false
+        LSU.ldq[13].forward_stq_idx: 63
+        LSU.ldq[13].ld_byte_mask: 255
+        LSU.ldq[13].value: 1
+        LSU.ldq[13].squashed: false
+        LSU.ldq[13].executing_now: false
+        LSU.ldq[13].hart: 0
+        LSU.ldq[13].program_index: 0
+        LSU.ldq[13].performed: true
+        LSU.ldq[13].commit_eligible: true
+        LSU.ldq[13].forward_store_program_index: -1
+        LSU.ldq[7].valid: false
+        LSU.ldq[7].addr_valid: false
+        LSU.ldq[7].addr_is_virtual: false
+        LSU.ldq[7].addr_is_uncacheable: false
+        LSU.ldq[7].address: data0
+        LSU.ldq[7].executed: true
+        LSU.ldq[7].succeeded: true
+        LSU.ldq[7].order_fail: true
+        LSU.ldq[7].observed: true
+        LSU.ldq[7].forward_std_val: false
+        LSU.ldq[7].forward_stq_idx: 63
+        LSU.ldq[7].ld_byte_mask: 255
+        LSU.ldq[7].value: 0
+        LSU.ldq[7].squashed: true
+        LSU.ldq[7].executing_now: false
+        LSU.ldq[7].hart: 0
+        LSU.ldq[7].program_index: 1
+        LSU.ldq[7].performed: true
+        LSU.ldq[7].commit_eligible: true
+        LSU.ldq[7].forward_store_program_index: -1
+        DCache.probe.pending: false
+        DCache.probe.address: data0
+        DCache.probe.source_op_id: StoreGamma
+        MSHR[3].state: DRAIN_RPQ_LOADS
+        MSHR[3].req_op_id: LoadAlpha
+        MSHR[3].req_address: data0
+        MSHR[3].req_kind: load
+        MSHR[3].req_needs_wb: false
+        MSHR[3].grant_had_data: true
+        MSHR[3].line_value: 1
+        MSHR[3].line_source_op_id: StoreGamma
+        MSHR[3].grantack_valid: true
+        MSHR[3].commit_line: true
+        MSHR[3].probe_rdy: true
+        MSHR.req[LoadAlpha].rpq_valid: false
+        MSHR.req[LoadAlpha].killed: false
+        MSHR.req[LoadAlpha].responseq_valid: false
+        MSHR.req[LoadAlpha].sdq_valid: false
+      steps:
+      - cycle: 0
+        before:
+          LSU.ldq[13].valid: false
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: EMPTY_ADDR
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 0
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: -1
+          LSU.ldq[13].program_index: -1
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 0
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: -1
+          LSU.ldq[7].program_index: -1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: EMPTY_ADDR
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 0
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: -1
+          LSU.ldq[7].program_index: -1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements: []
+        active_updates:
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.1
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.12
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.2
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.6
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.13
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.8
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.10
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.5
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.4
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.11
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.9
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.7
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.3
+        - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.0
+        changes:
+        - state: LSU.ldq[13].hart
+          before: -1
+          after: 0
+          origins:
+          - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.8
+        - state: LSU.ldq[13].ld_byte_mask
+          before: 0
+          after: 255
+          origins:
+          - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.10
+        - state: LSU.ldq[13].program_index
+          before: -1
+          after: 0
+          origins:
+          - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.9
+        - state: LSU.ldq[13].valid
+          before: false
+          after: true
+          origins:
+          - transformation.ldq_allocate_LoadAlpha.forward.0.load_older.instance.0.ldq_allocate_0.update.0
+      - cycle: 1
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: EMPTY_ADDR
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 0
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: -1
+          LSU.ldq[7].program_index: -1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 0
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: -1
+          LSU.ldq[7].program_index: -1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.tlb_miss_records_virtual_address_LoadAlpha.forward.0.older_tlb_miss.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.tlb_miss_records_virtual_address_LoadAlpha.forward.0.older_tlb_miss.instance.0.no-output.update.1
+        - transformation.tlb_miss_records_virtual_address_LoadAlpha.forward.0.older_tlb_miss.instance.0.no-output.update.0
+        - transformation.tlb_miss_records_virtual_address_LoadAlpha.forward.0.older_tlb_miss.instance.0.no-output.update.2
+        changes:
+        - state: LSU.ldq[13].addr_is_virtual
+          before: false
+          after: true
+          origins:
+          - transformation.tlb_miss_records_virtual_address_LoadAlpha.forward.0.older_tlb_miss.instance.0.no-output.update.1
+        - state: LSU.ldq[13].addr_valid
+          before: false
+          after: true
+          origins:
+          - transformation.tlb_miss_records_virtual_address_LoadAlpha.forward.0.older_tlb_miss.instance.0.no-output.update.0
+        - state: LSU.ldq[13].address
+          before: EMPTY_ADDR
+          after: data0
+          origins:
+          - transformation.tlb_miss_records_virtual_address_LoadAlpha.forward.0.older_tlb_miss.instance.0.no-output.update.2
+      - cycle: 2
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 0
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: -1
+          LSU.ldq[7].program_index: -1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 0
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: -1
+          LSU.ldq[7].program_index: -1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.retry_enqueue_clears_ldq_address_LoadAlpha.forward.0.older_retry_enqueue.instance.0.no-output.requirement.0
+        - transformation.retry_enqueue_clears_ldq_address_LoadAlpha.forward.0.older_retry_enqueue.instance.0.no-output.requirement.1
+        - transformation.retry_enqueue_clears_ldq_address_LoadAlpha.forward.0.older_retry_enqueue.instance.0.no-output.requirement.2
+        active_updates:
+        - transformation.retry_enqueue_clears_ldq_address_LoadAlpha.forward.0.older_retry_enqueue.instance.0.no-output.update.0
+        changes:
+        - state: LSU.ldq[13].addr_valid
+          before: true
+          after: false
+          origins:
+          - transformation.retry_enqueue_clears_ldq_address_LoadAlpha.forward.0.older_retry_enqueue.instance.0.no-output.update.0
+      - cycle: 3
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 0
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: -1
+          LSU.ldq[7].program_index: -1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements: []
+        active_updates:
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.1
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.12
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.2
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.6
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.13
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.8
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.10
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.5
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.4
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.11
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.9
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.7
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.3
+        - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.0
+        changes:
+        - state: LSU.ldq[7].hart
+          before: -1
+          after: 0
+          origins:
+          - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.8
+        - state: LSU.ldq[7].ld_byte_mask
+          before: 0
+          after: 255
+          origins:
+          - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.10
+        - state: LSU.ldq[7].program_index
+          before: -1
+          after: 1
+          origins:
+          - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.9
+        - state: LSU.ldq[7].valid
+          before: false
+          after: true
+          origins:
+          - transformation.ldq_allocate_LoadBeta.forward.1.load_younger.instance.1.ldq_allocate_1.update.0
+      - cycle: 4
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: EMPTY_ADDR
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: true
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.tlb_hit_records_physical_address_LoadBeta.forward.2.tlb_hit_1.instance.0.no-output.requirement.0
+        - transformation.dcache_fire_records_load_address_LoadBeta.forward.1.younger_dcache_req_fire.instance.0.no-output.requirement.0
+        - transformation.accepted_request_marks_executed_LoadBeta.forward.1.younger_dcache_req_fire.instance.1.load_executed_1.requirement.0
+        active_updates:
+        - transformation.tlb_hit_records_physical_address_LoadBeta.forward.2.tlb_hit_1.instance.0.no-output.update.1
+        - transformation.dcache_fire_records_load_address_LoadBeta.forward.1.younger_dcache_req_fire.instance.0.no-output.update.1
+        - transformation.tlb_hit_records_physical_address_LoadBeta.forward.2.tlb_hit_1.instance.0.no-output.update.0
+        - transformation.dcache_fire_records_load_address_LoadBeta.forward.1.younger_dcache_req_fire.instance.0.no-output.update.0
+        - transformation.tlb_hit_records_physical_address_LoadBeta.forward.2.tlb_hit_1.instance.0.no-output.update.2
+        - transformation.dcache_fire_records_load_address_LoadBeta.forward.1.younger_dcache_req_fire.instance.0.no-output.update.2
+        - transformation.accepted_request_marks_executed_LoadBeta.forward.1.younger_dcache_req_fire.instance.1.load_executed_1.update.0
+        changes:
+        - state: LSU.ldq[7].addr_valid
+          before: false
+          after: true
+          origins:
+          - transformation.tlb_hit_records_physical_address_LoadBeta.forward.2.tlb_hit_1.instance.0.no-output.update.0
+          - transformation.dcache_fire_records_load_address_LoadBeta.forward.1.younger_dcache_req_fire.instance.0.no-output.update.0
+        - state: LSU.ldq[7].address
+          before: EMPTY_ADDR
+          after: data0
+          origins:
+          - transformation.tlb_hit_records_physical_address_LoadBeta.forward.2.tlb_hit_1.instance.0.no-output.update.2
+          - transformation.dcache_fire_records_load_address_LoadBeta.forward.1.younger_dcache_req_fire.instance.0.no-output.update.2
+        - state: LSU.ldq[7].executing_now
+          before: false
+          after: true
+          origins:
+          - transformation.accepted_request_marks_executed_LoadBeta.forward.1.younger_dcache_req_fire.instance.1.load_executed_1.update.0
+      - cycle: 5
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: false
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: true
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: false
+          LSU.ldq[7].commit_eligible: false
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.load_executed_sets_ldq_bit_LoadBeta.forward.1.load_executed_1.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.load_executed_sets_ldq_bit_LoadBeta.forward.1.load_executed_1.instance.0.no-output.update.2
+        - transformation.load_executed_sets_ldq_bit_LoadBeta.forward.1.load_executed_1.instance.0.no-output.update.0
+        - transformation.ldld_search_ends_executing_window_LoadBeta.forward.2.ldld_search_1_0.instance.0.no-output.update.0
+        - transformation.load_executed_sets_ldq_bit_LoadBeta.forward.1.load_executed_1.instance.0.no-output.update.1
+        changes:
+        - state: LSU.ldq[7].commit_eligible
+          before: false
+          after: true
+          origins:
+          - transformation.load_executed_sets_ldq_bit_LoadBeta.forward.1.load_executed_1.instance.0.no-output.update.2
+        - state: LSU.ldq[7].executed
+          before: false
+          after: true
+          origins:
+          - transformation.load_executed_sets_ldq_bit_LoadBeta.forward.1.load_executed_1.instance.0.no-output.update.0
+        - state: LSU.ldq[7].executing_now
+          before: true
+          after: false
+          origins:
+          - transformation.ldld_search_ends_executing_window_LoadBeta.forward.2.ldld_search_1_0.instance.0.no-output.update.0
+        - state: LSU.ldq[7].performed
+          before: false
+          after: true
+          origins:
+          - transformation.load_executed_sets_ldq_bit_LoadBeta.forward.1.load_executed_1.instance.0.no-output.update.1
+      - cycle: 7
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: false
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: UNSET_VALUE
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.requirement.0
+        - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.requirement.1
+        active_updates:
+        - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.update.3
+        - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.update.4
+        - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.update.2
+        - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.update.0
+        - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.update.1
+        changes:
+        - state: LSU.ldq[7].succeeded
+          before: false
+          after: true
+          origins:
+          - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.update.0
+        - state: LSU.ldq[7].value
+          before: UNSET_VALUE
+          after: 0
+          origins:
+          - transformation.load_succeeded_sets_value_LoadBeta.forward.2.load_succeeded_hit_1.instance.0.no-output.update.1
+      - cycle: 9
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: EMPTY_ADDR
+          DCache.probe.source_op_id: EMPTY
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: true
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.probe_receive_captures_pending_request.forward.0.probe_receive.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.probe_receive_captures_pending_request.forward.0.probe_receive.instance.0.no-output.update.1
+        - transformation.probe_receive_captures_pending_request.forward.0.probe_receive.instance.0.no-output.update.0
+        - transformation.probe_receive_captures_pending_request.forward.0.probe_receive.instance.0.no-output.update.2
+        changes:
+        - state: DCache.probe.address
+          before: EMPTY_ADDR
+          after: data0
+          origins:
+          - transformation.probe_receive_captures_pending_request.forward.0.probe_receive.instance.0.no-output.update.1
+        - state: DCache.probe.pending
+          before: false
+          after: true
+          origins:
+          - transformation.probe_receive_captures_pending_request.forward.0.probe_receive.instance.0.no-output.update.0
+        - state: DCache.probe.source_op_id
+          before: EMPTY
+          after: StoreGamma
+          origins:
+          - transformation.probe_receive_captures_pending_request.forward.0.probe_receive.instance.0.no-output.update.2
+      - cycle: 10
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: false
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: true
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.load_observed_sets_ldq_bit_LoadBeta.forward.1.load_observed_1.instance.0.no-output.requirement.0
+        - transformation.load_observed_sets_ldq_bit_LoadBeta.forward.1.load_observed_1.instance.0.no-output.requirement.1
+        - transformation.load_observed_sets_ldq_bit_LoadBeta.forward.1.load_observed_1.instance.0.no-output.requirement.2
+        - transformation.load_observed_sets_ldq_bit_LoadBeta.forward.1.load_observed_1.instance.0.no-output.requirement.3
+        - transformation.probe_release_requires_received_probe.forward.0.probe_release.instance.0.probe_receive.requirement.0
+        - transformation.probe_release_requires_received_probe.forward.0.probe_release.instance.0.probe_receive.requirement.1
+        - transformation.probe_release_requires_received_probe.forward.0.probe_release.instance.0.probe_receive.requirement.2
+        active_updates:
+        - transformation.probe_release_requires_received_probe.forward.0.probe_release.instance.0.probe_receive.update.0
+        - transformation.load_observed_sets_ldq_bit_LoadBeta.forward.1.load_observed_1.instance.0.no-output.update.0
+        changes:
+        - state: DCache.probe.pending
+          before: true
+          after: false
+          origins:
+          - transformation.probe_release_requires_received_probe.forward.0.probe_release.instance.0.probe_receive.update.0
+        - state: LSU.ldq[7].observed
+          before: false
+          after: true
+          origins:
+          - transformation.load_observed_sets_ldq_bit_LoadBeta.forward.1.load_observed_1.instance.0.no-output.update.0
+      - cycle: 12
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: false
+          LSU.ldq[13].addr_is_virtual: true
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: true
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.tlb_hit_records_physical_address_LoadAlpha.forward.0.older_tlb_hit.instance.0.no-output.requirement.0
+        - transformation.dcache_fire_records_load_address_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.no-output.requirement.0
+        - transformation.accepted_request_marks_executed_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.load_executed_0.requirement.0
+        active_updates:
+        - transformation.tlb_hit_records_physical_address_LoadAlpha.forward.0.older_tlb_hit.instance.0.no-output.update.1
+        - transformation.dcache_fire_records_load_address_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.no-output.update.1
+        - transformation.tlb_hit_records_physical_address_LoadAlpha.forward.0.older_tlb_hit.instance.0.no-output.update.0
+        - transformation.dcache_fire_records_load_address_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.no-output.update.0
+        - transformation.tlb_hit_records_physical_address_LoadAlpha.forward.0.older_tlb_hit.instance.0.no-output.update.2
+        - transformation.dcache_fire_records_load_address_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.no-output.update.2
+        - transformation.accepted_request_marks_executed_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.load_executed_0.update.0
+        changes:
+        - state: LSU.ldq[13].addr_is_virtual
+          before: true
+          after: false
+          origins:
+          - transformation.tlb_hit_records_physical_address_LoadAlpha.forward.0.older_tlb_hit.instance.0.no-output.update.1
+          - transformation.dcache_fire_records_load_address_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.no-output.update.1
+        - state: LSU.ldq[13].addr_valid
+          before: false
+          after: true
+          origins:
+          - transformation.tlb_hit_records_physical_address_LoadAlpha.forward.0.older_tlb_hit.instance.0.no-output.update.0
+          - transformation.dcache_fire_records_load_address_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.no-output.update.0
+        - state: LSU.ldq[13].executing_now
+          before: false
+          after: true
+          origins:
+          - transformation.accepted_request_marks_executed_LoadAlpha.forward.0.dcache_req_fire_0.instance.0.load_executed_0.update.0
+      - cycle: 13
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: false
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: true
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: false
+          LSU.ldq[13].commit_eligible: false
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: false
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.load_executed_sets_ldq_bit_LoadAlpha.forward.0.load_executed_0.instance.0.no-output.requirement.0
+        - transformation.load_order_fail_sets_ldq_bit_LoadBeta.forward.1.ldld_order_fail_0_1.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.load_executed_sets_ldq_bit_LoadAlpha.forward.0.load_executed_0.instance.0.no-output.update.2
+        - transformation.load_executed_sets_ldq_bit_LoadAlpha.forward.0.load_executed_0.instance.0.no-output.update.0
+        - transformation.ldld_search_ends_executing_window_LoadAlpha.forward.0.ldld_search_0_0.instance.0.no-output.update.0
+        - transformation.load_executed_sets_ldq_bit_LoadAlpha.forward.0.load_executed_0.instance.0.no-output.update.1
+        - transformation.load_order_fail_sets_ldq_bit_LoadBeta.forward.1.ldld_order_fail_0_1.instance.0.no-output.update.0
+        changes:
+        - state: LSU.ldq[13].commit_eligible
+          before: false
+          after: true
+          origins:
+          - transformation.load_executed_sets_ldq_bit_LoadAlpha.forward.0.load_executed_0.instance.0.no-output.update.2
+        - state: LSU.ldq[13].executed
+          before: false
+          after: true
+          origins:
+          - transformation.load_executed_sets_ldq_bit_LoadAlpha.forward.0.load_executed_0.instance.0.no-output.update.0
+        - state: LSU.ldq[13].executing_now
+          before: true
+          after: false
+          origins:
+          - transformation.ldld_search_ends_executing_window_LoadAlpha.forward.0.ldld_search_0_0.instance.0.no-output.update.0
+        - state: LSU.ldq[13].performed
+          before: false
+          after: true
+          origins:
+          - transformation.load_executed_sets_ldq_bit_LoadAlpha.forward.0.load_executed_0.instance.0.no-output.update.1
+        - state: LSU.ldq[7].order_fail
+          before: false
+          after: true
+          origins:
+          - transformation.load_order_fail_sets_ldq_bit_LoadBeta.forward.1.ldld_order_fail_0_1.instance.0.no-output.update.0
+      - cycle: 14
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: INVALID
+          MSHR[3].req_op_id: EMPTY
+          MSHR[3].req_address: EMPTY_ADDR
+          MSHR[3].req_kind: NONE
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: REFILL_REQ
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: true
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.requirement.0
+        - transformation.primary_rpq_insert_LoadAlpha.forward.0.primary_0.instance.0.rpq_insert_primary_0.requirement.0
+        active_updates:
+        - transformation.primary_rpq_insert_LoadAlpha.forward.0.primary_0.instance.0.rpq_insert_primary_0.update.0
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.5
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.6
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.2
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.3
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.4
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.1
+        - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.0
+        changes:
+        - state: MSHR.req[LoadAlpha].rpq_valid
+          before: false
+          after: true
+          origins:
+          - transformation.primary_rpq_insert_LoadAlpha.forward.0.primary_0.instance.0.rpq_insert_primary_0.update.0
+        - state: MSHR[3].req_address
+          before: EMPTY_ADDR
+          after: data0
+          origins:
+          - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.2
+        - state: MSHR[3].req_kind
+          before: NONE
+          after: load
+          origins:
+          - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.3
+        - state: MSHR[3].req_op_id
+          before: EMPTY
+          after: LoadAlpha
+          origins:
+          - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.1
+        - state: MSHR[3].state
+          before: INVALID
+          after: REFILL_REQ
+          origins:
+          - transformation.primary_accept_LoadAlpha.forward.0.older_mshr_request.instance.0.primary_0.update.0
+      - cycle: 15
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: true
+          LSU.ldq[7].addr_valid: true
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: false
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: REFILL_REQ
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: true
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: REFILL_RESP
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: true
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.acquire_3.forward.0.primary_0.instance.0.mshr_acquire_0.requirement.0
+        active_updates:
+        - transformation.squash_invalidates_load_LoadBeta.forward.0.younger_squash.instance.0.no-output.update.1
+        - transformation.squash_invalidates_load_LoadBeta.forward.0.younger_squash.instance.0.no-output.update.2
+        - transformation.squash_invalidates_load_LoadBeta.forward.0.younger_squash.instance.0.no-output.update.0
+        - transformation.acquire_3.forward.0.primary_0.instance.0.mshr_acquire_0.update.1
+        - transformation.acquire_3.forward.0.primary_0.instance.0.mshr_acquire_0.update.0
+        changes:
+        - state: LSU.ldq[7].addr_valid
+          before: true
+          after: false
+          origins:
+          - transformation.squash_invalidates_load_LoadBeta.forward.0.younger_squash.instance.0.no-output.update.1
+        - state: LSU.ldq[7].squashed
+          before: false
+          after: true
+          origins:
+          - transformation.squash_invalidates_load_LoadBeta.forward.0.younger_squash.instance.0.no-output.update.2
+        - state: LSU.ldq[7].valid
+          before: true
+          after: false
+          origins:
+          - transformation.squash_invalidates_load_LoadBeta.forward.0.younger_squash.instance.0.no-output.update.0
+        - state: MSHR[3].state
+          before: REFILL_REQ
+          after: REFILL_RESP
+          origins:
+          - transformation.acquire_3.forward.0.primary_0.instance.0.mshr_acquire_0.update.0
+      - cycle: 16
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: REFILL_RESP
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: false
+          MSHR[3].line_value: UNSET_VALUE
+          MSHR[3].line_source_op_id: EMPTY
+          MSHR[3].grantack_valid: false
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: true
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: DRAIN_RPQ_LOADS
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: true
+          MSHR[3].line_value: 1
+          MSHR[3].line_source_op_id: StoreGamma
+          MSHR[3].grantack_valid: true
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: true
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.grant_data_3.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.requirement.0
+        - transformation.refill_complete_3.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.requirement.0
+        active_updates:
+        - transformation.refill_complete_3.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.2
+        - transformation.grant_data_3.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.0
+        - transformation.refill_complete_3.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.1
+        - transformation.grant_data_3.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.2
+        - transformation.grant_data_3.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.1
+        - transformation.refill_complete_3.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.3
+        - transformation.refill_complete_3.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.0
+        changes:
+        - state: MSHR[3].grant_had_data
+          before: false
+          after: true
+          origins:
+          - transformation.grant_data_3.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.0
+        - state: MSHR[3].grantack_valid
+          before: false
+          after: true
+          origins:
+          - transformation.refill_complete_3.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.1
+        - state: MSHR[3].line_source_op_id
+          before: EMPTY
+          after: StoreGamma
+          origins:
+          - transformation.grant_data_3.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.2
+        - state: MSHR[3].line_value
+          before: UNSET_VALUE
+          after: 1
+          origins:
+          - transformation.grant_data_3.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.1
+        - state: MSHR[3].state
+          before: REFILL_RESP
+          after: DRAIN_RPQ_LOADS
+          origins:
+          - transformation.refill_complete_3.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.0
+      - cycle: 17
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: DRAIN_RPQ_LOADS
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: true
+          MSHR[3].line_value: 1
+          MSHR[3].line_source_op_id: StoreGamma
+          MSHR[3].grantack_valid: true
+          MSHR[3].commit_line: false
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: true
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: DRAIN_RPQ_LOADS
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: true
+          MSHR[3].line_value: 1
+          MSHR[3].line_source_op_id: StoreGamma
+          MSHR[3].grantack_valid: true
+          MSHR[3].commit_line: true
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: true
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements: []
+        active_updates:
+        - transformation.respq_enqueue_LoadAlpha.forward.0.direct_0.instance.0.resp_enq_0.update.0
+        - transformation.direct_load_response_state_LoadAlpha.forward.0.direct_0.instance.0.no-output.update.0
+        - transformation.direct_load_response_state_LoadAlpha.forward.0.direct_0.instance.0.no-output.update.1
+        changes:
+        - state: MSHR.req[LoadAlpha].responseq_valid
+          before: false
+          after: true
+          origins:
+          - transformation.respq_enqueue_LoadAlpha.forward.0.direct_0.instance.0.resp_enq_0.update.0
+        - state: MSHR.req[LoadAlpha].rpq_valid
+          before: true
+          after: false
+          origins:
+          - transformation.direct_load_response_state_LoadAlpha.forward.0.direct_0.instance.0.no-output.update.0
+        - state: MSHR[3].commit_line
+          before: false
+          after: true
+          origins:
+          - transformation.direct_load_response_state_LoadAlpha.forward.0.direct_0.instance.0.no-output.update.1
+      - cycle: 18
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: false
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: UNSET_VALUE
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: DRAIN_RPQ_LOADS
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: true
+          MSHR[3].line_value: 1
+          MSHR[3].line_source_op_id: StoreGamma
+          MSHR[3].grantack_valid: true
+          MSHR[3].commit_line: true
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: true
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: true
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: 1
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: DRAIN_RPQ_LOADS
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: true
+          MSHR[3].line_value: 1
+          MSHR[3].line_source_op_id: StoreGamma
+          MSHR[3].grantack_valid: true
+          MSHR[3].commit_line: true
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.requirement.0
+        - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.requirement.1
+        - transformation.respq_dequeue_LoadAlpha.forward.0.resp_enq_0.instance.0.resp_deq_0.requirement.0
+        - transformation.respq_dequeue_LoadAlpha.forward.0.resp_enq_0.instance.0.resp_deq_0.requirement.1
+        active_updates:
+        - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.update.3
+        - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.update.4
+        - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.update.2
+        - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.update.0
+        - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.update.1
+        - transformation.respq_dequeue_LoadAlpha.forward.0.resp_enq_0.instance.0.resp_deq_0.update.0
+        changes:
+        - state: LSU.ldq[13].succeeded
+          before: false
+          after: true
+          origins:
+          - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.update.0
+        - state: LSU.ldq[13].value
+          before: UNSET_VALUE
+          after: 1
+          origins:
+          - transformation.load_succeeded_sets_value_LoadAlpha.forward.1.load_succeeded_ll_0.instance.0.no-output.update.1
+        - state: MSHR.req[LoadAlpha].responseq_valid
+          before: true
+          after: false
+          origins:
+          - transformation.respq_dequeue_LoadAlpha.forward.0.resp_enq_0.instance.0.resp_deq_0.update.0
+      - cycle: 20
+        before:
+          LSU.ldq[13].valid: true
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: true
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: 1
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: DRAIN_RPQ_LOADS
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: true
+          MSHR[3].line_value: 1
+          MSHR[3].line_source_op_id: StoreGamma
+          MSHR[3].grantack_valid: true
+          MSHR[3].commit_line: true
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        after:
+          LSU.ldq[13].valid: false
+          LSU.ldq[13].addr_valid: true
+          LSU.ldq[13].addr_is_virtual: false
+          LSU.ldq[13].addr_is_uncacheable: false
+          LSU.ldq[13].address: data0
+          LSU.ldq[13].executed: true
+          LSU.ldq[13].succeeded: true
+          LSU.ldq[13].order_fail: false
+          LSU.ldq[13].observed: false
+          LSU.ldq[13].forward_std_val: false
+          LSU.ldq[13].forward_stq_idx: 63
+          LSU.ldq[13].ld_byte_mask: 255
+          LSU.ldq[13].value: 1
+          LSU.ldq[13].squashed: false
+          LSU.ldq[13].executing_now: false
+          LSU.ldq[13].hart: 0
+          LSU.ldq[13].program_index: 0
+          LSU.ldq[13].performed: true
+          LSU.ldq[13].commit_eligible: true
+          LSU.ldq[13].forward_store_program_index: -1
+          LSU.ldq[7].valid: false
+          LSU.ldq[7].addr_valid: false
+          LSU.ldq[7].addr_is_virtual: false
+          LSU.ldq[7].addr_is_uncacheable: false
+          LSU.ldq[7].address: data0
+          LSU.ldq[7].executed: true
+          LSU.ldq[7].succeeded: true
+          LSU.ldq[7].order_fail: true
+          LSU.ldq[7].observed: true
+          LSU.ldq[7].forward_std_val: false
+          LSU.ldq[7].forward_stq_idx: 63
+          LSU.ldq[7].ld_byte_mask: 255
+          LSU.ldq[7].value: 0
+          LSU.ldq[7].squashed: true
+          LSU.ldq[7].executing_now: false
+          LSU.ldq[7].hart: 0
+          LSU.ldq[7].program_index: 1
+          LSU.ldq[7].performed: true
+          LSU.ldq[7].commit_eligible: true
+          LSU.ldq[7].forward_store_program_index: -1
+          DCache.probe.pending: false
+          DCache.probe.address: data0
+          DCache.probe.source_op_id: StoreGamma
+          MSHR[3].state: DRAIN_RPQ_LOADS
+          MSHR[3].req_op_id: LoadAlpha
+          MSHR[3].req_address: data0
+          MSHR[3].req_kind: load
+          MSHR[3].req_needs_wb: false
+          MSHR[3].grant_had_data: true
+          MSHR[3].line_value: 1
+          MSHR[3].line_source_op_id: StoreGamma
+          MSHR[3].grantack_valid: true
+          MSHR[3].commit_line: true
+          MSHR[3].probe_rdy: true
+          MSHR.req[LoadAlpha].rpq_valid: false
+          MSHR.req[LoadAlpha].killed: false
+          MSHR.req[LoadAlpha].responseq_valid: false
+          MSHR.req[LoadAlpha].sdq_valid: false
+        active_requirements:
+        - transformation.commit_requires_valid_executed_succeeded_LoadAlpha.forward.0.commit_older.instance.0.no-output.requirement.0
+        - transformation.commit_requires_valid_executed_succeeded_LoadAlpha.forward.0.commit_older.instance.0.no-output.requirement.1
+        - transformation.commit_requires_valid_executed_succeeded_LoadAlpha.forward.0.commit_older.instance.0.no-output.requirement.2
+        - transformation.commit_requires_valid_executed_succeeded_LoadAlpha.forward.0.commit_older.instance.0.no-output.requirement.3
+        active_updates:
+        - transformation.commit_requires_valid_executed_succeeded_LoadAlpha.forward.0.commit_older.instance.0.no-output.update.0
+        changes:
+        - state: LSU.ldq[13].valid
+          before: true
+          after: false
+          origins:
+          - transformation.commit_requires_valid_executed_succeeded_LoadAlpha.forward.0.commit_older.instance.0.no-output.update.0
+events:
+- id: init_data
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitData
+    address: data0
+    value: 0
+- id: load_older
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    hart: 0
+    program_index: 0
+    address: data0
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      ldq_idx: 13
+      mshr_id: 3
+      uses_mshr: true
+      queue_kind: ldq
+      queue_idx: 13
+      mem_kind: load
+      value: 0
+      tag_match: false
+      old_line_dirty: false
+      needs_acquire: true
+      grant_has_data: true
+      secondary: false
+      requires_second_acquire: false
+      is_hit_again: false
+      is_probe: false
+      sdq_id: 0
+- id: load_younger
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    hart: 0
+    program_index: 1
+    address: data0
+    byte_mask: 255
+  cycle: 3
+  annotations:
+    microarch:
+      ldq_idx: 7
+      uses_mshr: false
+- id: store_visible
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: StoreGamma
+    hart: 1
+    program_index: 0
+    address: data0
+    value: 1
+    byte_mask: 255
+  cycle: 8
+- id: commit_older
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    value: 1
+  cycle: 20
+- id: older_tlb_miss
+  type: LSU.TLBMiss
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    vaddr: data0
+  cycle: 1
+- id: older_retry_enqueue
+  type: LSU.RetryEnqueue
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    vaddr: data0
+  cycle: 2
+- id: older_retry_issue
+  type: LSU.RetryIssue
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    vaddr: data0
+  cycle: 12
+- id: older_tlb_hit
+  type: LSU.TLBHit
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    vaddr: data0
+    paddr: data0
+  cycle: 12
+- id: ldld_conflict_goal
+  type: LSU.LDLDConflict
+  occurs: true
+  fields:
+    older_op_id: LoadAlpha
+    older_ldq_idx: 13
+    younger_op_id: LoadBeta
+    younger_ldq_idx: 7
+    address: data0
+  cycle: 13
+- id: ldq_allocate_0
+  type: LSU.LDQAllocate
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+  cycle: 0
+  annotations:
+    role: ldq_allocation
+    source: dispatch
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: dcache_req_valid_0
+  type: LSU.DCacheReqValid
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    address: data0
+    port: 0
+  cycle: 12
+  annotations:
+    module_spec: lsu
+    module_visibility: public
+    interface_ports:
+    - dcache_req_valid
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: load_executed_0
+  type: LSU.LoadExecuted
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    address: data0
+  cycle: 13
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: load_succeeded_ll_0
+  type: LSU.LoadSucceeded
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    address: data0
+    value: 1
+    source: mshr
+  cycle: 18
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ldld_search_0_0
+  type: LSU.LDLDSearch
+  occurs: true
+  fields:
+    searcher_op_id: LoadAlpha
+    searcher_ldq_idx: 13
+    address: data0
+    port: 0
+  cycle: 13
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ldq_allocate_1
+  type: LSU.LDQAllocate
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+  cycle: 3
+  annotations:
+    role: ldq_allocation
+    source: dispatch
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_hit_1
+  type: LSU.TLBHit
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    vaddr: data0
+    paddr: data0
+  cycle: 4
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: dcache_req_valid_1
+  type: LSU.DCacheReqValid
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+    port: 0
+  cycle: 4
+  annotations:
+    module_spec: lsu
+    module_visibility: public
+    interface_ports:
+    - dcache_req_valid
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: load_executed_1
+  type: LSU.LoadExecuted
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+  cycle: 5
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: load_succeeded_hit_1
+  type: LSU.LoadSucceeded
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+    value: 0
+    source: dcache
+  cycle: 7
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: load_observed_1
+  type: LSU.LoadObserved
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+  cycle: 10
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: memory_order_exception_1
+  type: Core.MemoryOrderingException
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    cause: MINI_EXCEPTION_MEM_ORDERING
+  cycle: 14
+  annotations:
+    module_spec: lsu
+    module_visibility: public
+    interface_ports:
+    - memory_order_exception
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ldld_search_1_0
+  type: LSU.LDLDSearch
+  occurs: true
+  fields:
+    searcher_op_id: LoadBeta
+    searcher_ldq_idx: 7
+    address: data0
+    port: 0
+  cycle: 5
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ldld_order_fail_0_1
+  type: LSU.LoadOrderFail
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+    reason: ldld
+    source_op_id: LoadAlpha
+  cycle: 13
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: dcache_req_ready_0
+  type: DCache.ReqReady
+  occurs: true
+  fields:
+    port: 0
+  cycle: 12
+  annotations:
+    role: interface_ready
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - req_ready
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: dcache_req_fire_0
+  type: LSU.DCacheReqFire
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    address: data0
+    port: 0
+  cycle: 12
+  annotations:
+    role: query_goal
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - req_fire
+    completion_slot: true
+    required_slot: true
+    completed: true
+- id: younger_dcache_req_ready
+  type: DCache.ReqReady
+  occurs: true
+  fields:
+    port: 0
+  cycle: 4
+  annotations:
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - req_ready
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: younger_dcache_req_fire
+  type: LSU.DCacheReqFire
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+    port: 0
+  cycle: 4
+  annotations:
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - req_fire
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: younger_dcache_hit
+  type: DCache.LoadHit
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+    value: 0
+    port: 0
+  cycle: 6
+  annotations:
+    module_spec: dcache
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: younger_dcache_response
+  type: DCache.LoadResponse
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    address: data0
+    value: 0
+    port: 0
+  cycle: 7
+  annotations:
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - load_response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: probe_receive
+  type: DCache.ProbeReceive
+  occurs: true
+  fields:
+    source_op_id: StoreGamma
+    address: data0
+  cycle: 9
+  annotations:
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - probe_receive
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: probe_release
+  type: DCache.ProbeRelease
+  occurs: true
+  fields:
+    source_op_id: StoreGamma
+    address: data0
+  cycle: 10
+  annotations:
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - probe_release
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: older_dcache_miss
+  type: DCache.LoadMiss
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    ldq_idx: 13
+    address: data0
+    port: 0
+  cycle: 14
+  annotations:
+    role: selected_miss_path
+    module_spec: dcache
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: older_long_latency_response
+  type: DCache.LongLatencyLoadResponse
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    ldq_idx: 13
+    address: data0
+    value: 1
+  cycle: 18
+  annotations:
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - long_latency_response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: older_mshr_request
+  type: DCache.MSHRRequest
+  occurs: true
+  fields:
+    op_id: LoadAlpha
+    queue_kind: ldq
+    queue_idx: 13
+    address: data0
+    value: 0
+    mem_kind: load
+    mshr_id: 3
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: true
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+    sdq_id: 0
+  cycle: 14
+  annotations:
+    role: mshr_file_request
+    module_spec: dcache
+    module_visibility: public
+    interface_ports:
+    - mshr_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mshr_acquire_0
+  type: MSHR.AcquireBlock
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    address: data0
+  cycle: 15
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mshr_grant_data_0
+  type: MSHR.GrantData
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    source_op_id: StoreGamma
+    address: data0
+    value: 1
+  cycle: 16
+  annotations:
+    module_spec: mshr
+    module_visibility: public
+    interface_ports:
+    - grant_data
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mshr_lb_write_0
+  type: MSHR.LineBufferWrite
+  occurs: true
+  fields:
+    mshr_id: 3
+    address: data0
+    value: 1
+  cycle: 16
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mshr_refill_complete_0
+  type: MSHR.RefillComplete
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    source_op_id: StoreGamma
+    address: data0
+    value: 1
+  cycle: 16
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: primary_0
+  type: MSHR.PrimaryAccept
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    queue_kind: ldq
+    queue_idx: 13
+    address: data0
+    mem_kind: load
+    needs_acquire: true
+    old_line_dirty: false
+    grant_has_data: true
+  cycle: 14
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rpq_insert_primary_0
+  type: MSHR.RPQInsert
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    queue_kind: ldq
+    queue_idx: 13
+    address: data0
+    mem_kind: load
+    admission: primary
+  cycle: 14
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: direct_0
+  type: MSHR.DirectLoadResponse
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    queue_idx: 13
+    address: data0
+    value: 1
+  cycle: 17
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: deq_direct_0
+  type: MSHR.RPQDequeue
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    queue_kind: ldq
+    queue_idx: 13
+    address: data0
+    disposition: direct
+  cycle: 17
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: resp_enq_0
+  type: MSHR.ResponseEnqueue
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    queue_idx: 13
+    address: data0
+    value: 1
+  cycle: 17
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: resp_deq_0
+  type: MSHR.ResponseDequeue
+  occurs: true
+  fields:
+    mshr_id: 3
+    op_id: LoadAlpha
+    queue_idx: 13
+    address: data0
+    value: 1
+  cycle: 18
+  annotations:
+    module_spec: mshr
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: younger_squash
+  type: Core.SquashLoad
+  occurs: true
+  fields:
+    op_id: LoadBeta
+    ldq_idx: 7
+    reason: memory_ordering_exception
+  cycle: 15
+  annotations:
+    module_spec: rob
+    module_visibility: public
+    interface_ports:
+    - squash_load
+    completion_slot: true
+    required_slot: true
+    completed: true
+constraints:
+- node: binary
+  op: lt
+  left:
+    node: event_field
+    event_id: load_older
+    field: cycle
+    sort:
+      name: int
+  right:
+    node: event_field
+    event_id: load_younger
+    field: cycle
+    sort:
+      name: int
+- node: call
+  function: same_address
+  arguments:
+  - node: event_field
+    event_id: load_older
+    field: address
+    sort:
+      name: address
+      width: 64
+  - node: event_field
+    event_id: load_younger
+    field: address
+    sort:
+      name: address
+      width: 64
+  sort:
+    name: bool

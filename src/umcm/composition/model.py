@@ -33,8 +33,8 @@ from umcm.composition.parameterization import TraceRoleSpec
 from umcm.serialization import decode_value, dump_data, encode_value, load_data
 
 
-MODULE_SCHEMA_VERSION = "umcm.module.v0.13.0"
-COMPOSITION_SCHEMA_VERSION = "umcm.composition.v0.13.0"
+MODULE_SCHEMA_VERSION = "umcm.module.v0.15.0"
+COMPOSITION_SCHEMA_VERSION = "umcm.composition.v0.15.0"
 
 
 class PortDirection(str, Enum):
@@ -121,6 +121,7 @@ class ModuleSpec:
 
     name: str
     ports: list[ModulePort] = field(default_factory=list)
+    internal_events: list[str] = field(default_factory=list)
     slots: list[EventSlot] = field(default_factory=list)
     transformations: list[Transformation] = field(default_factory=list)
     state_variables: list[StateVariable] = field(default_factory=list)
@@ -132,6 +133,7 @@ class ModuleSpec:
         if not self.name:
             raise SchemaError("module name must be non-empty")
         self.ports = list(self.ports)
+        self.internal_events = [str(item) for item in self.internal_events]
         self.slots = list(self.slots)
         self.transformations = list(self.transformations)
         self.state_variables = list(self.state_variables)
@@ -140,6 +142,10 @@ class ModuleSpec:
         _reject_duplicates(
             [port.name for port in self.ports],
             f"module {self.name!r} contains duplicate port(s)",
+        )
+        _reject_duplicates(
+            self.internal_events,
+            f"module {self.name!r} contains duplicate internal event type(s)",
         )
         _reject_duplicates(
             [slot.id for slot in self.slots],
@@ -170,6 +176,8 @@ class ModuleSpec:
     def validate(self, catalog: EventCatalog) -> None:
         for port in self.ports:
             port.validate(catalog)
+        for event_type in self.internal_events:
+            catalog.resolve(event_type)
         for slot in self.slots:
             slot.validate(catalog)
 
@@ -178,6 +186,7 @@ class ModuleSpec:
         # interface port.  Without this check a module could silently depend
         # on another module's event type while bypassing CompositionSpec.
         declared_event_types = {port.event_type for port in self.ports}
+        declared_event_types.update(self.internal_events)
         declared_event_types.update(slot.event_type for slot in self.slots)
 
         # State ownership is local: a module transformation may only access
@@ -203,6 +212,7 @@ class ModuleSpec:
             "name": self.name,
             "metadata": encode_value(self.metadata),
             "ports": [port.to_dict() for port in self.ports],
+            "internal_events": list(self.internal_events),
             "slots": [slot.to_dict() for slot in self.slots],
             "state_variables": [
                 item.to_dict() for item in self.state_variables
@@ -218,7 +228,7 @@ class ModuleSpec:
         if not isinstance(data, Mapping):
             raise SerializationError("module spec must be a mapping")
         allowed = {
-            "schema_version", "name", "metadata", "ports", "slots",
+            "schema_version", "name", "metadata", "ports", "internal_events", "slots",
             "state_variables", "transformations", "constraints",
         }
         unknown = set(data) - allowed
@@ -228,12 +238,14 @@ class ModuleSpec:
                 + ", ".join(sorted(str(item) for item in unknown))
             )
         raw_ports = data.get("ports", [])
+        raw_internal_events = data.get("internal_events", [])
         raw_slots = data.get("slots", [])
         raw_states = data.get("state_variables", [])
         raw_transformations = data.get("transformations", [])
         raw_constraints = data.get("constraints", [])
         for label, value in (
             ("ports", raw_ports),
+            ("internal_events", raw_internal_events),
             ("slots", raw_slots),
             ("state_variables", raw_states),
             ("transformations", raw_transformations),
@@ -248,6 +260,7 @@ class ModuleSpec:
             return cls(
                 name=str(data["name"]),
                 ports=[ModulePort.from_dict(item) for item in raw_ports],
+                internal_events=[str(item) for item in raw_internal_events],
                 slots=[EventSlot.from_dict(item) for item in raw_slots],
                 state_variables=[
                     StateVariable.from_dict(item) for item in raw_states

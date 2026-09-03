@@ -1,17 +1,19 @@
-schema_version: umcm.module.v0.13.0
+schema_version: umcm.module.v0.15.0
 name: mshr
 metadata:
   variant: shared
-  version: 0.13.0
+  version: 0.15.0
   parameterized: true
   source: BOOM v4 BoomMSHR/BoomMSHRFile/IOMSHR
-  scope: Memory-order-relevant primary/secondary miss, RPQ, SDQ, refill, replay, response queue, writeback/finish and MMIO
-    behavior.
+  scope: Memory-order-relevant primary/secondary miss, RPQ, SDQ, refill, replay, response
+    queue, writeback/finish and MMIO behavior.
   abstractions:
   - refill beats summarized by RefillComplete
   - RPQ occupancy represented per bounded request
   - prefetch path excluded from v0.13 memory-order surface
   source_sha256: 7e70d1a095f9543ecb20c2983e925205ef473376fe7e6112173d7e8079069fcf
+  hierarchy: all persistent state and transformations are private; declared ports
+    are the public surface
 ports:
 - name: request
   direction: input

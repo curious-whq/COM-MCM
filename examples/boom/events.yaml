@@ -1,8 +1,9 @@
-schema_version: umcm.events.v0.14.0
+schema_version: umcm.events.v0.15.0
 metadata:
   model: boom-v4-memory
-  version: 0.14.0
-  scope: formal BOOM LSQ/L1/MSHR composition examples
+  version: 0.15.0
+  scope: current BOOM memory µMCM catalog with explicit module interface/private-event
+    hierarchy
 events:
 - name: Arch.CommitLoad
   module: ROB
@@ -144,7 +145,8 @@ events:
     sort:
       name: string
     required: true
-  description: The LSU broadcasts MINI_EXCEPTION_MEM_ORDERING for the oldest failed load.
+  description: The LSU broadcasts MINI_EXCEPTION_MEM_ORDERING for the oldest failed
+    load.
 - name: Core.SquashLoad
   module: Core
   layer: recovery
@@ -165,7 +167,8 @@ events:
     sort:
       name: string
     required: true
-  description: The recovery machinery invalidates the affected dynamic load before retirement.
+  description: The recovery machinery invalidates the affected dynamic load before
+    retirement.
 - name: DCache.LoadHit
   module: DCache
   layer: l1
@@ -319,7 +322,8 @@ events:
       name: address
       width: 64
     required: true
-  description: A non-functional assertion monitor fires; it does not itself update recovery state.
+  description: A non-functional assertion monitor fires; it does not itself update
+    recovery state.
 - name: LSU.DCacheReqFire
   module: LSU+DCache
   layer: lsu-dcache-interface
@@ -400,7 +404,8 @@ events:
       name: address
       width: 64
     required: true
-  description: An older search finds a same-address younger load that already succeeded and was observed.
+  description: An older search finds a same-address younger load that already succeeded
+    and was observed.
 - name: LSU.LDLDSearch
   module: LSU
   layer: lsu
@@ -426,7 +431,8 @@ events:
     sort:
       name: int
     required: true
-  description: The older load performs the next-cycle LD-LD LCAM search after retry translation.
+  description: The older load performs the next-cycle LD-LD LCAM search after retry
+    translation.
 - name: LSU.LoadExecuted
   module: LSU
   layer: lsu
@@ -501,8 +507,8 @@ events:
     sort:
       name: string
     required: true
-  description: The LDQ entry is marked order_fail, with provenance identifying the older load/store that detected the ordering
-    violation.
+  description: The LDQ entry is marked order_fail, with provenance identifying the
+    older load/store that detected the ordering violation.
 - name: LSU.LoadSucceeded
   module: LSU
   layer: lsu
@@ -781,7 +787,8 @@ events:
       name: value
       width: 64
     required: true
-  description: The bounded witness abstracts the completed refill line as one value-bearing event.
+  description: The bounded witness abstracts the completed refill line as one value-bearing
+    event.
 - name: MSHR.DrainRPQLoad
   module: BoomMSHR
   layer: mshr-rpq
@@ -813,7 +820,8 @@ events:
       name: value
       width: 64
     required: true
-  description: A retained ordinary load dequeues in s_drain_rpq_loads using line-buffer data.
+  description: A retained ordinary load dequeues in s_drain_rpq_loads using line-buffer
+    data.
 - name: DCache.LongLatencyLoadResponse
   module: DCache+MSHR
   layer: l1-lsu-interface
@@ -845,7 +853,8 @@ events:
       name: value
       width: 64
     required: true
-  description: The MSHR response reaches the LSU through the long-latency response interface.
+  description: The MSHR response reaches the LSU through the long-latency response
+    interface.
 - name: Hierarchy.ReadFromEvidence
   module: Hierarchy
   layer: abstraction-boundary
@@ -875,7 +884,8 @@ events:
     sort:
       name: string
     required: true
-  description: A hierarchy summary that preserves the concrete producer of a committed load value.
+  description: A hierarchy summary that preserves the concrete producer of a committed
+    load value.
 - name: Hierarchy.CoherenceOrderEvidence
   module: Hierarchy
   layer: abstraction-boundary
@@ -900,7 +910,8 @@ events:
     sort:
       name: string
     required: true
-  description: A hierarchy summary that preserves a concrete per-address coherence serialization edge.
+  description: A hierarchy summary that preserves a concrete per-address coherence
+    serialization edge.
 - name: Hierarchy.CoherenceObservation
   module: Hierarchy
   layer: abstraction-boundary
@@ -921,7 +932,8 @@ events:
       name: address
       width: 64
     required: true
-  description: A compressed Probe-to-LSU observation path connecting a write with the observed younger load.
+  description: A compressed Probe-to-LSU observation path connecting a write with
+    the observed younger load.
 - name: Hierarchy.LoadLoadResolution
   module: Hierarchy
   layer: abstraction-boundary
@@ -963,7 +975,8 @@ events:
       width: 6
     required: true
     identity: true
-  description: A dispatched load reserves an LDQ entry and initializes its load-side state.
+  description: A dispatched load reserves an LDQ entry and initializes its load-side
+    state.
 - name: LSU.LoadWakeup
   module: LSU
   layer: load-scheduler
@@ -989,7 +1002,8 @@ events:
     sort:
       name: int
     required: true
-  description: A sleeping/nacked load is selected by the LDQ wakeup scheduler for reexecution.
+  description: A sleeping/nacked load is selected by the LDQ wakeup scheduler for
+    reexecution.
 - name: Arch.CommitStore
   module: ROB
   layer: architectural-boundary
@@ -1426,7 +1440,8 @@ events:
       name: address
       width: 64
     required: true
-  description: A store address translation misses and the STQ temporarily holds a virtual address.
+  description: A store address translation misses and the STQ temporarily holds a
+    virtual address.
 - name: LSU.StoreRetryEnqueue
   module: LSU
   layer: lsu
@@ -1502,7 +1517,8 @@ events:
       name: bv
       width: 8
     required: true
-  description: A store retry obtains a physical address; the successful translation can drive the ST-LD search.
+  description: A store retry obtains a physical address; the successful translation
+    can drive the ST-LD search.
 - name: LSU.StoreFlushed
   module: LSU
   layer: lsu
@@ -1598,8 +1614,8 @@ events:
     sort:
       name: int
     required: false
-  description: An accepted cacheable DCache miss/permission request at the BoomMSHRFile boundary, after an MSHR entry has
-    been selected or matched.
+  description: An accepted cacheable DCache miss/permission request at the BoomMSHRFile
+    boundary, after an MSHR entry has been selected or matched.
 - name: MSHR.SecondaryMissAccept
   module: MSHR
   layer: mshr
@@ -1665,7 +1681,8 @@ events:
     sort:
       name: string
     required: true
-  description: An RPQ entry is removed by direct load response, cache-pipeline replay, or kill.
+  description: An RPQ entry is removed by direct load response, cache-pipeline replay,
+    or kill.
 - name: MSHR.RPQKill
   module: MSHR
   layer: mshr-rpq
@@ -1693,7 +1710,8 @@ events:
     sort:
       name: string
     required: true
-  description: BranchKillableQueue removes a speculative load entry because of branch recovery or exception flush.
+  description: BranchKillableQueue removes a speculative load entry because of branch
+    recovery or exception flush.
 - name: MSHR.GrantNoData
   module: MSHR
   layer: tilelink
@@ -1735,7 +1753,8 @@ events:
       name: value
       width: 64
     required: true
-  description: GrantData is captured into the per-MSHR line buffer; beat-level detail is abstracted by the address/value pair.
+  description: GrantData is captured into the per-MSHR line buffer; beat-level detail
+    is abstracted by the address/value pair.
 - name: MSHR.DirectLoadResponse
   module: MSHR
   layer: mshr-rpq
@@ -1765,7 +1784,8 @@ events:
       name: value
       width: 64
     required: true
-  description: A non-LR load is served directly from the line buffer while the MSHR is in s_drain_rpq_loads.
+  description: A non-LR load is served directly from the line buffer while the MSHR
+    is in s_drain_rpq_loads.
 - name: MSHR.Replay
   module: MSHR
   layer: mshr-dcache-interface
@@ -1799,7 +1819,8 @@ events:
       name: value
       width: 64
     required: false
-  description: A non-directly-served RPQ request re-enters the DCache pipeline from s_drain_rpq.
+  description: A non-directly-served RPQ request re-enters the DCache pipeline from
+    s_drain_rpq.
 - name: MSHR.MetaReadRequest
   module: MSHR
   layer: mshr-meta
@@ -1913,8 +1934,8 @@ events:
       name: address
       width: 64
     required: true
-  description: The acquired line is written from the MSHR line buffer into the L1 data array; beat enumeration is hidden by
-    this summary event.
+  description: The acquired line is written from the MSHR line buffer into the L1
+    data array; beat enumeration is hidden by this summary event.
 - name: MSHR.MetaWrite
   module: MSHR
   layer: mshr-l1-interface
@@ -2244,509 +2265,4 @@ events:
   - name: admission
     sort:
       name: string
-    required: true
-- name: L1.MetaDataRead
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: port
-    sort:
-      name: int
-    required: true
-  - name: source
-    sort:
-      name: string
-    required: true
-- name: L1.PipelineS1
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: port
-    sort:
-      name: int
-    required: true
-  - name: kind
-    sort:
-      name: string
-    required: true
-- name: L1.PipelineS2
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: port
-    sort:
-      name: int
-    required: true
-  - name: kind
-    sort:
-      name: string
-    required: true
-- name: L1.NackCause
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: port
-    sort:
-      name: int
-    required: true
-  - name: cause
-    sort:
-      name: string
-    required: true
-- name: L1.StoreHit
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: stq_idx
-    sort:
-      name: bv
-      width: 6
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: value
-    sort:
-      name: value
-      width: 64
-    required: true
-- name: L1.StoreDataWrite
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: value
-    sort:
-      name: value
-      width: 64
-    required: true
-- name: L1.StoreLoadBypass
-  module: L1D
-  layer: microarchitectural
-  visibility: public
-  fields:
-  - name: store_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: load_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: value
-    sort:
-      name: value
-      width: 64
-    required: true
-  - name: stage
-    sort:
-      name: int
-    required: true
-- name: L1.MSHRReplayS1
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: queue_kind
-    sort:
-      name: string
-    required: true
-  - name: queue_idx
-    sort:
-      name: int
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: value
-    sort:
-      name: value
-      width: 64
-    required: true
-- name: L1.MSHRReplayS2
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: queue_kind
-    sort:
-      name: string
-    required: true
-  - name: queue_idx
-    sort:
-      name: int
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: value
-    sort:
-      name: value
-      width: 64
-    required: true
-- name: L1.RefillDataWrite
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.RefillMetaWrite
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.IncomingBlocked
-  module: L1D
-  layer: microarchitectural
-  visibility: public
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: reason
-    sort:
-      name: string
-    required: true
-- name: L1.PipelineKilled
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: reason
-    sort:
-      name: string
-    required: true
-- name: L1.ProbeMetaRead
-  module: ProbeUnit
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.ProbeMSHRCheck
-  module: ProbeUnit
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.ProbeWritebackRequest
-  module: ProbeUnit
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.ProbeAck
-  module: ProbeUnit
-  layer: microarchitectural
-  visibility: public
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.ProbeMetaWrite
-  module: ProbeUnit
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.WritebackAccept
-  module: WritebackUnit
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: source_kind
-    sort:
-      name: string
-    required: true
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-- name: L1.WritebackFill
-  module: WritebackUnit
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-- name: L1.WritebackLSURelease
-  module: WritebackUnit
-  layer: microarchitectural
-  visibility: public
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-- name: L1.WritebackTLRelease
-  module: WritebackUnit
-  layer: microarchitectural
-  visibility: public
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-- name: L1.WritebackDone
-  module: WritebackUnit
-  layer: microarchitectural
-  visibility: public
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: mshr_id
-    sort:
-      name: int
-    required: true
-- name: L1.LRReservationSet
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-- name: L1.LRReservationClear
-  module: L1D
-  layer: microarchitectural
-  visibility: internal
-  fields:
-  - name: source_op_id
-    sort:
-      name: op_id
-    required: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: reason
-    sort:
-      name: string
-    required: true
-- name: L1.SCResult
-  module: L1D
-  layer: microarchitectural
-  visibility: public
-  fields:
-  - name: op_id
-    sort:
-      name: op_id
-    required: true
-    identity: true
-  - name: address
-    sort:
-      name: address
-      width: 64
-    required: true
-  - name: success
-    sort:
-      name: bool
     required: true

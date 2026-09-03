@@ -1,4009 +1,1030 @@
-schema_version: umcm.module.v0.14.0
+schema_version: umcm.module.v0.15.0
 name: dcache
 metadata:
-  variant: formal-l1
-  source: BOOM v4 BoomNonBlockingDCache + ProbeUnit + WritebackUnit
+  variant: shared
+  source: BOOM v4 non-blocking DCache and ProbeUnit abstraction
   parameterized: true
-  version: 0.14.0
-  abstraction: Memory-order-relevant request pipeline, nack taxonomy, MSHR interfaces, ProbeUnit and WritebackUnit; SRAM bits/replacement internals
-    abstracted.
+  template_parameters:
+  - older_load.op_id
+  - older_load.address
+  - older_load.ldq_idx
+  - older_load.mshr_id
+  - younger_load.op_id
+  - younger_load.ldq_idx
+  - visible_store.op_id
+  - visible_store.value
+  - init_write.value
+  version: 0.15.0
+  source_sha256: 82d5562b6d6220be5714716c6b935a001ed6fc54747b4fc925603cabbde9aac4
+  status: 'formalized boundary: hit/miss are L1-private; LSU sees only request/response/nack/release'
+  hierarchy: all persistent state and pipeline outcome events are private; declared ports are the public surface
 ports:
 - name: lsu_req_valid
   direction: input
   event_type: LSU.DCacheReqValid
-  required_connection: false
 - name: req_ready
   direction: output
   event_type: DCache.ReqReady
-  required_connection: false
 - name: req_fire
   direction: output
   event_type: LSU.DCacheReqFire
-  required_connection: false
-- name: store_drain
-  direction: input
-  event_type: LSU.StoreDrainIssue
-  required_connection: false
-- name: load_hit
-  direction: output
-  event_type: DCache.LoadHit
-  required_connection: false
 - name: load_response
   direction: output
   event_type: DCache.LoadResponse
-  required_connection: false
 - name: load_nack
   direction: output
   event_type: DCache.LoadNack
-  required_connection: false
-- name: load_miss
-  direction: output
-  event_type: DCache.LoadMiss
-  required_connection: false
-- name: store_ack
-  direction: output
-  event_type: DCache.StoreAck
-  required_connection: false
-- name: mshr_request
-  direction: output
-  event_type: DCache.MSHRRequest
-  required_connection: false
-- name: mshr_replay
-  direction: input
-  event_type: MSHR.Replay
-  required_connection: false
-- name: mshr_response
-  direction: input
-  event_type: MSHR.ResponseDequeue
-  required_connection: false
-- name: mshr_refill
-  direction: input
-  event_type: MSHR.RefillWrite
-  required_connection: false
-- name: mshr_meta_write
-  direction: input
-  event_type: MSHR.MetaWrite
-  required_connection: false
-- name: mshr_wb_request
-  direction: input
-  event_type: MSHR.WritebackRequest
-  required_connection: false
-- name: long_latency_response
-  direction: output
-  event_type: DCache.LongLatencyLoadResponse
-  required_connection: false
 - name: probe_receive
   direction: input
   event_type: DCache.ProbeReceive
-  required_connection: false
 - name: probe_release
   direction: output
   event_type: DCache.ProbeRelease
-  required_connection: false
-- name: ordered
+- name: long_latency_response
   direction: output
-  event_type: DCache.Ordered
-  required_connection: false
-- name: branch_kill
+  event_type: DCache.LongLatencyLoadResponse
+- name: mshr_request
+  direction: output
+  event_type: DCache.MSHRRequest
+- name: mshr_response
   direction: input
-  event_type: Core.BranchKill
-  required_connection: false
-- name: exception
-  direction: input
-  event_type: Core.Exception
-  required_connection: false
-slots: []
+  event_type: MSHR.ResponseDequeue
+slots:
+- id: dcache_req_ready_0
+  type: DCache.ReqReady
+  required: false
+  fields:
+    port: 0
+  cycle: 12
+  annotations:
+    role: interface_ready
+- id: dcache_req_fire_0
+  type: LSU.DCacheReqFire
+  required: true
+  fields:
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  cycle: 12
+  annotations:
+    role: query_goal
+- id: younger_dcache_req_ready
+  type: DCache.ReqReady
+  required: false
+  fields:
+    port: 0
+  cycle: 4
+- id: younger_dcache_req_fire
+  type: LSU.DCacheReqFire
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  cycle: 4
+- id: younger_dcache_hit
+  type: DCache.LoadHit
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    value: 0
+    port: 0
+  cycle: 6
+- id: younger_dcache_response
+  type: DCache.LoadResponse
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    value: 0
+    port: 0
+  cycle: 7
+- id: probe_receive
+  type: DCache.ProbeReceive
+  required: false
+  fields:
+    source_op_id: ${visible_store.op_id}
+    address: ${older_load.address}
+  cycle: 9
+- id: probe_release
+  type: DCache.ProbeRelease
+  required: false
+  fields:
+    source_op_id: ${visible_store.op_id}
+    address: ${older_load.address}
+  cycle: 10
+- id: younger_dcache_nack
+  type: DCache.LoadNack
+  required: false
+  fields:
+    op_id: ${younger_load.op_id}
+    ldq_idx: ${younger_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  cycle: 6
+- id: older_dcache_miss
+  type: DCache.LoadMiss
+  required: false
+  cycle: 14
+  fields:
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    port: 0
+  annotations:
+    role: selected_miss_path
+- id: older_long_latency_response
+  type: DCache.LongLatencyLoadResponse
+  required: false
+  cycle: 18
+  fields:
+    mshr_id: ${older_load.mshr_id}
+    op_id: ${older_load.op_id}
+    ldq_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    value: 1
+- id: older_mshr_request
+  type: DCache.MSHRRequest
+  required: false
+  cycle: 14
+  fields:
+    op_id: ${older_load.op_id}
+    queue_kind: ldq
+    queue_idx: ${older_load.ldq_idx}
+    address: ${older_load.address}
+    value: 0
+    mem_kind: load
+    mshr_id: ${older_load.mshr_id}
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: true
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+    sdq_id: 0
+  annotations:
+    role: mshr_file_request
 state_variables:
-- name: L1.probe.busy
-  sort: &id001
+- name: DCache.probe.pending
+  sort:
     name: bool
   initial: false
-- name: L1.probe.address
-  sort: &id002
+- name: DCache.probe.address
+  sort:
     name: address
     width: 64
   initial: EMPTY_ADDR
-- name: L1.writeback.busy
-  sort: *id001
-  initial: false
-- name: L1.lrsc.valid
-  sort: *id001
-  initial: false
-- name: L1.lrsc.address
-  sort: *id002
-  initial: EMPTY_ADDR
+- name: DCache.probe.source_op_id
+  sort:
+    name: op_id
+  initial: EMPTY
 transformations:
-- name: l1_ordered_local_quiescence
-  inputs: []
+- name: dcache_request_acceptance
+  inputs:
+  - role: valid
+    type: LSU.DCacheReqValid
+  - role: ready
+    type: DCache.ReqReady
   outputs:
-  - role: ordered
-    type: DCache.Ordered
+  - role: fire
+    type: LSU.DCacheReqFire
+  when:
+    node: nary
+    op: and
+    operands:
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: cycle
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: cycle
+        sort:
+          name: int
+    - node: binary
+      op: eq
+      left:
+        node: event_field
+        event_id: valid
+        field: port
+        sort:
+          name: int
+      right:
+        node: event_field
+        event_id: ready
+        field: port
+        sort:
+          name: int
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: valid
+      field: cycle
+      sort:
+        name: int
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: valid
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: valid
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: valid
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: fire
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: valid
+      field: port
+      sort:
+        name: int
+  exact: true
+  description: At one cycle and port, request valid plus receiver ready emits the accepted-request event. exact=true also
+    requires every observed fire to be justified by such a valid/ready transition.
+  tags:
+  - interface-transition
+  - definition
+- name: accepted_younger_request_reaches_private_hit
+  inputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  outputs:
+  - role: outcome
+    type: DCache.LoadHit
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort: &id001
+        name: op_id
+    right:
+      node: literal
+      sort: *id001
+      value: ${younger_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort: *id001
+    right:
+      node: event_field
+      event_id: outcome
+      field: op_id
+      sort: *id001
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort: &id002
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: outcome
+      field: ldq_idx
+      sort: *id002
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: address
+      sort: &id003
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: outcome
+      field: address
+      sort: *id003
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: port
+      sort: &id004
+        name: int
+    right:
+      node: event_field
+      event_id: outcome
+      field: port
+      sort: *id004
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort: *id004
+    right:
+      node: event_field
+      event_id: outcome
+      field: cycle
+      sort: *id004
+  description: L1-private s1/s2 outcome derived from an accepted cache request; no LSU internal state is read.
+  tags:
+  - l1-private
+  - s0-s1-s2
+  - hit
+- name: successful_younger_hit_produces_response
+  inputs:
+  - role: hit
+    type: DCache.LoadHit
+  outputs:
+  - role: response
+    type: DCache.LoadResponse
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: literal
+      sort:
+        name: op_id
+      value: ${younger_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: response
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: value
+      sort:
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: response
+      field: value
+      sort:
+        name: value
+        width: 64
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: hit
+      field: port
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: response
+      field: port
+      sort:
+        name: int
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: hit
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort:
+        name: int
+  exact: true
+  tags:
+  - dcache-hit
+  - response
+- name: private_nack_requires_prior_accepted_request
+  inputs:
+  - role: nack
+    type: DCache.LoadNack
+  outputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort: &id005
+        name: op_id
+    right:
+      node: literal
+      sort: *id005
+      value: ${younger_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: op_id
+      sort: *id005
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort: *id005
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: ldq_idx
+      sort: &id006
+        name: bv
+        width: 6
+    right:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort: *id006
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: address
+      sort: &id007
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort: *id007
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: nack
+      field: port
+      sort: &id008
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: port
+      sort: *id008
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort: *id008
+    right:
+      node: event_field
+      event_id: nack
+      field: cycle
+      sort: *id008
+  description: A chosen L1 nack must be justified by a prior accepted request; nacks are optional outcomes, not liveness.
+  tags:
+  - l1-private
+  - s2
+  - nack
+  - causal-support
+- name: probe_receive_captures_pending_request
+  inputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  outputs: []
   when:
     node: literal
     sort:
       name: bool
     value: true
-  output_when:
+  ensure: []
+  state_requirements:
+  - state: DCache.probe.pending
+    at: probe
+    op: eq
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: false
+  state_updates:
+  - state: DCache.probe.pending
+    at: probe
+    value:
+      node: literal
+      sort:
+        name: bool
+      value: true
+  - state: DCache.probe.address
+    at: probe
+    value:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: DCache.probe.source_op_id
+    at: probe
+    value:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+  tags:
+  - state
+  - probe-unit
+- name: probe_release_requires_received_probe
+  inputs:
+  - role: release
+    type: DCache.ProbeRelease
+  outputs:
+  - role: probe
+    type: DCache.ProbeReceive
+  when:
     node: literal
     sort:
       name: bool
     value: true
-  ensure: []
-  exact: true
-  description: Local half of io.lsu.ordered; MSHR fence_rdy is checked by the MSHR model/composition boundary.
-  tags:
-  - l1
-  - fence
-  - source:941
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: release
+      field: source_op_id
+      sort:
+        name: op_id
+    right:
+      node: event_field
+      event_id: probe
+      field: source_op_id
+      sort:
+        name: op_id
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: release
+      field: address
+      sort:
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: probe
+      field: address
+      sort:
+        name: address
+        width: 64
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: probe
+      field: cycle
+      sort:
+        name: int
+    right:
+      node: event_field
+      event_id: release
+      field: cycle
+      sort:
+        name: int
   state_requirements:
-  - state: L1.probe.busy
-    at: ordered
+  - state: DCache.probe.pending
+    at: release
     op: eq
     value:
       node: literal
       sort:
         name: bool
-      value: false
-  - state: L1.writeback.busy
-    at: ordered
+      value: true
+  - state: DCache.probe.address
+    at: release
     op: eq
+    value:
+      node: event_field
+      event_id: release
+      field: address
+      sort:
+        name: address
+        width: 64
+  - state: DCache.probe.source_op_id
+    at: release
+    op: eq
+    value:
+      node: event_field
+      event_id: release
+      field: source_op_id
+      sort:
+        name: op_id
+  state_updates:
+  - state: DCache.probe.pending
+    at: release
     value:
       node: literal
       sort:
         name: bool
       value: false
-  state_mode: guard
+  tags:
+  - state
+  - probe-unit
+  - interface
+- name: accepted_older_request_reaches_private_miss
+  inputs:
+  - role: request
+    type: LSU.DCacheReqFire
+  outputs:
+  - role: outcome
+    type: DCache.LoadMiss
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort: *id001
+    right:
+      node: literal
+      sort: *id001
+      value: ${older_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort: *id001
+    right:
+      node: event_field
+      event_id: outcome
+      field: op_id
+      sort: *id001
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: ldq_idx
+      sort: *id002
+    right:
+      node: event_field
+      event_id: outcome
+      field: ldq_idx
+      sort: *id002
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: address
+      sort: *id003
+    right:
+      node: event_field
+      event_id: outcome
+      field: address
+      sort: *id003
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: port
+      sort: *id004
+    right:
+      node: event_field
+      event_id: outcome
+      field: port
+      sort: *id004
+  - node: binary
+    op: lt
+    left:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort: *id004
+    right:
+      node: event_field
+      event_id: outcome
+      field: cycle
+      sort: *id004
+  description: L1-private s1/s2 outcome derived from an accepted cache request; no LSU internal state is read.
+  tags:
+  - l1-private
+  - s0-s1-s2
+  - miss
+- name: load_miss_enters_mshr_file
+  inputs:
+  - role: miss
+    type: DCache.LoadMiss
+  outputs:
+  - role: request
+    type: DCache.MSHRRequest
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort: &id009
+        name: op_id
+    right:
+      node: literal
+      sort: *id009
+      value: ${older_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: op_id
+      sort: *id009
+    right:
+      node: event_field
+      event_id: request
+      field: op_id
+      sort: *id009
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: address
+      sort: &id010
+        name: address
+        width: 64
+    right:
+      node: event_field
+      event_id: request
+      field: address
+      sort: *id010
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: miss
+      field: cycle
+      sort: &id011
+        name: int
+    right:
+      node: event_field
+      event_id: request
+      field: cycle
+      sort: *id011
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: request
+      field: mshr_id
+      sort: *id011
+    right:
+      node: literal
+      sort: *id011
+      value: ${older_load.mshr_id}
+  exact: true
+  tags:
+  - l1-mshr-interface
+- name: mshr_response_queue_to_lsu_long_latency
+  inputs:
+  - role: response
+    type: MSHR.ResponseDequeue
+  outputs:
+  - role: ll
+    type: DCache.LongLatencyLoadResponse
+  when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort: *id009
+    right:
+      node: literal
+      sort: *id009
+      value: ${older_load.op_id}
+  ensure:
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: mshr_id
+      sort: *id011
+    right:
+      node: event_field
+      event_id: ll
+      field: mshr_id
+      sort: *id011
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: op_id
+      sort: *id009
+    right:
+      node: event_field
+      event_id: ll
+      field: op_id
+      sort: *id009
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: ll
+      field: ldq_idx
+      sort:
+        name: bv
+        width: 6
+    right:
+      node: literal
+      sort:
+        name: bv
+        width: 6
+      value: ${older_load.ldq_idx}
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: address
+      sort: *id010
+    right:
+      node: event_field
+      event_id: ll
+      field: address
+      sort: *id010
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: value
+      sort: &id012
+        name: value
+        width: 64
+    right:
+      node: event_field
+      event_id: ll
+      field: value
+      sort: *id012
+  - node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: response
+      field: cycle
+      sort: *id011
+    right:
+      node: event_field
+      event_id: ll
+      field: cycle
+      sort: *id011
+  exact: true
+  output_when:
+    node: binary
+    op: eq
+    left:
+      node: event_field
+      event_id: ll
+      field: op_id
+      sort: *id009
+    right:
+      node: literal
+      sort: *id009
+      value: ${older_load.op_id}
+  tags:
+  - mshr-response-queue
+  - l1-lsu-interface
 constraints: []
-repeat:
-- over: l1_loads
-  as: req
-  include:
-    slots:
-    - id: l1_ready_load_${req.repeat_index}
-      type: DCache.ReqReady
-      required: false
-      fields:
-        port: 0
-    - id: l1_fire_load_${req.repeat_index}
-      type: LSU.DCacheReqFire
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        ldq_idx: ${req.ldq_idx}
-        address: ${req.address}
-        port: 0
-    - id: l1_meta_data_read_load_${req.repeat_index}
-      type: L1.MetaDataRead
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        port: 0
-        source: lsu
-    - id: l1_s1_load_${req.repeat_index}
-      type: L1.PipelineS1
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        port: 0
-        kind: load
-    - id: l1_s2_load_${req.repeat_index}
-      type: L1.PipelineS2
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        port: 0
-        kind: load
-    - id: l1_killed_load_${req.repeat_index}
-      type: L1.PipelineKilled
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        reason: control
-    transformations:
-    - name: l1_accept_load_${req.op_id}
-      inputs:
-      - role: valid
-        type: LSU.DCacheReqValid
-      - role: ready
-        type: DCache.ReqReady
-      outputs:
-      - role: fire
-        type: LSU.DCacheReqFire
-      when:
-        node: binary
-        op: and
-        left:
-          node: binary
-          op: eq
-          left:
-            node: event_field
-            event_id: valid
-            field: op_id
-            sort:
-              name: op_id
-          right:
-            node: literal
-            sort:
-              name: op_id
-            value: ${req.op_id}
-        right:
-          node: binary
-          op: eq
-          left:
-            node: event_field
-            event_id: valid
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: event_field
-            event_id: ready
-            field: cycle
-            sort:
-              name: int
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fire
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fire
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: event_field
-          event_id: valid
-          field: op_id
-          sort:
-            name: op_id
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fire
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: valid
-          field: address
-          sort:
-            name: address
-            width: 64
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fire
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: valid
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - request
-      - source:508-522
-    - name: l1_read_arrays_${req.op_id}
-      inputs:
-      - role: fire
-        type: LSU.DCacheReqFire
-      outputs:
-      - role: read
-        type: L1.MetaDataRead
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fire
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: read
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: read
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: fire
-          field: cycle
-          sort:
-            name: int
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: read
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: fire
-          field: address
-          sort:
-            name: address
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - meta-data-read
-      - source:511-522
-    - name: l1_enter_s1_${req.op_id}
-      inputs:
-      - role: fire
-        type: LSU.DCacheReqFire
-      outputs:
-      - role: s1
-        type: L1.PipelineS1
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fire
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: fire
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: fire
-          field: address
-          sort:
-            name: address
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - pipeline
-      - source:633-649
-    - name: l1_enter_s2_${req.op_id}
-      inputs:
-      - role: s1
-        type: L1.PipelineS1
-      outputs:
-      - role: s2
-        type: L1.PipelineS2
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: s1
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: s1
-          field: address
-          sort:
-            name: address
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - pipeline
-      - source:670-687
-- over: l1_load_hits
-  as: req
-  include:
-    slots:
-    - id: l1_hit_${req.repeat_index}
-      type: DCache.LoadHit
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        ldq_idx: ${req.ldq_idx}
-        address: ${req.address}
-        value: ${req.value}
-        port: 0
-    - id: l1_hit_resp_${req.repeat_index}
-      type: DCache.LoadResponse
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        ldq_idx: ${req.ldq_idx}
-        address: ${req.address}
-        value: ${req.value}
-        port: 0
-    transformations:
-    - name: l1_s2_hit_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.PipelineS2
-      outputs:
-      - role: hit
-        type: DCache.LoadHit
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: s2
-          field: address
-          sort:
-            name: address
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - hit
-      - source:681-687,772-775
-    - name: l1_hit_response_${req.op_id}
-      inputs:
-      - role: hit
-        type: DCache.LoadHit
-      outputs:
-      - role: resp
-        type: DCache.LoadResponse
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: hit
-          field: cycle
-          sort:
-            name: int
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: value
-          sort:
-            name: value
-            width: 64
-        right:
-          node: event_field
-          event_id: hit
-          field: value
-          sort:
-            name: value
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - response
-      - source:867-880
-- over: l1_load_misses
-  as: req
-  include:
-    slots:
-    - id: l1_miss_${req.repeat_index}
-      type: DCache.LoadMiss
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        ldq_idx: ${req.ldq_idx}
-        address: ${req.address}
-        port: 0
-    - id: l1_mshr_req_load_${req.repeat_index}
-      type: DCache.MSHRRequest
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        queue_kind: ldq
-        queue_idx: ${req.ldq_idx}
-        address: ${req.address}
-        value: ${req.value}
-        mem_kind: load
-        mshr_id: ${req.mshr_id}
-        tag_match: ${req.tag_match}
-        old_line_dirty: ${req.old_line_dirty}
-        needs_acquire: ${req.needs_acquire}
-        grant_has_data: ${req.grant_has_data}
-        secondary: ${req.secondary}
-        requires_second_acquire: ${req.requires_second_acquire}
-        is_hit_again: ${req.is_hit_again}
-        is_probe: false
-        sdq_id: ${req.sdq_id}
-    - id: l1_ll_resp_${req.repeat_index}
-      type: DCache.LongLatencyLoadResponse
-      required: false
-      fields:
-        mshr_id: ${req.mshr_id}
-        op_id: ${req.op_id}
-        ldq_idx: ${req.ldq_idx}
-        address: ${req.address}
-        value:
-          $expr:
-            node: symbol
-            name: l1::ll::${req.repeat_index}::value
-            sort:
-              name: value
-              width: 64
-    transformations:
-    - name: l1_s2_miss_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.PipelineS2
-      outputs:
-      - role: miss
-        type: DCache.LoadMiss
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: miss
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: miss
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - miss
-      - source:789-812
-    - name: l1_miss_dispatch_mshr_${req.op_id}
-      inputs:
-      - role: miss
-        type: DCache.LoadMiss
-      outputs:
-      - role: mreq
-        type: DCache.MSHRRequest
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: miss
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: mreq
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: mreq
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: miss
-          field: cycle
-          sort:
-            name: int
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: mreq
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: miss
-          field: address
-          sort:
-            name: address
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - mshr-interface
-      - source:789-818
-    - name: l1_ll_response_${req.op_id}
-      inputs:
-      - role: mresp
-        type: MSHR.ResponseDequeue
-      outputs:
-      - role: resp
-        type: DCache.LongLatencyLoadResponse
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: mresp
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: value
-          sort:
-            name: value
-            width: 64
-        right:
-          node: event_field
-          event_id: mresp
-          field: value
-          sort:
-            name: value
-            width: 64
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: mresp
-          field: address
-          sort:
-            name: address
-            width: 64
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: mresp
-          field: mshr_id
-          sort:
-            name: int
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: mresp
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - mshr-interface
-      - source:892
-- over: l1_load_nacks
-  as: req
-  include:
-    slots:
-    - id: l1_nack_cause_${req.repeat_index}
-      type: L1.NackCause
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        port: 0
-        cause: ${req.nack_cause}
-    - id: l1_nack_${req.repeat_index}
-      type: DCache.LoadNack
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        ldq_idx: ${req.ldq_idx}
-        address: ${req.address}
-        port: 0
-    transformations:
-    - name: l1_s2_nack_cause_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.PipelineS2
-      outputs:
-      - role: cause
-        type: L1.NackCause
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: cause
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: cause
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - nack
-      - source:759-770
-    - name: l1_send_nack_${req.op_id}
-      inputs:
-      - role: cause
-        type: L1.NackCause
-      outputs:
-      - role: nack
-        type: DCache.LoadNack
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: cause
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: nack
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: nack
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: cause
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - nack
-      - source:780,884-886
-- over: l1_stores
-  as: req
-  include:
-    slots:
-    - id: l1_s1_store_${req.repeat_index}
-      type: L1.PipelineS1
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        port: 0
-        kind: store
-    - id: l1_s2_store_${req.repeat_index}
-      type: L1.PipelineS2
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        port: 0
-        kind: store
-    transformations:
-    - name: l1_store_enter_s1_${req.op_id}
-      inputs:
-      - role: drain
-        type: LSU.StoreDrainIssue
-      outputs:
-      - role: s1
-        type: L1.PipelineS1
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: drain
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: drain
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: drain
-          field: address
-          sort:
-            name: address
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - store
-      - pipeline
-      - source:906-920,633-677
-    - name: l1_store_enter_s2_${req.op_id}
-      inputs:
-      - role: s1
-        type: L1.PipelineS1
-      outputs:
-      - role: s2
-        type: L1.PipelineS2
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: s1
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - store
-      - pipeline
-- over: l1_store_hits
-  as: req
-  include:
-    slots:
-    - id: l1_store_hit_${req.repeat_index}
-      type: L1.StoreHit
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        stq_idx: ${req.stq_idx}
-        address: ${req.address}
-        value: ${req.value}
-    - id: l1_store_ack_hit_${req.repeat_index}
-      type: DCache.StoreAck
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        stq_idx: ${req.stq_idx}
-        address: ${req.address}
-    - id: l1_store_write_${req.repeat_index}
-      type: L1.StoreDataWrite
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        value: ${req.value}
-    transformations:
-    - name: l1_store_hit_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.PipelineS2
-      outputs:
-      - role: hit
-        type: L1.StoreHit
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - store-hit
-      - source:687,777-779
-    - name: l1_store_hit_ack_${req.op_id}
-      inputs:
-      - role: hit
-        type: L1.StoreHit
-      outputs:
-      - role: ack
-        type: DCache.StoreAck
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: hit
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - store-ack
-      - source:777-779,888-889
-    - name: l1_store_hit_write_${req.op_id}
-      inputs:
-      - role: hit
-        type: L1.StoreHit
-      outputs:
-      - role: write
-        type: L1.StoreDataWrite
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: hit
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - store-write
-      - source:894-938
-- over: l1_store_misses
-  as: req
-  include:
-    slots:
-    - id: l1_mshr_req_store_${req.repeat_index}
-      type: DCache.MSHRRequest
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        queue_kind: stq
-        queue_idx: ${req.stq_idx}
-        address: ${req.address}
-        value: ${req.value}
-        mem_kind: store
-        mshr_id: ${req.mshr_id}
-        tag_match: ${req.tag_match}
-        old_line_dirty: ${req.old_line_dirty}
-        needs_acquire: ${req.needs_acquire}
-        grant_has_data: ${req.grant_has_data}
-        secondary: ${req.secondary}
-        requires_second_acquire: ${req.requires_second_acquire}
-        is_hit_again: ${req.is_hit_again}
-        is_probe: false
-        sdq_id: ${req.sdq_id}
-    - id: l1_store_ack_miss_${req.repeat_index}
-      type: DCache.StoreAck
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        stq_idx: ${req.stq_idx}
-        address: ${req.address}
-    transformations:
-    - name: l1_store_miss_mshr_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.PipelineS2
-      outputs:
-      - role: mreq
-        type: DCache.MSHRRequest
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: mreq
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: mreq
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - store-miss
-      - mshr-interface
-      - source:789-812
-    - name: l1_store_miss_ack_${req.op_id}
-      inputs:
-      - role: mreq
-        type: DCache.MSHRRequest
-      outputs:
-      - role: ack
-        type: DCache.StoreAck
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: mreq
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: mreq
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - store-ack
-      - source:777-779
-- over: mshr_requests
-  as: req
-  include:
-    slots:
-    - id: l1_replay_s1_${req.repeat_index}
-      type: L1.MSHRReplayS1
-      required: false
-      fields:
-        mshr_id: ${req.mshr_id}
-        op_id: ${req.op_id}
-        queue_kind: ${req.queue_kind}
-        queue_idx: ${req.queue_idx}
-        address: ${req.address}
-        value: ${req.value}
-    - id: l1_replay_s2_${req.repeat_index}
-      type: L1.MSHRReplayS2
-      required: false
-      fields:
-        mshr_id: ${req.mshr_id}
-        op_id: ${req.op_id}
-        queue_kind: ${req.queue_kind}
-        queue_idx: ${req.queue_idx}
-        address: ${req.address}
-        value: ${req.value}
-    - id: l1_replay_load_resp_${req.repeat_index}
-      type: DCache.LoadResponse
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        ldq_idx: ${req.queue_idx}
-        address: ${req.address}
-        value: ${req.value}
-        port: 0
-    - id: l1_replay_store_ack_${req.repeat_index}
-      type: DCache.StoreAck
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        stq_idx: ${req.queue_idx}
-        address: ${req.address}
-    - id: l1_refill_data_${req.repeat_index}
-      type: L1.RefillDataWrite
-      required: false
-      fields:
-        mshr_id: ${req.mshr_id}
-        address: ${req.address}
-    - id: l1_refill_meta_${req.repeat_index}
-      type: L1.RefillMetaWrite
-      required: false
-      fields:
-        mshr_id: ${req.mshr_id}
-        address: ${req.address}
-    transformations:
-    - name: l1_replay_s1_${req.op_id}
-      inputs:
-      - role: replay
-        type: MSHR.Replay
-      outputs:
-      - role: s1
-        type: L1.MSHRReplayS1
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: replay
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: replay
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - replay
-      - source:526-545
-    - name: l1_replay_s2_${req.op_id}
-      inputs:
-      - role: s1
-        type: L1.MSHRReplayS1
-      outputs:
-      - role: s2
-        type: L1.MSHRReplayS2
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s1
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: s1
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 2
-      exact: true
-      tags:
-      - l1
-      - replay
-      - source:633-689
-    - name: l1_accept_refill_data_${req.op_id}
-      inputs:
-      - role: refill
-        type: MSHR.RefillWrite
-      outputs:
-      - role: write
-        type: L1.RefillDataWrite
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: refill
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: refill
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - refill
-      - source:831-843
-    - name: l1_accept_refill_meta_${req.op_id}
-      inputs:
-      - role: meta
-        type: MSHR.MetaWrite
-      outputs:
-      - role: write
-        type: L1.RefillMetaWrite
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: meta
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - refill
-      - source:831-843
-- over: mshr_load_requests
-  as: req
-  include:
-    transformations:
-    - name: l1_replay_load_response_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.MSHRReplayS2
-      outputs:
-      - role: resp
-        type: DCache.LoadResponse
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: resp
-          field: value
-          sort:
-            name: value
-            width: 64
-        right:
-          node: event_field
-          event_id: s2
-          field: value
-          sort:
-            name: value
-            width: 64
-      exact: true
-      tags:
-      - l1
-      - replay
-      - load-response
-      - source:687-689,772-880
-- over: mshr_store_requests
-  as: req
-  include:
-    slots:
-    - id: l1_replay_store_write_${req.repeat_index}
-      type: L1.StoreDataWrite
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        value: ${req.value}
-    transformations:
-    - name: l1_replay_store_write_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.MSHRReplayS2
-      outputs:
-      - role: write
-        type: L1.StoreDataWrite
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: write
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: s2
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - replay
-      - store-write
-      - source:689-690,894-938
-- over: probe_sources
-  as: probe
-  include:
-    slots:
-    - id: l1_probe_receive_${probe.repeat_index}
-      type: DCache.ProbeReceive
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    - id: l1_probe_meta_${probe.repeat_index}
-      type: L1.ProbeMetaRead
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    - id: l1_probe_mshr_${probe.repeat_index}
-      type: L1.ProbeMSHRCheck
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    transformations:
-    - name: l1_probe_capture_${probe.op_id}
-      inputs:
-      - role: probe
-        type: DCache.ProbeReceive
-      outputs: []
-      when:
-        node: binary
-        op: and
-        left:
-          node: binary
-          op: eq
-          left:
-            node: event_field
-            event_id: probe
-            field: source_op_id
-            sort:
-              name: op_id
-          right:
-            node: literal
-            sort:
-              name: op_id
-            value: ${probe.op_id}
-        right:
-          node: binary
-          op: eq
-          left:
-            node: event_field
-            event_id: probe
-            field: address
-            sort:
-              name: address
-              width: 64
-          right:
-            node: literal
-            sort:
-              name: address
-              width: 64
-            value: ${probe.address}
-      ensure: []
-      state_requirements:
-      - state: L1.probe.busy
-        at: probe
-        op: eq
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: false
-      state_updates:
-      - state: L1.probe.busy
-        at: probe
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: true
-      - state: L1.probe.address
-        at: probe
-        value:
-          node: literal
-          sort:
-            name: address
-            width: 64
-          value: ${probe.address}
-      tags:
-      - l1
-      - probe
-      - source:215-218
-    - name: l1_probe_meta_read_${probe.op_id}
-      inputs:
-      - role: probe
-        type: DCache.ProbeReceive
-      outputs:
-      - role: meta
-        type: L1.ProbeMetaRead
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: probe
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: probe
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - probe
-      - source:220-226
-    - name: l1_probe_mshr_check_${probe.op_id}
-      inputs:
-      - role: meta
-        type: L1.ProbeMetaRead
-      outputs:
-      - role: check
-        type: L1.ProbeMSHRCheck
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: check
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: check
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: meta
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 2
-      exact: true
-      tags:
-      - l1
-      - probe
-      - source:227-233
-- over: probe_clean_sources
-  as: probe
-  include:
-    slots:
-    - id: l1_probe_release_${probe.repeat_index}
-      type: DCache.ProbeRelease
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    - id: l1_probe_ack_${probe.repeat_index}
-      type: L1.ProbeAck
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    - id: l1_probe_meta_write_${probe.repeat_index}
-      type: L1.ProbeMetaWrite
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    transformations:
-    - name: l1_clean_probe_release_${probe.op_id}
-      inputs:
-      - role: check
-        type: L1.ProbeMSHRCheck
-      outputs:
-      - role: release
-        type: DCache.ProbeRelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: check
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: check
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - probe
-      - lsu-release
-      - source:232-236
-    - name: l1_clean_probe_ack_${probe.op_id}
-      inputs:
-      - role: release
-        type: DCache.ProbeRelease
-      outputs:
-      - role: ack
-        type: L1.ProbeAck
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: release
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - probe
-      - source:238-240
-    - name: l1_clean_probe_meta_write_${probe.op_id}
-      inputs:
-      - role: ack
-        type: L1.ProbeAck
-      outputs:
-      - role: meta
-        type: L1.ProbeMetaWrite
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: ack
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - probe
-      - source:251-256
-    - name: l1_clean_probe_done_${probe.op_id}
-      inputs:
-      - role: meta
-        type: L1.ProbeMetaWrite
-      outputs: []
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure: []
-      state_updates:
-      - state: L1.probe.busy
-        at: meta
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: false
-      tags:
-      - l1
-      - probe
-- over: probe_miss_sources
-  as: probe
-  include:
-    slots:
-    - id: l1_probe_release_miss_${probe.repeat_index}
-      type: DCache.ProbeRelease
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    - id: l1_probe_ack_miss_${probe.repeat_index}
-      type: L1.ProbeAck
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    transformations:
-    - name: l1_miss_probe_release_${probe.op_id}
-      inputs:
-      - role: check
-        type: L1.ProbeMSHRCheck
-      outputs:
-      - role: release
-        type: DCache.ProbeRelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: check
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: check
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - probe
-      - miss
-    - name: l1_miss_probe_ack_${probe.op_id}
-      inputs:
-      - role: release
-        type: DCache.ProbeRelease
-      outputs:
-      - role: ack
-        type: L1.ProbeAck
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: release
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - probe
-      - miss
-    - name: l1_miss_probe_done_${probe.op_id}
-      inputs:
-      - role: ack
-        type: L1.ProbeAck
-      outputs: []
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: ack
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure: []
-      state_updates:
-      - state: L1.probe.busy
-        at: ack
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: false
-      tags:
-      - l1
-      - probe
-- over: probe_dirty_sources
-  as: probe
-  include:
-    slots:
-    - id: l1_probe_wb_req_${probe.repeat_index}
-      type: L1.ProbeWritebackRequest
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    - id: l1_wb_accept_probe_${probe.repeat_index}
-      type: L1.WritebackAccept
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-        source_kind: probe
-        mshr_id: -1
-    - id: l1_wb_fill_probe_${probe.repeat_index}
-      type: L1.WritebackFill
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-        mshr_id: -1
-    - id: l1_wb_lsu_release_probe_${probe.repeat_index}
-      type: L1.WritebackLSURelease
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-        mshr_id: -1
-    - id: l1_probe_release_dirty_${probe.repeat_index}
-      type: DCache.ProbeRelease
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    - id: l1_wb_tl_release_probe_${probe.repeat_index}
-      type: L1.WritebackTLRelease
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-        mshr_id: -1
-    - id: l1_wb_done_probe_${probe.repeat_index}
-      type: L1.WritebackDone
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-        mshr_id: -1
-    - id: l1_probe_meta_write_dirty_${probe.repeat_index}
-      type: L1.ProbeMetaWrite
-      required: false
-      fields:
-        source_op_id: ${probe.op_id}
-        address: ${probe.address}
-    transformations:
-    - name: l1_dirty_probe_wb_request_${probe.op_id}
-      inputs:
-      - role: check
-        type: L1.ProbeMSHRCheck
-      outputs:
-      - role: req
-        type: L1.ProbeWritebackRequest
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: check
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: req
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: req
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: check
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 1
-      exact: true
-      tags:
-      - l1
-      - probe
-      - writeback
-      - source:232-249
-    - name: l1_dirty_probe_wb_accept_${probe.op_id}
-      inputs:
-      - role: req
-        type: L1.ProbeWritebackRequest
-      outputs:
-      - role: accept
-        type: L1.WritebackAccept
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: req
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: accept
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: accept
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: req
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-    - name: l1_dirty_probe_wb_busy_${probe.op_id}
-      inputs:
-      - role: accept
-        type: L1.WritebackAccept
-      outputs: []
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: accept
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure: []
-      state_requirements:
-      - state: L1.writeback.busy
-        at: accept
-        op: eq
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: false
-      state_updates:
-      - state: L1.writeback.busy
-        at: accept
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: true
-      tags:
-      - l1
-      - writeback
-      - source:80-87
-    - name: l1_dirty_probe_wb_fill_${probe.op_id}
-      inputs:
-      - role: accept
-        type: L1.WritebackAccept
-      outputs:
-      - role: fill
-        type: L1.WritebackFill
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: accept
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fill
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: accept
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: fill
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-      - source:88-112
-    - name: l1_dirty_probe_wb_lsu_release_${probe.op_id}
-      inputs:
-      - role: fill
-        type: L1.WritebackFill
-      outputs:
-      - role: rel
-        type: L1.WritebackLSURelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fill
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: rel
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: fill
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: rel
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-      - source:116-120
-    - name: l1_dirty_probe_publish_release_${probe.op_id}
-      inputs:
-      - role: rel
-        type: L1.WritebackLSURelease
-      outputs:
-      - role: release
-        type: DCache.ProbeRelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: rel
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: rel
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-      - lsu-release
-    - name: l1_dirty_probe_wb_tl_release_${probe.op_id}
-      inputs:
-      - role: rel
-        type: L1.WritebackLSURelease
-      outputs:
-      - role: tl
-        type: L1.WritebackTLRelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: rel
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: tl
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: rel
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: tl
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-      - source:122-140
-    - name: l1_dirty_probe_wb_done_${probe.op_id}
-      inputs:
-      - role: tl
-        type: L1.WritebackTLRelease
-      outputs:
-      - role: done
-        type: L1.WritebackDone
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: tl
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: done
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: tl
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: done
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-    - name: l1_dirty_probe_meta_write_${probe.op_id}
-      inputs:
-      - role: done
-        type: L1.WritebackDone
-      outputs:
-      - role: meta
-        type: L1.ProbeMetaWrite
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: done
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: done
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: meta
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - probe
-      - source:246-256
-    - name: l1_dirty_probe_done_${probe.op_id}
-      inputs:
-      - role: meta
-        type: L1.ProbeMetaWrite
-      outputs: []
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: meta
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${probe.op_id}
-      ensure: []
-      state_updates:
-      - state: L1.writeback.busy
-        at: meta
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: false
-      - state: L1.probe.busy
-        at: meta
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: false
-      tags:
-      - l1
-      - writeback
-      - probe
-- over: dirty_mshr_requests
-  as: req
-  include:
-    slots:
-    - id: l1_wb_accept_mshr_${req.repeat_index}
-      type: L1.WritebackAccept
-      required: false
-      fields:
-        source_op_id: ${req.op_id}
-        address: ${req.address}
-        source_kind: mshr
-        mshr_id: ${req.mshr_id}
-    - id: l1_wb_fill_mshr_${req.repeat_index}
-      type: L1.WritebackFill
-      required: false
-      fields:
-        source_op_id: ${req.op_id}
-        address: ${req.address}
-        mshr_id: ${req.mshr_id}
-    - id: l1_wb_lsu_release_mshr_${req.repeat_index}
-      type: L1.WritebackLSURelease
-      required: false
-      fields:
-        source_op_id: ${req.op_id}
-        address: ${req.address}
-        mshr_id: ${req.mshr_id}
-    - id: l1_wb_probe_release_mshr_${req.repeat_index}
-      type: DCache.ProbeRelease
-      required: false
-      fields:
-        source_op_id: ${req.op_id}
-        address: ${req.address}
-    - id: l1_wb_tl_release_mshr_${req.repeat_index}
-      type: L1.WritebackTLRelease
-      required: false
-      fields:
-        source_op_id: ${req.op_id}
-        address: ${req.address}
-        mshr_id: ${req.mshr_id}
-    - id: l1_wb_done_mshr_${req.repeat_index}
-      type: L1.WritebackDone
-      required: false
-      fields:
-        source_op_id: ${req.op_id}
-        address: ${req.address}
-        mshr_id: ${req.mshr_id}
-    transformations:
-    - name: l1_mshr_wb_accept_${req.op_id}
-      inputs:
-      - role: wb
-        type: MSHR.WritebackRequest
-      outputs:
-      - role: accept
-        type: L1.WritebackAccept
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: wb
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: accept
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: accept
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: wb
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-      - mshr-interface
-      - source:847-855
-    - name: l1_mshr_wb_fill_${req.op_id}
-      inputs:
-      - role: accept
-        type: L1.WritebackAccept
-      outputs:
-      - role: fill
-        type: L1.WritebackFill
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: accept
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fill
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: accept
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: fill
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-    - name: l1_mshr_wb_lsu_release_${req.op_id}
-      inputs:
-      - role: fill
-        type: L1.WritebackFill
-      outputs:
-      - role: rel
-        type: L1.WritebackLSURelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: fill
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: rel
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: fill
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: rel
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-    - name: l1_mshr_wb_publish_release_${req.op_id}
-      inputs:
-      - role: rel
-        type: L1.WritebackLSURelease
-      outputs:
-      - role: release
-        type: DCache.ProbeRelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: rel
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: source_op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: release
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: rel
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-    - name: l1_mshr_wb_tl_release_${req.op_id}
-      inputs:
-      - role: rel
-        type: L1.WritebackLSURelease
-      outputs:
-      - role: tl
-        type: L1.WritebackTLRelease
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: rel
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: tl
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: rel
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: tl
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-    - name: l1_mshr_wb_done_${req.op_id}
-      inputs:
-      - role: tl
-        type: L1.WritebackTLRelease
-      outputs:
-      - role: done
-        type: L1.WritebackDone
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: tl
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: done
-          field: mshr_id
-          sort:
-            name: int
-        right:
-          node: literal
-          sort:
-            name: int
-          value: ${req.mshr_id}
-      ensure:
-      - node: binary
-        op: lt
-        left:
-          node: event_field
-          event_id: tl
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: done
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - writeback
-- over: lr_loads
-  as: req
-  include:
-    slots:
-    - id: l1_lr_set_${req.repeat_index}
-      type: L1.LRReservationSet
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-    transformations:
-    - name: l1_lr_event_${req.op_id}
-      inputs:
-      - role: hit
-        type: DCache.LoadHit
-      outputs:
-      - role: set
-        type: L1.LRReservationSet
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: hit
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: set
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: set
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: hit
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - lrsc
-      - source:694-713
-    - name: l1_lr_sets_state_${req.op_id}
-      inputs:
-      - role: set
-        type: L1.LRReservationSet
-      outputs: []
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: set
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure: []
-      state_updates:
-      - state: L1.lrsc.valid
-        at: set
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: true
-      - state: L1.lrsc.address
-        at: set
-        value:
-          node: literal
-          sort:
-            name: address
-            width: 64
-          value: ${req.address}
-      tags:
-      - l1
-      - lrsc
-- over: sc_stores
-  as: req
-  include:
-    slots:
-    - id: l1_sc_result_${req.repeat_index}
-      type: L1.SCResult
-      required: false
-      fields:
-        op_id: ${req.op_id}
-        address: ${req.address}
-        success: true
-    transformations:
-    - name: l1_sc_success_${req.op_id}
-      inputs:
-      - role: s2
-        type: L1.PipelineS2
-      outputs:
-      - role: sc
-        type: L1.SCResult
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: s2
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      output_when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: sc
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: sc
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - lrsc
-      - source:698-723
-      state_requirements:
-      - state: L1.lrsc.valid
-        at: sc
-        op: eq
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: true
-      - state: L1.lrsc.address
-        at: sc
-        op: eq
-        value:
-          node: literal
-          sort:
-            name: address
-            width: 64
-          value: ${req.address}
-      state_mode: guard
-    - name: l1_sc_clears_reservation_${req.op_id}
-      inputs:
-      - role: sc
-        type: L1.SCResult
-      outputs: []
-      when:
-        node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: sc
-          field: op_id
-          sort:
-            name: op_id
-        right:
-          node: literal
-          sort:
-            name: op_id
-          value: ${req.op_id}
-      ensure: []
-      state_updates:
-      - state: L1.lrsc.valid
-        at: sc
-        value:
-          node: literal
-          sort:
-            name: bool
-          value: false
-      tags:
-      - l1
-      - lrsc
-repeat_product:
-- axes:
-  - over: l1_store_hits
-    as: store
-  - over: l1_load_hits
-    as: load
-  include:
-    slots:
-    - id: l1_bypass_${product.repeat_index}
-      type: L1.StoreLoadBypass
-      required: false
-      fields:
-        store_op_id: ${store.op_id}
-        load_op_id: ${load.op_id}
-        address: ${load.address}
-        value: ${store.value}
-        stage: 3
-    transformations:
-    - name: l1_store_load_bypass_${product.repeat_index}
-      inputs:
-      - role: write
-        type: L1.StoreDataWrite
-      - role: s2
-        type: L1.PipelineS2
-      outputs:
-      - role: bypass
-        type: L1.StoreLoadBypass
-      when:
-        node: binary
-        op: and
-        left:
-          node: binary
-          op: and
-          left:
-            node: binary
-            op: eq
-            left:
-              node: event_field
-              event_id: write
-              field: op_id
-              sort:
-                name: op_id
-            right:
-              node: literal
-              sort:
-                name: op_id
-              value: ${store.op_id}
-          right:
-            node: binary
-            op: eq
-            left:
-              node: event_field
-              event_id: s2
-              field: op_id
-              sort:
-                name: op_id
-            right:
-              node: literal
-              sort:
-                name: op_id
-              value: ${load.op_id}
-        right:
-          node: binary
-          op: le
-          left:
-            node: event_field
-            event_id: write
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: event_field
-            event_id: s2
-            field: cycle
-            sort:
-              name: int
-      output_when:
-        node: binary
-        op: and
-        left:
-          node: binary
-          op: eq
-          left:
-            node: event_field
-            event_id: bypass
-            field: store_op_id
-            sort:
-              name: op_id
-          right:
-            node: literal
-            sort:
-              name: op_id
-            value: ${store.op_id}
-        right:
-          node: binary
-          op: eq
-          left:
-            node: event_field
-            event_id: bypass
-            field: load_op_id
-            sort:
-              name: op_id
-          right:
-            node: literal
-            sort:
-              name: op_id
-            value: ${load.op_id}
-      ensure:
-      - node: binary
-        op: eq
-        left:
-          node: event_field
-          event_id: bypass
-          field: address
-          sort:
-            name: address
-            width: 64
-        right:
-          node: event_field
-          event_id: s2
-          field: address
-          sort:
-            name: address
-            width: 64
-      - node: binary
-        op: le
-        left:
-          node: event_field
-          event_id: write
-          field: cycle
-          sort:
-            name: int
-        right:
-          node: event_field
-          event_id: s2
-          field: cycle
-          sort:
-            name: int
-      exact: true
-      tags:
-      - l1
-      - bypass
-      - source:907-922
+internal_events:
+- DCache.LoadHit
+- DCache.LoadMiss

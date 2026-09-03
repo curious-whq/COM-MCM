@@ -1,0 +1,112 @@
+schema_version: umcm.execution_graph.v0.1
+candidate_id: 0
+metadata:
+  graph_model: rvwmo-load-load-fragment-v0.12
+  rf_assignment:
+    LoadAlpha: StoreGamma
+    LoadBeta: InitData
+  co_orders:
+    data0:
+    - InitData
+    - StoreGamma
+  memory_model_check:
+    status: forbidden
+    candidate_count: 1
+    representative_candidate: 0
+    axioms:
+    - axiom: rvwmo_load_load_order_fragment
+      status: violated
+      kind: acyclic
+      relations:
+      - ppo
+      - rfe
+      - fr
+      - co
+      cycle:
+      - from: LoadBeta
+        relation: fr
+        to: StoreGamma
+      - from: StoreGamma
+        relation: rfe
+        to: LoadAlpha
+      - from: LoadAlpha
+        relation: ppo
+        to: LoadBeta
+operations:
+- id: InitData
+  kind: init_write
+  address: data0
+  value: 0
+  source_event_id: init_data
+- id: LoadAlpha
+  kind: read
+  address: data0
+  value: 1
+  hart: 0
+  program_index: 0
+  source_event_id: load_older
+  commit_event_id: commit_older
+- id: LoadBeta
+  kind: read
+  address: data0
+  value: 0
+  hart: 0
+  program_index: 1
+  source_event_id: load_younger
+  commit_event_id: commit_younger
+- id: StoreGamma
+  kind: write
+  address: data0
+  value: 1
+  hart: 1
+  program_index: 0
+  source_event_id: store_visible
+relations:
+- name: ar
+  edges:
+  - from: InitData
+    to: LoadBeta
+  - from: InitData
+    to: StoreGamma
+  - from: LoadAlpha
+    to: LoadBeta
+  - from: LoadBeta
+    to: StoreGamma
+  - from: StoreGamma
+    to: LoadAlpha
+- name: co
+  edges:
+  - from: InitData
+    to: StoreGamma
+- name: fr
+  edges:
+  - from: LoadBeta
+    to: StoreGamma
+- name: hb
+  edges:
+  - from: InitData
+    to: LoadBeta
+  - from: LoadAlpha
+    to: LoadBeta
+  - from: StoreGamma
+    to: LoadAlpha
+- name: po
+  edges:
+  - from: LoadAlpha
+    to: LoadBeta
+- name: ppo
+  edges:
+  - from: LoadAlpha
+    to: LoadBeta
+- name: rf
+  edges:
+  - from: InitData
+    to: LoadBeta
+  - from: StoreGamma
+    to: LoadAlpha
+- name: rfe
+  edges:
+  - from: InitData
+    to: LoadBeta
+  - from: StoreGamma
+    to: LoadAlpha

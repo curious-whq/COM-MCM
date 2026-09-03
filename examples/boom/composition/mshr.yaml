@@ -1,8 +1,8 @@
-schema_version: umcm.composition.v0.13.0
+schema_version: umcm.composition.v0.15.0
 name: boom-mshr-standalone
 horizon: 32
 metadata:
-  version: 0.13.0
+  version: 0.15.0
   purpose: Standalone bounded BOOM MSHR/RPQ/SDQ/IOMSHR regression composition.
 modules:
 - name: mshr

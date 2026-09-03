@@ -17,12 +17,15 @@ from umcm.graph.model import GraphModelSpec
 from umcm.hierarchy import (
     AbstractionSpec,
     abstract_trace,
+    build_interface_contracts,
     check_memory_model_preservation,
     check_refinement,
+    project_interface_trace,
 )
 from umcm.ir.completion import CompletionSpec
 from umcm.ir.event import EventCatalog
 from umcm.ir.trace import Trace
+from umcm.serialization import dump_data
 from umcm.solver.completion import CompletionStatus, complete_trace
 
 
@@ -151,6 +154,27 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="hierarchy abstraction YAML/JSON",
     )
+
+    interfaces = subparsers.add_parser(
+        "interfaces",
+        help="inspect module public ports and private implementation inventory",
+    )
+    interfaces.add_argument("--schema", required=True, help="event catalog YAML/JSON")
+    interfaces.add_argument("--composition", required=True, help="composition manifest")
+    interfaces.add_argument(
+        "--trace",
+        help="trace used to instantiate parameterized modules",
+    )
+    interfaces.add_argument("--output", help="write interface manifest YAML/JSON")
+
+    project_interface = subparsers.add_parser(
+        "project-interface",
+        help="hide module-private events without synthesizing summary events",
+    )
+    project_interface.add_argument("--schema", required=True, help="event catalog YAML/JSON")
+    project_interface.add_argument("--composition", required=True, help="composition manifest")
+    project_interface.add_argument("--trace", required=True, help="completed concrete trace")
+    project_interface.add_argument("--output", required=True, help="write interface-only trace")
     return parser
 
 
@@ -255,6 +279,54 @@ def main(argv: list[str] | None = None) -> int:
                     f"{connection.target.qualified_name} "
                     f"[{connection.mode.value}]"
                 )
+            print(f"WROTE {output}")
+            return 0
+
+        if args.command == "interfaces":
+            catalog = EventCatalog.load(args.schema)
+            manifest = CompositionSpec.load(args.composition)
+            instantiation_trace = Trace.load(args.trace) if args.trace else None
+            composed = compose_modules(catalog, manifest, instantiation_trace)
+            contracts = build_interface_contracts(composed)
+            payload = {
+                "schema_version": "umcm.interfaces.v0.15.0",
+                "composition": manifest.name,
+                "policy": "ports-only-public-surface",
+                "modules": [item.to_dict() for item in contracts],
+            }
+            for contract in contracts:
+                print(
+                    f"MODULE {contract.module}: {len(contract.ports)} public port(s), "
+                    f"{len(contract.private_state_names)} private state(s), "
+                    f"{len(contract.private_event_types)} private event type(s), "
+                    f"{len(contract.private_transformation_names)} private transformation(s)"
+                )
+                for port in contract.ports:
+                    print(
+                        f"  {port.direction:6s} {port.name}: {port.event_type}"
+                    )
+            if args.output:
+                output = Path(args.output)
+                dump_data(payload, output)
+                print(f"WROTE {output}")
+            return 0
+
+        if args.command == "project-interface":
+            catalog = EventCatalog.load(args.schema)
+            trace = Trace.load(args.trace)
+            manifest = CompositionSpec.load(args.composition)
+            composed = compose_modules(catalog, manifest, trace)
+            result = project_interface_trace(trace, composed)
+            output = Path(args.output)
+            result.trace.dump(output)
+            cert = result.certificate
+            print(
+                f"INTERFACE PROJECTION {manifest.name}: "
+                f"{cert.source_event_count} -> {cert.projected_event_count} event(s), "
+                f"{len(cert.hidden_event_ids)} private event(s) hidden"
+            )
+            for module, ids in cert.hidden_by_module.items():
+                print(f"  {module}: {len(ids)} hidden")
             print(f"WROTE {output}")
             return 0
 

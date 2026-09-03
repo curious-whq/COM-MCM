@@ -1,4 +1,4 @@
-schema_version: umcm.module.v0.14.0
+schema_version: umcm.module.v0.15.0
 name: coherence
 metadata:
   variant: shared
@@ -14,7 +14,8 @@ metadata:
   - visible_store.op_id
   - visible_store.value
   - init_write.value
-  version: 0.14.0
+  version: 0.15.0
+  hierarchy: abstract coherence environment; Store is input, ProbeReceive is a public output, GrantData is observed input.
 ports:
 - name: visible_store
   direction: input
@@ -28,13 +29,13 @@ ports:
 slots: []
 state_variables: []
 transformations:
-- name: probe_receive_requires_visible_external_store
+- name: visible_external_store_can_produce_probe_receive
   inputs:
-  - role: probe
-    type: DCache.ProbeReceive
-  outputs:
   - role: store
     type: Arch.Store
+  outputs:
+  - role: probe
+    type: DCache.ProbeReceive
   when:
     node: literal
     sort:
@@ -88,6 +89,7 @@ transformations:
   tags:
   - causal-support
   - coherence
+  description: Abstract coherence environment may deliver a probe caused by a visible remote store.
 - name: grant_data_is_sourced_from_visible_store
   inputs:
   - role: grant

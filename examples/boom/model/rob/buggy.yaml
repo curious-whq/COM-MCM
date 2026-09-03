@@ -1,4 +1,4 @@
-schema_version: umcm.module.v0.12.0
+schema_version: umcm.module.v0.15.0
 name: rob
 metadata:
   variant: buggy
@@ -14,7 +14,9 @@ metadata:
   - visible_store.op_id
   - visible_store.value
   - init_write.value
-  version: 0.12.0
+  version: 0.15.0
+  hierarchy: all persistent state and transformations are private; declared ports
+    are the public surface
 ports:
 - name: memory_order_exception
   direction: input

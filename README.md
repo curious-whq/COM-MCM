@@ -1,55 +1,82 @@
-# µMCM Foundation v0.14.0
+# µMCM Foundation v0.15.0
 
-v0.14 adds a reusable BOOM L1/DCache/ProbeUnit/WritebackUnit model on top of the formal LSQ (v0.12) and MSHR/RPQ (v0.13) models, all grounded in the supplied Chisel.
-
-The project remains independent of FM-Agent.  Its job is to provide the deterministic infrastructure that later model-generation agents must target:
+v0.15 formalizes module hierarchy and private/public abstraction.  The concrete child µMCM remains stateful and executable; hierarchy controls what is visible across module boundaries.
 
 ```text
 partial microarchitectural Trace
         ↓
 Event + State + Transformation semantics
         ↓
-bounded feasibility / hidden-event completion
+bounded concrete feasibility
         ↓
-module composition + hierarchy abstraction
+ModuleSpec
+  private state / private events / private transformations
+  public ports only
         ↓
-architectural Execution Graph
+strict composition
         ↓
-rf / co / fr / po / ppo + axioms
+interface-only projection (hide private events)
         ↓
-ALLOWED / FORBIDDEN
+architectural Execution Graph + axioms
 ```
+
+The project remains independent of FM-Agent. Later model-generation agents should target these deterministic IRs and interfaces rather than inventing unrestricted axioms.
+
+## v0.15 hierarchy rule
+
+- Every module state variable is private.
+- `internal_events` are private implementation vocabulary.
+- `ports` are the only public cross-module event surface.
+- A strict composition cannot constrain a child-private slot.
+- `umcm project-interface` hides private events but does not invent bug-specific summary events.
+
+The canonical BOOM interface inventory is `examples/boom/hierarchy/interfaces.yaml`. See `HIERARCHY_V0.15.md` and `BOOM_MODEL_COVERAGE.md`.
 
 ## BOOM layout
 
 ```text
 examples/boom/
 ├── events.yaml
-├── model/
-│   ├── lsu/
-│   │   ├── module.yaml
-│   │   └── fixed_reference.yaml
-│   ├── l1/module.yaml
-│   ├── mshr/module.yaml
-│   ├── coherence/module.yaml
-│   └── rob/{buggy,fixed_reference}.yaml
+├── model/{lsu,l1,mshr,coherence,rob}/
 ├── composition/
-│   ├── lsq.yaml
-│   ├── lsq_fixed_reference.yaml
-│   ├── memory_buggy.yaml
-│   └── memory_fixed_reference.yaml
-├── axioms/rvwmo_load_load_fragment.yaml
-├── abstraction/hierarchy.yaml
+├── hierarchy/interfaces.yaml
+├── abstraction/hierarchy.yaml   # legacy witness-summary regression
+├── axioms/
 └── traces/
 ```
 
-Historical stage-by-stage examples from v0.11 and earlier live under:
+Historical/generated traces belong under `tests/regressions/boom/`; `examples/boom/` is the current model, not a stage archive.
 
-```text
-tests/regressions/boom/legacy_v0_11/
+## Quick hierarchy check
+
+```bash
+PYTHONPATH=src python -m umcm interfaces \
+  --schema examples/boom/events.yaml \
+  --composition examples/boom/composition/memory_buggy.yaml \
+  --trace examples/boom/traces/load_load_bug.yaml
 ```
 
-No new `stageXX` files should be added to `examples/boom/`.
+Complete the known witness and project it to module interfaces:
+
+```bash
+PYTHONPATH=src python -m umcm complete \
+  --schema examples/boom/events.yaml \
+  --trace examples/boom/traces/load_load_bug.yaml \
+  --composition examples/boom/composition/memory_buggy.yaml \
+  --backend z3 --output completed_buggy.yaml
+
+PYTHONPATH=src python -m umcm project-interface \
+  --schema examples/boom/events.yaml \
+  --composition examples/boom/composition/memory_buggy.yaml \
+  --trace completed_buggy.yaml \
+  --output interface_buggy.yaml
+```
+
+For the current regression, 45 concrete events project to 19 interface events while preserving the forbidden `fr → rfe → ppo` architecture cycle. The fixed reference projects from 46 to 20 events and remains allowed.
+
+## Validation
+
+A one-shot `pytest` can exceed the execution wrapper timeout, so CI/local validation may run the suite in groups. v0.15 has 126 passing tests across the base IR, completion/state, LSQ, MSHR, composition/parameterization, and hierarchy groups.
 
 ## v0.12 LSQ model
 
@@ -78,22 +105,17 @@ Standalone MSHR regression inputs live under `examples/boom/traces/mshr/`; gener
 
 The full BOOM Load–Load bug still produces the forbidden `fr → rfe → ppo` cycle using this formal MSHR model.
 
-
-## v0.14 L1 / DCache model
-
-The current `model/l1/module.yaml` models the memory-order-relevant L1 pipeline and boundaries: request acceptance, s0/s1/s2, hit/miss/nack outcomes, MSHR replay/refill integration, ProbeUnit clean/miss/dirty paths, WritebackUnit release flow, store writes/bypass and minimal LR/SC reservation state.
-
-The L1 model is **Trace-demand finite-instantiated**: the bounded Trace selects the request/outcome classes that can occur, so the solver does not eagerly instantiate every hit/miss/nack/probe branch for every operation. The transformations themselves remain reusable and parameterized.
-
-Standalone inputs are under `examples/boom/traces/l1/`; generated witnesses are archived under `tests/regressions/boom/v0_14/l1/`. See `L1_V0.14_SOURCE_MAP.md` and `ITERATION_14_REPORT.md`.
-
 ## Quick validation
 
 ```bash
 PYTHONPATH=src pytest -q
 ```
 
-Expected total across the release regression groups: **136 passed**.
+Expected when the suite is run in groups:
+
+```text
+126 passed
+```
 
 ### LSQ-only examples
 
@@ -143,4 +165,4 @@ LDLDConflict → LoadOrderFail → MemoryOrderingException → SquashLoad
 
 and rejects the same bad younger-load retirement.
 
-See `ITERATION_14_REPORT.md`, `L1_V0.14_SOURCE_MAP.md`, `MSHR_V0.13_SOURCE_MAP.md`, and `LSQ_V0.12_SOURCE_MAP.md` for implementation details and source grounding.
+See `ITERATION_15_REPORT.md`, `HIERARCHY_V0.15.md`, and `BOOM_MODEL_COVERAGE.md` for the current hierarchy and coverage boundary.

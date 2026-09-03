@@ -1,8 +1,8 @@
-schema_version: umcm.module.v0.12.0
+schema_version: umcm.module.v0.15.0
 name: lsu
 metadata:
   component: BOOM v4 LSU/LSQ
-  version: 0.12.0
+  version: 0.15.0
   parameterized: true
   source: user-supplied BOOM v4 LSU Chisel, 2183 lines
   source_sha256: 81d738e8c8967f0fad72a2406a623a384fac229e10c20ffa37a6907aece9b7b5
@@ -16,6 +16,7 @@ metadata:
     semantic surface
   - store-to-load and load-ordering effects are modeled; optional load-to-store register-data forwarding is abstracted because
     it does not alter the current memory-order relation set
+  hierarchy: LDQ/STQ/retry/search state and events are private; only Core and DCache boundary events are ports.
 ports:
 - name: arch_load
   direction: input
@@ -45,14 +46,6 @@ ports:
   direction: input
   event_type: DCache.ReqReady
   required_connection: false
-- name: dcache_load_hit
-  direction: input
-  event_type: DCache.LoadHit
-  required_connection: false
-- name: dcache_load_miss
-  direction: input
-  event_type: DCache.LoadMiss
-  required_connection: false
 - name: dcache_probe_release
   direction: input
   event_type: DCache.ProbeRelease
@@ -72,46 +65,6 @@ ports:
 - name: dcache_load_nack
   direction: input
   event_type: DCache.LoadNack
-  required_connection: false
-- name: tlb_miss
-  direction: output
-  event_type: LSU.TLBMiss
-  required_connection: false
-- name: retry_enqueue
-  direction: output
-  event_type: LSU.RetryEnqueue
-  required_connection: false
-- name: retry_issue
-  direction: output
-  event_type: LSU.RetryIssue
-  required_connection: false
-- name: tlb_hit
-  direction: output
-  event_type: LSU.TLBHit
-  required_connection: false
-- name: load_executed
-  direction: output
-  event_type: LSU.LoadExecuted
-  required_connection: false
-- name: load_succeeded
-  direction: output
-  event_type: LSU.LoadSucceeded
-  required_connection: false
-- name: load_observed
-  direction: output
-  event_type: LSU.LoadObserved
-  required_connection: false
-- name: load_order_fail
-  direction: output
-  event_type: LSU.LoadOrderFail
-  required_connection: false
-- name: load_wakeup
-  direction: output
-  event_type: LSU.LoadWakeup
-  required_connection: false
-- name: ldq_allocate
-  direction: output
-  event_type: LSU.LDQAllocate
   required_connection: false
 - name: arch_store
   direction: input
@@ -149,69 +102,13 @@ ports:
   direction: input
   event_type: DCache.LongLatencyLoadResponse
   required_connection: false
-- name: stq_allocate
-  direction: output
-  event_type: LSU.STQAllocate
-  required_connection: false
-- name: store_address_ready
-  direction: output
-  event_type: LSU.StoreAddressReady
-  required_connection: false
-- name: store_data_ready
-  direction: output
-  event_type: LSU.StoreDataReady
-  required_connection: false
-- name: store_committed
-  direction: output
-  event_type: LSU.StoreCommitted
-  required_connection: false
 - name: store_drain
   direction: output
   event_type: LSU.StoreDrainIssue
   required_connection: false
-- name: store_cleared
-  direction: output
-  event_type: LSU.StoreCleared
-  required_connection: false
-- name: store_load_forward
-  direction: output
-  event_type: LSU.StoreLoadForward
-  required_connection: false
-- name: stld_violation
-  direction: output
-  event_type: LSU.STLDViolation
-  required_connection: false
-- name: ldld_conflict
-  direction: output
-  event_type: LSU.LDLDConflict
-  required_connection: false
-- name: assert_violation
-  direction: output
-  event_type: LSU.AssertViolation
-  required_connection: false
 - name: fence_release
   direction: output
   event_type: LSU.FenceRelease
-  required_connection: false
-- name: store_tlb_miss
-  direction: output
-  event_type: LSU.StoreTLBMiss
-  required_connection: false
-- name: store_retry_enqueue
-  direction: output
-  event_type: LSU.StoreRetryEnqueue
-  required_connection: false
-- name: store_retry_issue
-  direction: output
-  event_type: LSU.StoreRetryIssue
-  required_connection: false
-- name: store_tlb_hit
-  direction: output
-  event_type: LSU.StoreTLBHit
-  required_connection: false
-- name: store_flushed
-  direction: output
-  event_type: LSU.StoreFlushed
   required_connection: false
 slots: []
 state_variables: []
@@ -1226,27 +1123,19 @@ repeat:
             name: bv
             width: 6
       - node: binary
-        op: eq
+        op: lt
         left:
+          node: event_field
+          event_id: fail
+          field: cycle
+          sort:
+            name: int
+        right:
           node: event_field
           event_id: exception
           field: cycle
           sort:
             name: int
-        right:
-          node: binary
-          op: add
-          left:
-            node: event_field
-            event_id: fail
-            field: cycle
-            sort:
-              name: int
-          right:
-            node: literal
-            sort:
-              name: int
-            value: 2
       exact: true
       tags:
       - state
@@ -5109,3 +4998,31 @@ repeat_product:
             name: bool
           value: false
     constraints: []
+internal_events:
+- LSU.AssertViolation
+- LSU.LDLDConflict
+- LSU.LDLDSearch
+- LSU.LDQAllocate
+- LSU.LoadExecuted
+- LSU.LoadNackSeen
+- LSU.LoadObserved
+- LSU.LoadOrderFail
+- LSU.LoadSleep
+- LSU.LoadSucceeded
+- LSU.LoadWakeup
+- LSU.RetryEnqueue
+- LSU.RetryIssue
+- LSU.STLDViolation
+- LSU.STQAllocate
+- LSU.StoreAddressReady
+- LSU.StoreCleared
+- LSU.StoreCommitted
+- LSU.StoreDataReady
+- LSU.StoreFlushed
+- LSU.StoreLoadForward
+- LSU.StoreRetryEnqueue
+- LSU.StoreRetryIssue
+- LSU.StoreTLBHit
+- LSU.StoreTLBMiss
+- LSU.TLBHit
+- LSU.TLBMiss

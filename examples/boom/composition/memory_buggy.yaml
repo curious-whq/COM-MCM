@@ -1,9 +1,11 @@
-schema_version: umcm.composition.v0.14.0
+schema_version: umcm.composition.v0.15.0
 name: boom-memory-buggy
-horizon: 40
+horizon: 24
 metadata:
-  version: 0.14.0
-  purpose: formal LSQ + formal MSHR/RPQ + formal L1/DCache composition
+  version: 0.15.0
+  purpose: generic LSQ + current L1/MSHR witness support
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
 modules:
 - name: lsu
   path: ../model/lsu/module.yaml
@@ -88,14 +90,6 @@ connections:
     module: lsu
     port: dcache_req_fire
   mode: shared_event
-- name: dcache_hit_to_lsu
-  source:
-    module: dcache
-    port: load_hit
-  target:
-    module: lsu
-    port: dcache_load_hit
-  mode: shared_event
 - name: dcache_hit_response_to_lsu
   source:
     module: dcache
@@ -128,14 +122,6 @@ connections:
     module: lsu
     port: dcache_long_latency_response
   mode: shared_event
-- name: dcache_miss_to_lsu
-  source:
-    module: dcache
-    port: load_miss
-  target:
-    module: lsu
-    port: dcache_load_miss
-  mode: shared_event
 - name: core_store_to_coherence
   source:
     module: rob
@@ -143,6 +129,14 @@ connections:
   target:
     module: coherence
     port: visible_store
+  mode: shared_event
+- name: coherence_probe_to_dcache
+  source:
+    module: coherence
+    port: probe_receive
+  target:
+    module: dcache
+    port: probe_receive
   mode: shared_event
 - name: mshr_grant_to_coherence
   source:
@@ -184,74 +178,18 @@ connections:
     module: mshr
     port: exception
   mode: shared_event
-- name: lsu_store_drain_to_dcache
-  source:
-    module: lsu
-    port: store_drain
-  target:
-    module: dcache
-    port: store_drain
-  mode: shared_event
-- name: dcache_store_ack_to_lsu
-  source:
-    module: dcache
-    port: store_ack
-  target:
-    module: lsu
-    port: dcache_store_ack
-  mode: shared_event
-- name: coherence_probe_to_dcache
-  source:
-    module: coherence
-    port: probe_receive
-  target:
-    module: dcache
-    port: probe_receive
-  mode: shared_event
-- name: mshr_replay_to_dcache
-  source:
-    module: mshr
-    port: replay
-  target:
-    module: dcache
-    port: mshr_replay
-  mode: shared_event
-- name: mshr_refill_to_dcache
-  source:
-    module: mshr
-    port: refill
-  target:
-    module: dcache
-    port: mshr_refill
-  mode: shared_event
-- name: mshr_meta_write_to_dcache
-  source:
-    module: mshr
-    port: meta_write
-  target:
-    module: dcache
-    port: mshr_meta_write
-  mode: shared_event
-- name: mshr_wb_request_to_dcache
-  source:
-    module: mshr
-    port: wb_req
-  target:
-    module: dcache
-    port: mshr_wb_request
-  mode: shared_event
 constraints:
 - node: binary
   op: lt
   left:
     node: event_field
-    event_id: ldld_conflict_0_1
+    event_id: store_visible
     field: cycle
     sort:
       name: int
   right:
     node: event_field
-    event_id: commit_older
+    event_id: probe_receive
     field: cycle
     sort:
       name: int
@@ -378,9 +316,7 @@ roles:
     cycle: cycle
     stq_idx: annotations.microarch.stq_idx
 - name: mshr_requests
-  event_type:
-  - Arch.Load
-  - Arch.Store
+  event_type: Arch.Load
   where:
     annotations.microarch.uses_mshr: true
   cardinality: many
@@ -404,9 +340,7 @@ roles:
     sdq_id: annotations.microarch.sdq_id
   description: All bounded cacheable operations explicitly routed through an MSHR in this trace.
 - name: mshr_instances
-  event_type:
-  - Arch.Load
-  - Arch.Store
+  event_type: Arch.Load
   where:
     annotations.microarch.uses_mshr: true
   cardinality: many
@@ -429,191 +363,3 @@ roles:
     value: fields.value
     mem_kind: fields.mem_kind
     io_id: fields.io_id
-- name: l1_loads
-  event_type: Arch.Load
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    ldq_idx: annotations.microarch.ldq_idx
-- name: l1_load_hits
-  event_type: Arch.Load
-  where:
-    annotations.microarch.l1_path: hit
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    ldq_idx: annotations.microarch.ldq_idx
-    value: annotations.microarch.l1_value
-- name: l1_load_misses
-  event_type: Arch.Load
-  where:
-    annotations.microarch.l1_path: miss
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    ldq_idx: annotations.microarch.ldq_idx
-    value: annotations.microarch.value
-    mshr_id: annotations.microarch.mshr_id
-    tag_match: annotations.microarch.tag_match
-    old_line_dirty: annotations.microarch.old_line_dirty
-    needs_acquire: annotations.microarch.needs_acquire
-    grant_has_data: annotations.microarch.grant_has_data
-    secondary: annotations.microarch.secondary
-    requires_second_acquire: annotations.microarch.requires_second_acquire
-    is_hit_again: annotations.microarch.is_hit_again
-    sdq_id: annotations.microarch.sdq_id
-- name: l1_load_nacks
-  event_type: Arch.Load
-  where:
-    annotations.microarch.l1_path: nack
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    ldq_idx: annotations.microarch.ldq_idx
-    nack_cause: annotations.microarch.nack_cause
-- name: l1_stores
-  event_type: Arch.Store
-  where:
-    annotations.microarch.local_l1: true
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    value: fields.value
-    stq_idx: annotations.microarch.stq_idx
-- name: l1_store_hits
-  event_type: Arch.Store
-  where:
-    annotations.microarch.l1_path: hit
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    value: fields.value
-    stq_idx: annotations.microarch.stq_idx
-- name: l1_store_misses
-  event_type: Arch.Store
-  where:
-    annotations.microarch.l1_path: miss
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    value: fields.value
-    stq_idx: annotations.microarch.stq_idx
-    mshr_id: annotations.microarch.mshr_id
-    tag_match: annotations.microarch.tag_match
-    old_line_dirty: annotations.microarch.old_line_dirty
-    needs_acquire: annotations.microarch.needs_acquire
-    grant_has_data: annotations.microarch.grant_has_data
-    secondary: annotations.microarch.secondary
-    requires_second_acquire: annotations.microarch.requires_second_acquire
-    is_hit_again: annotations.microarch.is_hit_again
-    sdq_id: annotations.microarch.sdq_id
-- name: mshr_load_requests
-  event_type: Arch.Load
-  where:
-    annotations.microarch.uses_mshr: true
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    queue_idx: annotations.microarch.queue_idx
-    queue_kind: annotations.microarch.queue_kind
-    value: annotations.microarch.value
-    mshr_id: annotations.microarch.mshr_id
-- name: mshr_store_requests
-  event_type: Arch.Store
-  where:
-    annotations.microarch.uses_mshr: true
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    queue_idx: annotations.microarch.queue_idx
-    queue_kind: annotations.microarch.queue_kind
-    value: fields.value
-    mshr_id: annotations.microarch.mshr_id
-- name: dirty_mshr_requests
-  event_type:
-  - Arch.Load
-  - Arch.Store
-  where:
-    annotations.microarch.uses_mshr: true
-    annotations.microarch.old_line_dirty: true
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-    mshr_id: annotations.microarch.mshr_id
-- name: probe_sources
-  event_type: Arch.Store
-  where:
-    annotations.microarch.causes_probe: true
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-- name: probe_clean_sources
-  event_type: Arch.Store
-  where:
-    annotations.microarch.causes_probe: true
-    annotations.microarch.probe_path: clean
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-- name: probe_dirty_sources
-  event_type: Arch.Store
-  where:
-    annotations.microarch.causes_probe: true
-    annotations.microarch.probe_path: dirty
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-- name: probe_miss_sources
-  event_type: Arch.Store
-  where:
-    annotations.microarch.causes_probe: true
-    annotations.microarch.probe_path: miss
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-- name: lr_loads
-  event_type: Arch.Load
-  where:
-    annotations.microarch.is_lr: true
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address
-- name: sc_stores
-  event_type: Arch.Store
-  where:
-    annotations.microarch.is_sc: true
-  cardinality: many
-  min_matches: 0
-  exports:
-    op_id: fields.op_id
-    address: fields.address

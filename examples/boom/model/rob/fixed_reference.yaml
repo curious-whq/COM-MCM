@@ -1,4 +1,4 @@
-schema_version: umcm.module.v0.14.0
+schema_version: umcm.module.v0.15.0
 name: rob
 metadata:
   variant: fixed
@@ -14,7 +14,9 @@ metadata:
   - visible_store.op_id
   - visible_store.value
   - init_write.value
-  version: 0.14.0
+  version: 0.15.0
+  hierarchy: all persistent state and transformations are private; declared ports
+    are the public surface
 ports:
 - name: memory_order_exception
   direction: input
@@ -57,6 +59,7 @@ slots:
 - id: younger_squash
   type: Core.SquashLoad
   required: true
+  cycle: 15
   fields:
     op_id: ${younger_load.op_id}
     ldq_idx: ${younger_load.ldq_idx}
@@ -125,48 +128,6 @@ transformations:
   - fixed
   - rob-recovery
   - module-boundary
-  description: ROB/recovery converts the LSU memory-ordering exception into a squash event.
-- name: memory_ordering_exception_blocks_matching_commit
-  inputs:
-  - role: exception
-    type: Core.MemoryOrderingException
-  - role: commit
-    type: Arch.CommitLoad
-  outputs: []
-  when:
-    node: binary
-    op: eq
-    left:
-      node: event_field
-      event_id: exception
-      field: op_id
-      sort:
-        name: op_id
-    right:
-      node: event_field
-      event_id: commit
-      field: op_id
-      sort:
-        name: op_id
-  ensure:
-  - node: binary
-    op: lt
-    left:
-      node: event_field
-      event_id: commit
-      field: cycle
-      sort:
-        name: int
-    right:
-      node: event_field
-      event_id: exception
-      field: cycle
-      sort:
-        name: int
-  exact: false
-  tags:
-  - fixed
-  - rob-recovery
-  - retirement-block
-  description: A memory-ordering exception forbids a later architectural commit of the same load.
+  description: ROB/recovery converts the LSU memory-ordering exception into a squash
+    event.
 constraints: []

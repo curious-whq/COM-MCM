@@ -1,11 +1,10 @@
-schema_version: umcm.trace.v0.14.0
+schema_version: umcm.trace.v0.1
 partial: true
 metadata:
   case: boom-load-load-ordering-real-bug
   expected: FORBIDDEN on buggy BOOM model
   description: Older load TLB miss, younger load reads old value, probe observes it, older load refills new value.
   query_goal: exercise older-load TLB retry and the observed-younger LD-LD conflict
-  l1_model: formal-v0.14
 events:
 - id: init_data
   type: Arch.InitWrite
@@ -42,8 +41,6 @@ events:
       is_hit_again: false
       is_probe: false
       sdq_id: 0
-      l1_path: miss
-      l1_value: 0
 - id: load_younger
   type: Arch.Load
   occurs: true
@@ -58,8 +55,6 @@ events:
     microarch:
       ldq_idx: 7
       uses_mshr: false
-      l1_path: hit
-      l1_value: 0
 - id: store_visible
   type: Arch.Store
   occurs: true
@@ -71,24 +66,20 @@ events:
     value: 1
     byte_mask: 255
   cycle: 8
-  annotations:
-    microarch:
-      causes_probe: true
-      probe_path: clean
 - id: commit_older
   type: Arch.CommitLoad
   occurs: true
   fields:
     op_id: LoadAlpha
     value: 1
-  cycle: 28
+  cycle: 20
 - id: commit_younger
   type: Arch.CommitLoad
   occurs: true
   fields:
     op_id: LoadBeta
     value: 0
-  cycle: 29
+  cycle: 21
 - id: older_tlb_miss
   type: LSU.TLBMiss
   occurs: true
@@ -108,7 +99,7 @@ events:
 - id: older_retry_issue
   type: LSU.RetryIssue
   occurs: true
-  cycle: 16
+  cycle: 12
   fields:
     op_id: LoadAlpha
     ldq_idx: 13
@@ -116,7 +107,7 @@ events:
 - id: older_tlb_hit
   type: LSU.TLBHit
   occurs: true
-  cycle: 16
+  cycle: 12
   fields:
     op_id: LoadAlpha
     ldq_idx: 13
@@ -125,7 +116,7 @@ events:
 - id: ldld_conflict_goal
   type: LSU.LDLDConflict
   occurs: true
-  cycle: 17
+  cycle: 13
   fields:
     older_op_id: LoadAlpha
     older_ldq_idx: 13

@@ -10,6 +10,14 @@ from umcm.hierarchy.engine import (
     check_memory_model_preservation,
     check_refinement,
 )
+from umcm.hierarchy.interface import (
+    InterfaceProjectionCertificate,
+    InterfaceProjectionResult,
+    ModuleInterfaceContract,
+    PortContract,
+    build_interface_contracts,
+    project_interface_trace,
+)
 from umcm.hierarchy.model import (
     ABSTRACTION_SCHEMA_VERSION,
     AbstractionSpec,
@@ -35,6 +43,12 @@ __all__ = [
     "SummaryEventSpec",
     "SummaryEvidence",
     "SummaryRuleSpec",
+    "InterfaceProjectionCertificate",
+    "InterfaceProjectionResult",
+    "ModuleInterfaceContract",
+    "PortContract",
+    "build_interface_contracts",
+    "project_interface_trace",
     "abstract_trace",
     "check_memory_model_preservation",
     "check_refinement",

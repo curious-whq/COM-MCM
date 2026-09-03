@@ -22,7 +22,7 @@ from umcm.composition.parameterization import (
 )
 from umcm.ir.completion import CompletionSpec, EventSlot
 from umcm.ir.event import EventCatalog
-from umcm.ir.expression import Binary, EventField
+from umcm.ir.expression import Binary, EventField, iter_event_fields
 from umcm.ir.sort import INT
 from umcm.ir.transformation import EventRole, Transformation
 from umcm.ir.trace import Trace
@@ -56,6 +56,7 @@ class CompositionResult:
                     "declared_name": item.spec.name,
                     "path": item.path,
                     "ports": len(item.spec.ports),
+                    "internal_event_types": len(item.spec.internal_events),
                     "slots": len(item.spec.slots),
                     "state_variables": len(item.spec.state_variables),
                     "transformations": len(item.spec.transformations),
@@ -168,6 +169,18 @@ def compose_modules(
             slot_owner[slot.id] = module_name
             annotations = dict(slot.annotations)
             annotations.setdefault("module_spec", module_name)
+            interface_ports = tuple(
+                sorted(
+                    port.name
+                    for port in module.ports
+                    if port.event_type == slot.event_type
+                )
+            )
+            annotations.setdefault(
+                "module_visibility", "public" if interface_ports else "private"
+            )
+            if interface_ports:
+                annotations.setdefault("interface_ports", list(interface_ports))
             slots.append(replace(slot, annotations=annotations))
 
         for state in module.state_variables:
@@ -211,6 +224,10 @@ def compose_modules(
         transformations.append(generated_transformation)
         generated.append(generated_transformation.name)
 
+    if str(composition.metadata.get("encapsulation", "legacy")) == "strict":
+        _validate_composition_constraint_encapsulation(
+            composition.constraints, slots
+        )
     constraints.extend(composition.constraints)
     metadata = dict(composition.metadata)
     metadata["composition"] = {
@@ -228,6 +245,13 @@ def compose_modules(
         ],
         "generated_transformations": generated,
     }
+    metadata["hierarchy"] = {
+        "policy": "ports-only-public-surface",
+        "modules": {
+            item.reference_name: _module_boundary_metadata(item.spec)
+            for item in loaded
+        },
+    }
 
     completion = CompletionSpec(
         slots=slots,
@@ -236,7 +260,7 @@ def compose_modules(
         constraints=constraints,
         horizon=composition.horizon,
         metadata=metadata,
-        schema_version="umcm.completion.v0.13.0",
+        schema_version="umcm.completion.v0.15.0",
     )
     return CompositionResult(
         spec=composition,
@@ -245,6 +269,48 @@ def compose_modules(
         generated_transformations=tuple(generated),
         resolved_roles=resolved_roles,
     )
+
+
+def _module_boundary_metadata(module: ModuleSpec) -> dict[str, Any]:
+    public_types = {port.event_type for port in module.ports}
+    private_slots = [slot for slot in module.slots if slot.event_type not in public_types]
+    return {
+        "public_ports": [port.to_dict() for port in module.ports],
+        "public_event_types": sorted(public_types),
+        "private_slot_ids": sorted(slot.id for slot in private_slots),
+        "private_event_types": sorted(
+            set(module.internal_events) | {slot.event_type for slot in private_slots}
+        ),
+        "private_state_names": sorted(state.name for state in module.state_variables),
+        "private_transformation_names": sorted(
+            transformation.name for transformation in module.transformations
+        ),
+    }
+
+
+def _validate_composition_constraint_encapsulation(
+    constraints, slots: list[EventSlot]
+) -> None:
+    """Prevent top-level constraints from reaching through child boundaries.
+
+    A composition may constrain external/root events and public module port
+    events, but may not name a child-private completion slot.  Local module
+    constraints remain free to use that module's implementation events.
+    """
+
+    private = {
+        slot.id: str(slot.annotations.get("module_spec", "<unknown>"))
+        for slot in slots
+        if slot.annotations.get("module_visibility") == "private"
+    }
+    for constraint in constraints:
+        for reference in iter_event_fields(constraint):
+            owner = private.get(reference.event_id)
+            if owner is not None:
+                raise CompositionError(
+                    "composition constraint reaches through module boundary: "
+                    f"{reference.event_id!r} is private to module {owner!r}"
+                )
 
 
 def _copy_role_context(context: Mapping[str, Any]) -> dict[str, Any]:
