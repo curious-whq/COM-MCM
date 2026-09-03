@@ -1,0 +1,22 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {case: precise-page-fault, expected: FEASIBLE, goal: older commit then precise exception and younger squash}
+events:
+- {id: page_ok, type: Core.PageMap, occurs: true, cycle: 0, fields: {map_id: P_OK, hart: 0, entry_id: h0_v5, vpn: 5, paddr: mmio0, initial_valid: true, accessible: true}}
+- {id: page_bad, type: Core.PageMap, occurs: true, cycle: 0, fields: {map_id: P_BAD, hart: 0, entry_id: h0_v6, vpn: 6, paddr: bad, initial_valid: false, accessible: false}}
+- id: older_io
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields: {op_id: OLD, hart: 0, program_index: 0, rob_idx: 0, mem_kind: load, vaddr: va5, address: mmio0, vpn: 5, value: 9, write_value: 0, byte_mask: 255, cacheable: false, io_id: 0, reservation_id: h0_mmio0, uses_tlb: true, execution_class: mmio}
+- id: faulting_load
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 1
+  fields: {op_id: FAULT, hart: 0, program_index: 1, rob_idx: 1, mem_kind: load, vaddr: va6, address: bad, vpn: 6, value: 0, write_value: 0, byte_mask: 255, cacheable: true, io_id: 1, reservation_id: h0_bad, uses_tlb: true, execution_class: cache}
+- id: younger_load
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 2
+  fields: {op_id: YOUNG, hart: 0, program_index: 2, rob_idx: 2, mem_kind: load, vaddr: va7, address: y, vpn: 7, value: 0, write_value: 0, byte_mask: 255, cacheable: true, io_id: 2, reservation_id: h0_y, uses_tlb: false, execution_class: cache}
+constraints: []

@@ -1,0 +1,77 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-sifive-inclusive-coherence-v018
+horizon: 32
+metadata:
+  version: 0.18.0
+  purpose: Source-pinned BOOM L1 TileLink client plus the matching Chipyard SiFive InclusiveCache.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+  bounds: {harts: 2, transactions_per_line: serialized, transfer: one-line-event}
+modules:
+- {name: boom_l1_coherence_client, path: ../model/coherence/boom_l1_client.yaml}
+- {name: sifive_inclusive_l2, path: ../model/coherence/inclusive_l2.yaml}
+connections:
+- name: l1_acquire_to_l2
+  source: {module: boom_l1_coherence_client, port: acquire}
+  target: {module: sifive_inclusive_l2, port: acquire}
+  mode: shared_event
+- name: l2_probe_to_l1
+  source: {module: sifive_inclusive_l2, port: probe}
+  target: {module: boom_l1_coherence_client, port: probe}
+  mode: shared_event
+- name: l1_probe_ack_to_l2
+  source: {module: boom_l1_coherence_client, port: probe_ack}
+  target: {module: sifive_inclusive_l2, port: probe_ack}
+  mode: shared_event
+- name: l2_grant_to_l1
+  source: {module: sifive_inclusive_l2, port: grant}
+  target: {module: boom_l1_coherence_client, port: grant}
+  mode: shared_event
+- name: l1_grant_ack_to_l2
+  source: {module: boom_l1_coherence_client, port: grant_ack}
+  target: {module: sifive_inclusive_l2, port: grant_ack}
+  mode: shared_event
+- name: l1_release_to_l2
+  source: {module: boom_l1_coherence_client, port: release}
+  target: {module: sifive_inclusive_l2, port: release}
+  mode: shared_event
+- name: l2_release_ack_to_l1
+  source: {module: sifive_inclusive_l2, port: release_ack}
+  target: {module: boom_l1_coherence_client, port: release_ack}
+  mode: shared_event
+constraints: []
+roles:
+- name: lines
+  event_type: Coherence.LineInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.line_id
+  exports:
+    line_id: fields.line_id
+    address: fields.address
+    value: fields.value
+    version: fields.version
+    source_op_id: fields.source_op_id
+- name: accesses
+  event_type: Coherence.Access
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    line_id: fields.line_id
+    address: fields.address
+    mem_kind: fields.mem_kind
+    write_value: fields.write_value
+    after_op_id: fields.after_op_id
+- name: evictions
+  event_type: Coherence.Evict
+  cardinality: many
+  min_matches: 0
+  exports:
+    txn_id: fields.txn_id
+    hart: fields.hart
+    line_id: fields.line_id
+    address: fields.address
+    after_op_id: fields.after_op_id

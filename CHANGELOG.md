@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.18.0
+
+- Followed BOOM's pinned Chipyard configuration and modeled the selected SiFive InclusiveCache instead of inventing a generic L2.
+- Added a strict two-module BOOM L1 coherence client / Inclusive L2 composition connected only through TileLink A/B/C/D/E public events.
+- Added private per-line L1 N/B/T state and L2 INVALID/BRANCH/TRUNK/TIP directory, owner/sharer, dirty, value/version/source, and serialized MSHR control.
+- Added state-derived cold miss/refill, shared-reader T→B probe, BtoT write upgrade, dirty ProbeAckData handoff, GrantAck, ReleaseData, and ReleaseAck behavior.
+- Added ghost versions at RTL-grounded data-flow points; clean coherence messages cannot manufacture a new version.
+- Added five high-level traces that contain no supplied hit/miss/Probe/Grant outcome and nine focused coherence tests.
+- Replaced the Z3 backend's quadratic pairwise atomic-write agreement encoding with an equivalent linear next-state encoding and added a conflict regression.
+- Corrected the mistyped BOOM source commit string inherited by v0.17 metadata and documentation.
+- Test suite: 168 passing tests.
+
+## 0.17.0
+
+- Added the nine-module `core_side_v017.yaml` BOOM composition with strict public-event boundaries.
+- Added a BOOM v4 source-pinned NBDTLB plus LSU translation/retry boundary; private valid/walker state derives hit/miss, PTW request, refill, miss-ready, and LSU-owned retry without a supplied TLB outcome.
+- Kept the external PTW as an explicitly bounded environment rather than claiming an unavailable Rocket Chip PTW implementation.
+- Added SFENCE all/VPN invalidation and corrected page-fault delivery so a PTW result refills first and the retried TLB response reports the fault to LSU.
+- Added a memory ROB model with allocation, completion, in-order commit, precise page-fault delivery, younger squash, and branch recovery.
+- Added serialized AMO read/write behavior and per-hart-line LR/SC reservation state.
+- Added a public `DCache.ProbeRelease` adapter that invalidates matching LR reservations and forces SC failure without an `Atomic.SCWrite`.
+- Added successful `Arch.LRSCPair` generation and extended the BOOM RVWMO projection to AMO, LR, and successful SC events.
+- Added one-outstanding IOMSHR load/store behavior and fence completion after `DCache.Ordered`.
+- Added ten directed core-side traces and 13 focused tests. Test suite: 158 passing tests.
+
+## 0.16.0
+
+- Added the built-in bounded `rvwmo` architectural checker based on RVWMO 2.0.
+- Added explicit AMO operations with separate read and write values, plus LR/SC metadata.
+- Added trace-to-graph relation hints for address, data, control, fence, LR/SC pair, and pipeline-dependency facts.
+- Implemented all thirteen preserved-program-order rules as individually inspectable `ppo_rule1` through `ppo_rule13` relations.
+- Added `rfi/rfe`, `fri/fre`, a deterministic total `gmo` witness, strict `rf/co` well-formedness, initialization ordering, load-value checks, AMO atomicity, and LR/SC atomicity.
+- Added an explicit rejection boundary for partially overlapping mixed-size accesses and non-main-memory operations rather than silently approximating them.
+- Kept legacy configurable graph models and the BOOM Load--Load fragment backward compatible.
+- Added `examples/rvwmo/`, the BOOM `axioms/rvwmo.yaml` projection, `RVWMO_V0.16.md`, and 19 focused tests covering Load--Load, Store--Load, Store--Store, fences, dependencies, acquire/release, AMO, and LR/SC.
+- Test suite: 145 passing tests.
+
 ## 0.15.0
 
 - Added explicit `ModuleSpec.internal_events`; ports now represent only true cross-module event surfaces.

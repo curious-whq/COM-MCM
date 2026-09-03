@@ -386,21 +386,27 @@ def _state_smt_constraints(codec: _Codec, problem: BoundedProblem) -> list[str]:
                 value = codec.expr(update.value)
                 active_terms.append((active, value))
 
-            # Simultaneous writes to the same cell must agree.
-            for left in range(len(active_terms)):
-                for right in range(left + 1, len(active_terms)):
-                    a_active, a_value = active_terms[left]
-                    b_active, b_value = active_terms[right]
-                    lines.append(
-                        f"(assert (=> (and {a_active} {b_active}) (= {a_value} {b_value})))"
-                    )
-
             current = _state_symbol(codec, state_name, cycle)
             next_state = _state_symbol(codec, state_name, cycle + 1)
-            expression = current
-            for active, value in reversed(active_terms):
-                expression = f"(ite {active} {value} {expression})"
-            lines.append(f"(assert (= {next_state} {expression}))")
+
+            # A shared next-state cell gives a linear encoding of atomic-write
+            # agreement: if two updates are active they both constrain the
+            # same value, so disagreeing writes are unsatisfiable without an
+            # O(n^2) set of pairwise implications.  When no write is active,
+            # the cell stutters exactly as in ``check_state_semantics``.
+            for active, value in active_terms:
+                lines.append(f"(assert (=> {active} (= {next_state} {value})))")
+            if active_terms:
+                any_active = (
+                    active_terms[0][0]
+                    if len(active_terms) == 1
+                    else "(or " + " ".join(active for active, _ in active_terms) + ")"
+                )
+                lines.append(
+                    f"(assert (=> (not {any_active}) (= {next_state} {current})))"
+                )
+            else:
+                lines.append(f"(assert (= {next_state} {current}))")
 
     return lines
 

@@ -113,11 +113,47 @@ def check_axiom(graph: ExecutionGraph, axiom: AxiomSpec) -> AxiomResult:
 def check_execution_graph(
     graph: ExecutionGraph,
     axioms: Iterable[AxiomSpec],
+    *,
+    builtin_model: str | None = None,
 ) -> CandidateCheck:
+    builtin_results: tuple[AxiomResult, ...] = ()
+    if builtin_model == "rvwmo":
+        from umcm.graph.rvwmo import check_rvwmo
+
+        builtin_results = tuple(
+            AxiomResult(
+                axiom=outcome.name,
+                status=(
+                    AxiomStatus.SATISFIED
+                    if outcome.satisfied
+                    else AxiomStatus.VIOLATED
+                ),
+                kind=outcome.kind,
+                relations=outcome.relations,
+                cycle=outcome.cycle,
+                offending_edges=outcome.offending_edges,
+            )
+            for outcome in check_rvwmo(graph)
+        )
+    elif builtin_model is not None:
+        raise GraphError(f"unsupported built-in model: {builtin_model}")
     return CandidateCheck(
         graph=graph,
-        axioms=tuple(check_axiom(graph, axiom) for axiom in axioms),
+        axioms=builtin_results
+        + tuple(check_axiom(graph, axiom) for axiom in axioms),
     )
+
+
+def check_rvwmo_execution_graph(
+    graph: ExecutionGraph,
+    axioms: Iterable[AxiomSpec] = (),
+) -> CandidateCheck:
+    """Complete and check a manually constructed architectural RVWMO graph."""
+
+    from umcm.graph.rvwmo import complete_rvwmo_relations
+
+    completed = complete_rvwmo_relations(graph)
+    return check_execution_graph(completed, axioms, builtin_model="rvwmo")
 
 
 def check_trace_memory_model(
@@ -132,7 +168,11 @@ def check_trace_memory_model(
         spec,
         max_candidates=max_candidates,
     ):
-        checked = check_execution_graph(graph, spec.axioms)
+        checked = check_execution_graph(
+            graph,
+            spec.axioms,
+            builtin_model=spec.builtin_model,
+        )
         candidates.append(checked)
     if not candidates:
         raise GraphError("trace generated no execution-graph candidates")

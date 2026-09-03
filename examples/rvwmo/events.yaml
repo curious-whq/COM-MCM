@@ -1,0 +1,108 @@
+schema_version: umcm.events.v0.16.0
+metadata:
+  model: rvwmo-architectural-input
+  version: 0.16.0
+  note: Dependency events are facts produced by an ISA-aware front-end; they are not guessed by the checker.
+events:
+- name: Arch.InitWrite
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+- name: Arch.Load
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: &read_fields
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+  - {name: acquire, sort: {name: bool}, required: false}
+  - {name: release, sort: {name: bool}, required: false}
+  - {name: rcsc, sort: {name: bool}, required: false}
+  - {name: memory_region, sort: {name: string}, required: false}
+- name: Arch.LR
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: *read_fields
+- name: Arch.Store
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: &write_fields
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+  - {name: acquire, sort: {name: bool}, required: false}
+  - {name: release, sort: {name: bool}, required: false}
+  - {name: rcsc, sort: {name: bool}, required: false}
+  - {name: memory_region, sort: {name: string}, required: false}
+- name: Arch.SC
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: *write_fields
+- name: Arch.AMO
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: write_value, sort: {name: value, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+  - {name: acquire, sort: {name: bool}, required: false}
+  - {name: release, sort: {name: bool}, required: false}
+  - {name: rcsc, sort: {name: bool}, required: false}
+  - {name: memory_region, sort: {name: string}, required: false}
+- name: Arch.CommitRead
+  module: ROB
+  layer: architectural-boundary
+  visibility: architectural
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: value, sort: {name: value, width: 64}}
+- name: Arch.AddressDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: &edge_fields
+  - {name: source_op_id, sort: {name: op_id}}
+  - {name: target_op_id, sort: {name: op_id}}
+- name: Arch.DataDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: *edge_fields
+- name: Arch.ControlDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: *edge_fields
+- name: Arch.FenceOrder
+  module: Architecture
+  layer: synchronization
+  visibility: architectural
+  fields: *edge_fields
+- name: Arch.LRSCPair
+  module: Architecture
+  layer: synchronization
+  visibility: architectural
+  fields: *edge_fields
+- name: Arch.PipelineDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: *edge_fields

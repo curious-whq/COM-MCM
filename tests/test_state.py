@@ -115,3 +115,41 @@ def test_exact_transformation_roundtrip() -> None:
     loaded = Transformation.from_dict(transition.to_dict())
     assert loaded == transition
     assert loaded.exact is True
+
+
+def test_z3_linear_state_encoding_rejects_conflicting_atomic_writes() -> None:
+    from umcm.ir.completion import CompletionSpec
+    from umcm.ir.event import EventInstance
+    from umcm.ir.trace import Trace
+    from umcm.solver.completion import CompletionStatus, complete_trace
+
+    catalog = EventCatalog(
+        {"Test.Input": EventType(name="Test.Input", module="Test", layer="test")}
+    )
+    variable = StateVariable("Test.state.valid", BOOL, False)
+    set_true = Transformation(
+        name="set_true",
+        inputs=(EventRole("input", "Test.Input"),),
+        state_updates=(
+            StateUpdate(variable.name, "input", Literal(True, BOOL)),
+        ),
+    )
+    set_false = Transformation(
+        name="set_false",
+        inputs=(EventRole("input", "Test.Input"),),
+        state_updates=(
+            StateUpdate(variable.name, "input", Literal(False, BOOL)),
+        ),
+    )
+    result = complete_trace(
+        catalog,
+        Trace(events=[EventInstance("input_0", "Test.Input", cycle=0)], partial=True),
+        CompletionSpec(
+            transformations=[set_true, set_false],
+            state_variables=[variable],
+            horizon=1,
+        ),
+        backend="z3",
+    )
+
+    assert result.status is CompletionStatus.INFEASIBLE

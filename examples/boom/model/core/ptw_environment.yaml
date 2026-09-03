@@ -1,0 +1,60 @@
+schema_version: umcm.module.v0.15.0
+name: bounded_ptw_environment
+metadata:
+  version: 0.17.0
+  component: finite external PTW environment
+  source: not a BOOM implementation; BOOM NBDTLB exposes the PTW only through TLBPTWIO
+  scope: returns one bounded page-table result for a matching hart/VPN request
+  hierarchy: page-map configuration is public input; PTW result is the only dynamic output
+ports:
+- {name: ptw_request, direction: input, event_type: TLB.PTWRequest}
+- {name: page_map, direction: input, event_type: Core.PageMap, required_connection: false}
+- {name: ptw_result, direction: output, event_type: TLB.PTWResult}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: tlb_harts
+  as: tlb_hart
+  include: {constraints: []}
+repeat_product:
+- axes:
+  - {over: tlb_ops, as: op}
+  - {over: pages, as: page}
+  include:
+    slots:
+    - id: ptw_result_${product.repeat_index}
+      type: TLB.PTWResult
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        vpn: ${page.vpn}
+        paddr: ${page.paddr}
+        fault:
+          $expr: {node: symbol, name: "ptw::${op.op_id}::fault", sort: {name: bool}}
+    transformations:
+    - name: ptw_returns_bounded_mapping_${product.repeat_index}
+      inputs: [{role: request, type: TLB.PTWRequest}]
+      outputs: [{role: result, type: TLB.PTWResult}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      ensure:
+      - {node: binary, op: ne, left: {node: event_field, event_id: result, field: fault, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: "${page.accessible}"}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw-environment, bounded-page-map]

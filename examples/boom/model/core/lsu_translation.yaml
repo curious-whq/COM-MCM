@@ -1,0 +1,201 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_lsu_translation
+metadata:
+  version: 0.17.0
+  component: BOOM v4 LSU translation/retry boundary
+  source_repository: https://github.com/riscv-boom/riscv-boom
+  source_commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+  source_files:
+  - src/main/scala/v4/lsu/lsu.scala:506-547,595-606,644-830,890-905,960-984
+  scope: initial DTLB access, LSU-owned retry queue round trip, translated address, and page-fault delivery
+  hierarchy: retry is LSU-private; TLB request/response and translated/fault results are public ports
+ports:
+- {name: memory_instruction, direction: input, event_type: Core.MemoryInstruction, required_connection: false}
+- {name: tlb_response, direction: input, event_type: TLB.Response}
+- {name: miss_ready, direction: input, event_type: TLB.MissReady}
+- {name: tlb_request, direction: output, event_type: TLB.Request}
+- {name: translated_memory, direction: output, event_type: Core.TranslatedMemory}
+- {name: memory_fault, direction: output, event_type: Core.MemoryFault}
+internal_events: [TLB.Retry]
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: tlb_ops
+  as: op
+  include:
+    slots:
+    - id: lsu_tlb_request_initial_${op.repeat_index}
+      type: TLB.Request
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", vpn: "${op.vpn}", attempt: 0}
+    - id: lsu_tlb_retry_${op.repeat_index}
+      type: TLB.Retry
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", vpn: "${op.vpn}"}
+    - id: lsu_tlb_request_retry_${op.repeat_index}
+      type: TLB.Request
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", vpn: "${op.vpn}", attempt: 1}
+    - id: translated_hit_${op.repeat_index}
+      type: Core.TranslatedMemory
+      required: false
+      fields: &translated_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        mem_kind: ${op.mem_kind}
+        vaddr: ${op.vaddr}
+        address: ${op.address}
+        vpn: ${op.vpn}
+        value: ${op.value}
+        write_value: ${op.write_value}
+        byte_mask: ${op.byte_mask}
+        cacheable: ${op.cacheable}
+        io_id: ${op.io_id}
+        reservation_id: ${op.reservation_id}
+        uses_tlb: true
+        execution_class: ${op.execution_class}
+        tlb_path: hit
+    - id: translated_retry_${op.repeat_index}
+      type: Core.TranslatedMemory
+      required: false
+      fields:
+        <<: *translated_fields
+        tlb_path: retry
+    - id: tlb_fault_${op.repeat_index}
+      type: Core.MemoryFault
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        vpn: ${op.vpn}
+        cause: page_fault
+    transformations:
+    - name: lsu_issues_initial_tlb_request_${op.repeat_index}
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: request, type: TLB.Request}]
+      when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      output_when: &initial_request_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [lsu, tlb-request, source:711-764]
+    - name: tlb_miss_round_trips_through_lsu_retry_queue_${op.repeat_index}
+      inputs:
+      - {role: response, type: TLB.Response}
+      - {role: ready, type: TLB.MissReady}
+      outputs: [{role: retry, type: TLB.Retry}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: response, field: miss, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+      output_when: &retry_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: retry, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: retry, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: retry, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [lsu, retry-queue, source:506-547,595-606]
+    - name: lsu_reissues_tlb_request_${op.repeat_index}
+      inputs: [{role: retry, type: TLB.Retry}]
+      outputs: [{role: request, type: TLB.Request}]
+      when: *retry_scope
+      output_when: &retry_request_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: retry, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [lsu, retry-issue, source:595-606,676-677]
+    - name: hit_response_translates_${op.repeat_index}
+      inputs: [{role: response, type: TLB.Response}]
+      outputs: [{role: translated, type: Core.TranslatedMemory}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: miss, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: page_fault, sort: {name: bool}}}
+      output_when: &translated_hit_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: tlb_path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [lsu, translated-hit, source:830-836,960-984]
+    - name: retry_response_translates_${op.repeat_index}
+      inputs: [{role: response, type: TLB.Response}]
+      outputs: [{role: translated, type: Core.TranslatedMemory}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: miss, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: page_fault, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: tlb_path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: retry}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [lsu, translated-retry, source:595-606,830-836,960-984]
+    - name: page_fault_response_reaches_rob_${op.repeat_index}
+      inputs: [{role: response, type: TLB.Response}]
+      outputs: [{role: fault, type: Core.MemoryFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: response, field: page_fault, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: page_fault}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [lsu, exception, retry-exception, source:776-827]

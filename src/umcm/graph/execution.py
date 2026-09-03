@@ -12,13 +12,14 @@ from umcm.graph.relation import Relation
 from umcm.serialization import dump_data, load_data
 
 
-EXECUTION_GRAPH_SCHEMA_VERSION = "umcm.execution_graph.v0.1"
+EXECUTION_GRAPH_SCHEMA_VERSION = "umcm.execution_graph.v0.2"
 
 
 class OperationKind(str, Enum):
     INIT_WRITE = "init_write"
     READ = "read"
     WRITE = "write"
+    AMO = "amo"
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class MemoryOperation:
     kind: OperationKind
     address: Any
     value: Any
+    write_value: Any | None = None
     hart: int | None = None
     program_index: int | None = None
     source_event_id: str = ""
@@ -36,21 +38,47 @@ class MemoryOperation:
     def __post_init__(self) -> None:
         if not self.id:
             raise GraphError("memory operation id must be non-empty")
+        if self.kind is OperationKind.AMO and self.write_value is None:
+            raise GraphError(f"AMO {self.id!r} requires write_value")
         if self.kind is not OperationKind.INIT_WRITE:
             if self.hart is None or self.program_index is None:
                 raise GraphError(
                     f"operation {self.id!r} requires hart and program_index"
                 )
-        if self.kind is OperationKind.READ and not self.commit_event_id:
+        if self.kind in {OperationKind.READ, OperationKind.AMO} and not self.commit_event_id:
             raise GraphError(f"read {self.id!r} requires a commit event")
 
     @property
     def is_read(self) -> bool:
-        return self.kind is OperationKind.READ
+        return self.kind in {OperationKind.READ, OperationKind.AMO}
 
     @property
     def is_write(self) -> bool:
-        return self.kind in {OperationKind.WRITE, OperationKind.INIT_WRITE}
+        return self.kind in {
+            OperationKind.WRITE,
+            OperationKind.INIT_WRITE,
+            OperationKind.AMO,
+        }
+
+    @property
+    def read_value(self) -> Any:
+        if not self.is_read:
+            raise GraphError(f"operation {self.id!r} has no read value")
+        return self.value
+
+    @property
+    def stored_value(self) -> Any:
+        if not self.is_write:
+            raise GraphError(f"operation {self.id!r} has no stored value")
+        if self.kind is OperationKind.AMO:
+            return self.write_value
+        return self.value
+
+    @property
+    def atomic_kind(self) -> str:
+        if self.kind is OperationKind.AMO:
+            return "amo"
+        return str(self.metadata.get("atomic_kind", "ordinary")).lower()
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -59,6 +87,8 @@ class MemoryOperation:
             "address": self.address,
             "value": self.value,
         }
+        if self.kind is OperationKind.AMO:
+            data["write_value"] = self.write_value
         if self.hart is not None:
             data["hart"] = self.hart
         if self.program_index is not None:
@@ -84,6 +114,7 @@ class MemoryOperation:
                 kind=OperationKind(str(data["kind"])),
                 address=data["address"],
                 value=data["value"],
+                write_value=data.get("write_value"),
                 hart=None if data.get("hart") is None else int(data["hart"]),
                 program_index=(
                     None

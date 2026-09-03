@@ -1,0 +1,49 @@
+schema_version: umcm.module.v0.15.0
+name: reservation_bridge
+metadata:
+  version: 0.17.0
+  source: DCache probe-to-atomic reservation public-interface adapter
+  scope: same-line probes invalidate every bounded hart-line reservation
+  hierarchy: observes only DCache.ProbeRelease and emits only Core.ReservationInvalidate
+ports:
+- {name: probe_release, direction: input, event_type: DCache.ProbeRelease, required_connection: false}
+- {name: reservation_invalidate, direction: output, event_type: Core.ReservationInvalidate}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: reservation_lines
+  as: bridge_seed
+  include: {constraints: []}
+repeat_product:
+- axes:
+  - {over: probe_events, as: probe}
+  - {over: reservation_lines, as: line}
+  include:
+    slots:
+    - id: reservation_invalidate_${product.repeat_index}
+      type: Core.ReservationInvalidate
+      required: false
+      fields: {source_op_id: "${probe.source_op_id}", reservation_id: "${line.reservation_id}"}
+    transformations:
+    - name: probe_invalidates_matching_line_${product.repeat_index}
+      inputs: [{role: probe, type: DCache.ProbeRelease}]
+      outputs: [{role: invalidate, type: Core.ReservationInvalidate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${probe.source_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${line.address}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${probe.source_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [probe, lr-sc, public-adapter]

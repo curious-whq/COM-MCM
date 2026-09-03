@@ -1,0 +1,34 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata:
+  case: tlb-retry-mmio-load
+  expected: FEASIBLE
+  input_contract: no TLB hit/miss/retry event is supplied
+events:
+- id: page_1
+  type: Core.PageMap
+  occurs: true
+  cycle: 0
+  fields: {map_id: P1, hart: 0, entry_id: h0_v1, vpn: 1, paddr: mmio0, initial_valid: false, accessible: true}
+- id: instruction_io_load
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields:
+    op_id: IO_LOAD
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    vaddr: va1
+    address: mmio0
+    vpn: 1
+    value: 77
+    write_value: 0
+    byte_mask: 255
+    cacheable: false
+    io_id: 0
+    reservation_id: h0_mmio0
+    uses_tlb: true
+    execution_class: mmio
+constraints: []

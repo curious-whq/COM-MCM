@@ -1,0 +1,290 @@
+schema_version: umcm.module.v0.15.0
+name: atomic_core
+metadata:
+  version: 0.17.0
+  source: bounded BOOM AMO and LR/SC core-side abstraction
+  scope: serialized AMO read/write, per-hart-line reservations, probe invalidation, and SC success/failure
+  hierarchy: reservation and line-lock state are private; translated requests, invalidations, and completions are public
+ports:
+- {name: translated_memory, direction: input, event_type: Core.TranslatedMemory}
+- {name: reservation_invalidate, direction: input, event_type: Core.ReservationInvalidate, required_connection: false}
+- {name: memory_complete, direction: output, event_type: Core.MemoryComplete}
+internal_events: [Atomic.AMORead, Atomic.AMOWrite, Atomic.LRRead, Atomic.ReservationSet, Atomic.SCDecision, Atomic.SCWrite]
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: reservation_lines
+  as: line
+  include:
+    state_variables:
+    - {name: "Atomic.reservation[${line.reservation_id}].valid", sort: {name: bool}, initial: false}
+    - {name: "Atomic.line[${line.reservation_id}].busy", sort: {name: bool}, initial: false}
+    transformations:
+    - name: probe_invalidates_reservation_${line.repeat_index}
+      inputs: [{role: invalidate, type: Core.ReservationInvalidate}]
+      when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: invalidate, field: reservation_id, sort: {name: string}}
+        right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}
+      state_updates:
+      - {state: "Atomic.reservation[${line.reservation_id}].valid", at: invalidate, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [lr-sc, probe-invalidation]
+repeat_product:
+- axes:
+  - {over: atomic_ops, as: op}
+  - {over: reservation_lines, as: line}
+  include:
+    slots:
+    - id: atomic_amo_read_${product.repeat_index}
+      type: Atomic.AMORead
+      required: false
+      fields: {op_id: "${op.op_id}", reservation_id: "${op.reservation_id}", value: "${op.value}"}
+    - id: atomic_amo_write_${product.repeat_index}
+      type: Atomic.AMOWrite
+      required: false
+      fields: {op_id: "${op.op_id}", reservation_id: "${op.reservation_id}", value: "${op.write_value}"}
+    - id: atomic_lr_read_${product.repeat_index}
+      type: Atomic.LRRead
+      required: false
+      fields: {op_id: "${op.op_id}", reservation_id: "${op.reservation_id}", value: "${op.value}"}
+    - id: reservation_set_${product.repeat_index}
+      type: Atomic.ReservationSet
+      required: false
+      fields: {op_id: "${op.op_id}", reservation_id: "${op.reservation_id}"}
+    - id: atomic_sc_decision_${product.repeat_index}
+      type: Atomic.SCDecision
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        reservation_id: ${op.reservation_id}
+        success:
+          $expr: {node: symbol, name: "atomic::${op.op_id}::sc_success", sort: {name: bool}}
+    - id: atomic_sc_write_${product.repeat_index}
+      type: Atomic.SCWrite
+      required: false
+      fields: {op_id: "${op.op_id}", reservation_id: "${op.reservation_id}", value: "${op.write_value}"}
+    - id: atomic_complete_amo_${product.repeat_index}
+      type: Core.MemoryComplete
+      required: false
+      fields: &completion_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        mem_kind: ${op.mem_kind}
+        address: ${op.address}
+        value: ${op.value}
+        write_value: ${op.write_value}
+        byte_mask: ${op.byte_mask}
+        success: true
+        reservation_id: ${op.reservation_id}
+    - id: atomic_complete_lr_${product.repeat_index}
+      type: Core.MemoryComplete
+      required: false
+      fields: *completion_fields
+    - id: atomic_complete_sc_success_${product.repeat_index}
+      type: Core.MemoryComplete
+      required: false
+      fields: *completion_fields
+    - id: atomic_complete_sc_fail_${product.repeat_index}
+      type: Core.MemoryComplete
+      required: false
+      fields:
+        <<: *completion_fields
+        success: false
+    transformations:
+    - name: amo_starts_read_${product.repeat_index}
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: read, type: Atomic.AMORead}]
+      when: &amo_for_line
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: &amo_read_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: read, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Atomic.line[${line.reservation_id}].busy", at: read, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Atomic.line[${line.reservation_id}].busy", at: read, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [amo, atomicity]
+    - name: amo_read_precedes_write_${product.repeat_index}
+      inputs: [{role: read, type: Atomic.AMORead}]
+      outputs: [{role: write, type: Atomic.AMOWrite}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: &amo_write_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: write, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: read, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: write, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Atomic.line[${line.reservation_id}].busy", at: write, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "Atomic.line[${line.reservation_id}].busy", at: write, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+    - name: amo_write_completes_${product.repeat_index}
+      inputs: [{role: write, type: Atomic.AMOWrite}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}
+        - {node: event_field, event_id: complete, field: success, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: lr_reads_line_${product.repeat_index}
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: read, type: Atomic.LRRead}]
+      when: &lr_for_line
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: read, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: lr_sets_reservation_${product.repeat_index}
+      inputs: [{role: read, type: Atomic.LRRead}]
+      outputs: [{role: set, type: Atomic.ReservationSet}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: set, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: set, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: set, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: read, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: set, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "Atomic.reservation[${line.reservation_id}].valid", at: set, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+    - name: lr_completion_${product.repeat_index}
+      inputs: [{role: set, type: Atomic.ReservationSet}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: set, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}
+        - {node: event_field, event_id: complete, field: success, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: set, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: set, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: sc_checks_reservation_${product.repeat_index}
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: decision, type: Atomic.SCDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Atomic.reservation[${line.reservation_id}].valid", at: decision, op: eq, value: {node: event_field, event_id: decision, field: success, sort: {name: bool}}}
+      state_updates:
+      - {state: "Atomic.reservation[${line.reservation_id}].valid", at: decision, value: {node: literal, sort: {name: bool}, value: false}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      exact: true
+      tags: [lr-sc, state-derived-outcome]
+    - name: successful_sc_writes_${product.repeat_index}
+      inputs: [{role: decision, type: Atomic.SCDecision}]
+      outputs: [{role: write, type: Atomic.SCWrite}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: event_field, event_id: decision, field: success, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: write, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: write, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: successful_sc_completes_${product.repeat_index}
+      inputs: [{role: write, type: Atomic.SCWrite}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}
+        - {node: event_field, event_id: complete, field: success, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: failed_sc_completes_without_write_${product.repeat_index}
+      inputs: [{role: decision, type: Atomic.SCDecision}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: unary, op: not, operand: {node: event_field, event_id: decision, field: success, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: complete, field: success, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: reservation_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.reservation_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true

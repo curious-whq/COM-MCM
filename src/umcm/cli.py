@@ -193,7 +193,9 @@ def _print_graph_summary(check_result) -> None:
         )
 
     print("RELATIONS:")
-    preferred = ("po", "rf", "rfe", "co", "fr", "ppo", "hb", "ar")
+    preferred = (
+        "po", "rf", "rfi", "rfe", "co", "fr", "fri", "fre", "ppo", "gmo", "hb", "ar"
+    )
     names = [name for name in preferred if name in graph.relations]
     names.extend(sorted(set(graph.relations) - set(names)))
     for name in names:

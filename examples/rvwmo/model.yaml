@@ -1,0 +1,44 @@
+schema_version: umcm.graph_model.v0.3
+model: rvwmo-v2.0-aligned-scalar-v0.16
+builtin_model: rvwmo
+metadata:
+  normative_basis: RISC-V Unprivileged ISA, RVWMO 2.0, section 17.1
+  scope: Aligned scalar regular-main-memory operations in finite executions.
+  limitation: Mixed-size partial overlap, mismatched LR/SC footprints, I/O, page-table walks, vector operations and CMO extensions are outside v0.16.
+projection:
+  init_write_event: Arch.InitWrite
+  load_event: Arch.Load
+  store_event: Arch.Store
+  load_commit_event: Arch.CommitRead
+  amo_event: Arch.AMO
+  lr_event: Arch.LR
+  sc_event: Arch.SC
+  id_field: op_id
+  address_field: address
+  value_field: value
+  write_value_field: write_value
+  hart_field: hart
+  program_index_field: program_index
+  require_committed_loads: true
+  metadata_fields:
+    size: size
+    acquire: acquire
+    release: release
+    rcsc: rcsc
+    memory_region: memory_region
+  relation_hints:
+  - name: addr
+    event_type: Arch.AddressDependency
+  - name: data
+    event_type: Arch.DataDependency
+  - name: ctrl
+    event_type: Arch.ControlDependency
+  - name: fence
+    event_type: Arch.FenceOrder
+  - name: pair
+    event_type: Arch.LRSCPair
+  - name: pipeline
+    event_type: Arch.PipelineDependency
+ppo_rules: []
+derived_relations: []
+axioms: []

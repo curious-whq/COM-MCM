@@ -1,0 +1,148 @@
+schema_version: umcm.module.v0.15.0
+name: mmio_core
+metadata:
+  version: 0.17.0
+  source: bounded BOOM IOMSHR core-side abstraction
+  scope: uncacheable routing and one outstanding MMIO transaction
+  hierarchy: busy state is private; request/response/completion ports are public
+ports:
+- {name: translated_memory, direction: input, event_type: Core.TranslatedMemory}
+- {name: io_request, direction: output, event_type: IOMSHR.Request}
+- {name: io_access, direction: output, event_type: IOMSHR.MemAccess}
+- {name: io_ack, direction: output, event_type: IOMSHR.MemAck}
+- {name: io_response, direction: output, event_type: IOMSHR.Response}
+- {name: memory_complete, direction: output, event_type: Core.MemoryComplete}
+internal_events: []
+slots: []
+state_variables:
+- {name: IOMSHR.busy, sort: {name: bool}, initial: false, description: Single outstanding uncacheable access.}
+transformations: []
+constraints: []
+repeat:
+- over: mmio_ops
+  as: op
+  include:
+    slots:
+    - id: core_io_request_${op.repeat_index}
+      type: IOMSHR.Request
+      required: false
+      fields: {op_id: "${op.op_id}", address: "${op.address}", mem_kind: "${op.mem_kind}", value: "${op.write_value}", io_id: "${op.io_id}"}
+    - id: core_io_access_${op.repeat_index}
+      type: IOMSHR.MemAccess
+      required: false
+      fields: {op_id: "${op.op_id}", address: "${op.address}", mem_kind: "${op.mem_kind}", io_id: "${op.io_id}"}
+    - id: core_io_ack_${op.repeat_index}
+      type: IOMSHR.MemAck
+      required: false
+      fields: {op_id: "${op.op_id}", value: "${op.value}", io_id: "${op.io_id}"}
+    - id: core_io_response_${op.repeat_index}
+      type: IOMSHR.Response
+      required: false
+      fields: {op_id: "${op.op_id}", value: "${op.value}", io_id: "${op.io_id}"}
+    - id: mmio_complete_${op.repeat_index}
+      type: Core.MemoryComplete
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        mem_kind: ${op.mem_kind}
+        address: ${op.address}
+        value: ${op.value}
+        write_value: ${op.write_value}
+        byte_mask: ${op.byte_mask}
+        success: true
+    transformations:
+    - name: uncacheable_routes_to_iomshr_${op.repeat_index}
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: request, type: IOMSHR.Request}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: unary, op: not, operand: {node: event_field, event_id: translated, field: cacheable, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: IOMSHR.busy, at: request, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: IOMSHR.busy, at: request, value: {node: literal, sort: {name: bool}, value: true}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      exact: true
+      tags: [mmio, uncacheable]
+    - name: iomshr_access_${op.repeat_index}
+      inputs: [{role: request, type: IOMSHR.Request}]
+      outputs: [{role: access, type: IOMSHR.MemAccess}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: access, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: iomshr_ack_${op.repeat_index}
+      inputs: [{role: access, type: IOMSHR.MemAccess}]
+      outputs: [{role: ack, type: IOMSHR.MemAck}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: iomshr_load_response_${op.repeat_index}
+      inputs: [{role: ack, type: IOMSHR.MemAck}]
+      outputs: [{role: response, type: IOMSHR.Response}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${op.mem_kind}"}, right: {node: literal, sort: {name: string}, value: load}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: IOMSHR.busy, at: response, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: IOMSHR.busy, at: response, value: {node: literal, sort: {name: bool}, value: false}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      exact: true
+    - name: iomshr_load_completion_${op.repeat_index}
+      inputs: [{role: response, type: IOMSHR.Response}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: iomshr_store_completion_${op.repeat_index}
+      inputs: [{role: ack, type: IOMSHR.MemAck}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${op.mem_kind}"}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: IOMSHR.busy, at: complete, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: IOMSHR.busy, at: complete, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true

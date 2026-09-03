@@ -1,0 +1,877 @@
+schema_version: umcm.module.v0.15.0
+name: sifive_inclusive_l2
+metadata:
+  version: 0.18.0
+  source: SiFive block-inclusivecache used by the pinned Chipyard BOOM AbstractConfig
+  source_commit: e3a3000cc1fd4cdf3a4e638e4d081b8aae94ebf0
+  chipyard_commit: 4180463d52bc0a6b4c004530601ccdabebf0ab7d
+  rocket_chip_commit: 114325b27cfe5312c86a8a325b187be9455a62af
+  source_files:
+  - design/craft/inclusivecache/src/Parameters.scala:132-209,255-283
+  - design/craft/inclusivecache/src/Directory.scala:27-60,76-139
+  - design/craft/inclusivecache/src/MSHR.scala:81-218,232-307,456-497,500-643
+  - design/craft/inclusivecache/src/Scheduler.scala:39-60,77-139,153-291
+  - design/craft/inclusivecache/src/SourceB.scala:24-80
+  - design/craft/inclusivecache/src/SinkC.scala:24-32,40-160
+  - design/craft/inclusivecache/src/SinkE.scala:23-46
+  - design/craft/inclusivecache/src/SourceD.scala:70-140,185-241
+  source_sha256:
+    Parameters.scala: ec41bc84b5b5088816ce9057ecebb4883428b8b99f84621059650e03bc0af9e5
+    Directory.scala: 086a5835dfe36267dfa58ac0b3667de1a1138827345b0dad298292cd047171bc
+    MSHR.scala: 056c318d0fc4a5bd4b179179454915dfe7c3d7b81a81466831ab86bbd608f655
+    Scheduler.scala: d8d961544718d57fcda0aebdebbac8a0de331b33afe3d0545a8be9b2972ad5ef
+    SourceB.scala: 3ede5cafad3fa58236b472c437a35b5a763866dbb078f52bb4475d4572fe548f
+    SinkC.scala: 6beed9bc63ccff79ceca09c4f0b508042a89dfdaf12edb865c841ebc446e7b8e
+    SinkE.scala: caf2ccd5ae0faae52d8ca2bc49efd3190e6d2656b8ba3fffc6cfa1167ca277a2
+    SourceD.scala: bf864157fe3592fd98e2914a445e31d9213370920833f8291137261b86889801
+  scope: Two inner caching clients, per-line Directory metadata, serialized MSHR transaction plan, and line-granular inner A/B/C/D/E traffic.
+  abstractions:
+  - Directory SRAM sets/ways and replacement are collapsed to independent bounded lines.
+  - Multi-beat messages, banked data arrays, arbitration latency, and ready/valid stalls are summarized as ordered events.
+  - The pinned configuration is last-level; outer Acquire/Grant is a private bounded backing-memory action.
+  - At most one transaction per line is active; scheduler queuing and secondary MSHRs are deferred to path coverage work.
+  hierarchy: Directory/MSHR state and outer-memory actions are private; only inner TileLink and version publication ports are public.
+ports:
+- {name: line_init, direction: input, event_type: Coherence.LineInit, required_connection: false}
+- {name: acquire, direction: input, event_type: TL.Acquire}
+- {name: probe, direction: output, event_type: TL.Probe}
+- {name: probe_ack, direction: input, event_type: TL.ProbeAck}
+- {name: grant, direction: output, event_type: TL.Grant}
+- {name: grant_ack, direction: input, event_type: TL.GrantAck}
+- {name: release, direction: input, event_type: TL.Release}
+- {name: release_ack, direction: output, event_type: TL.ReleaseAck}
+- {name: version_publish, direction: output, event_type: Coherence.VersionPublish, required_connection: false}
+internal_events: [L2.DirectoryResult, L2.OuterAcquire, L2.OuterGrant]
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: lines
+  as: line
+  include:
+    state_variables:
+    - {name: "L2.line[${line.line_id}].state", sort: {name: string}, initial: INVALID}
+    - {name: "L2.line[${line.line_id}].dirty", sort: {name: bool}, initial: false}
+    - {name: "L2.line[${line.line_id}].owner", sort: {name: int}, initial: -1}
+    - {name: "L2.line[${line.line_id}].h0_perm", sort: {name: string}, initial: N}
+    - {name: "L2.line[${line.line_id}].h1_perm", sort: {name: string}, initial: N}
+    - {name: "L2.line[${line.line_id}].value", sort: {name: value, width: 64}, initial: "${line.value}"}
+    - {name: "L2.line[${line.line_id}].version", sort: {name: int}, initial: "${line.version}"}
+    - {name: "L2.line[${line.line_id}].source", sort: {name: op_id}, initial: "${line.source_op_id}"}
+    - {name: "L2.line[${line.line_id}].busy", sort: {name: bool}, initial: false}
+    - {name: "L2.line[${line.line_id}].current_txn", sort: {name: op_id}, initial: EMPTY}
+    - {name: "L2.line[${line.line_id}].directory_checked", sort: {name: bool}, initial: false}
+    - {name: "L2.line[${line.line_id}].outer_ready", sort: {name: bool}, initial: false}
+    - {name: "L2.line[${line.line_id}].grant_pending", sort: {name: bool}, initial: false}
+
+- over: accesses
+  as: access
+  include:
+    slots:
+    - id: l2_directory_result_${access.repeat_index}
+      type: L2.DirectoryResult
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        line_id: ${access.line_id}
+        hit: {$expr: {node: symbol, name: "l2::${access.op_id}::directory_hit", sort: {name: bool}}}
+    - id: l2_outer_acquire_${access.repeat_index}
+      type: L2.OuterAcquire
+      required: false
+      fields: {txn_id: "${access.op_id}", line_id: "${access.line_id}", address: "${access.address}"}
+    - id: l2_outer_grant_${access.repeat_index}
+      type: L2.OuterGrant
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        line_id: ${access.line_id}
+        address: ${access.address}
+        value: {$expr: {node: symbol, name: "l2::${access.op_id}::outer_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l2::${access.op_id}::outer_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l2::${access.op_id}::outer_source", sort: {name: op_id}}}
+    - id: l2_probe_${access.repeat_index}_h0
+      type: TL.Probe
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        requester_hart: ${access.hart}
+        target_hart: 0
+        line_id: ${access.line_id}
+        address: ${access.address}
+        cap: {$expr: {node: symbol, name: "l2::${access.op_id}::h0::probe_cap", sort: {name: string}}}
+    - id: l2_probe_${access.repeat_index}_h1
+      type: TL.Probe
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        requester_hart: ${access.hart}
+        target_hart: 1
+        line_id: ${access.line_id}
+        address: ${access.address}
+        cap: {$expr: {node: symbol, name: "l2::${access.op_id}::h1::probe_cap", sort: {name: string}}}
+    - id: l2_grant_${access.repeat_index}
+      type: TL.Grant
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        hart: ${access.hart}
+        line_id: ${access.line_id}
+        address: ${access.address}
+        cap: {$expr: {node: symbol, name: "l2::${access.op_id}::grant_cap", sort: {name: string}}}
+        has_data: {$expr: {node: symbol, name: "l2::${access.op_id}::grant_data", sort: {name: bool}}}
+        value: {$expr: {node: symbol, name: "l2::${access.op_id}::grant_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l2::${access.op_id}::grant_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l2::${access.op_id}::grant_source", sort: {name: op_id}}}
+        sink_id: ${access.repeat_index}
+    - id: l2_publish_probe_${access.repeat_index}_h0
+      type: Coherence.VersionPublish
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        hart: 0
+        line_id: ${access.line_id}
+        address: ${access.address}
+        value: {$expr: {node: symbol, name: "l2::${access.op_id}::h0::publish_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l2::${access.op_id}::h0::publish_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l2::${access.op_id}::h0::publish_source", sort: {name: op_id}}}
+        path: ProbeAckData
+    - id: l2_publish_probe_${access.repeat_index}_h1
+      type: Coherence.VersionPublish
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        hart: 1
+        line_id: ${access.line_id}
+        address: ${access.address}
+        value: {$expr: {node: symbol, name: "l2::${access.op_id}::h1::publish_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l2::${access.op_id}::h1::publish_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l2::${access.op_id}::h1::publish_source", sort: {name: op_id}}}
+        path: ProbeAckData
+
+- over: evictions
+  as: eviction
+  include:
+    slots:
+    - id: l2_release_ack_${eviction.repeat_index}
+      type: TL.ReleaseAck
+      required: false
+      fields: {txn_id: "${eviction.txn_id}", hart: "${eviction.hart}", line_id: "${eviction.line_id}", address: "${eviction.address}"}
+    - id: l2_publish_release_${eviction.repeat_index}
+      type: Coherence.VersionPublish
+      required: false
+      fields:
+        txn_id: ${eviction.txn_id}
+        hart: ${eviction.hart}
+        line_id: ${eviction.line_id}
+        address: ${eviction.address}
+        value: {$expr: {node: symbol, name: "l2::${eviction.txn_id}::publish_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l2::${eviction.txn_id}::publish_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l2::${eviction.txn_id}::publish_source", sort: {name: op_id}}}
+        path: ReleaseData
+
+repeat_product:
+- axes:
+  - {over: accesses, as: access}
+  - {over: lines, as: line}
+  include:
+    transformations:
+    - name: acquire_allocates_line_mshr_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}]
+      when: &acquire_for_line
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: acquire, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].busy", at: acquire, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: acquire, value: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].directory_checked", at: acquire, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].outer_ready", at: acquire, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: acquire, value: {node: literal, sort: {name: bool}, value: false}}
+
+    - name: directory_lookup_obligation_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}]
+      outputs: [{role: result, type: L2.DirectoryResult}]
+      when: *acquire_for_line
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: directory_hit_support_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}]
+      outputs: [{role: result, type: L2.DirectoryResult}]
+      when: *acquire_for_line
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: event_field, event_id: result, field: hit, sort: {name: bool}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].state", at: result, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}
+      state_mode: guard
+      exact: true
+    - name: directory_miss_support_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}]
+      outputs: [{role: result, type: L2.DirectoryResult}]
+      when: *acquire_for_line
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: result, field: hit, sort: {name: bool}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].state", at: result, op: eq, value: {node: literal, sort: {name: string}, value: INVALID}}
+      state_mode: guard
+      exact: true
+    - name: directory_hit_is_ready_${product.repeat_index}
+      inputs: [{role: result, type: L2.DirectoryResult}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: event_field, event_id: result, field: hit, sort: {name: bool}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].directory_checked", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].outer_ready", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+    - name: directory_miss_requests_outer_${product.repeat_index}
+      inputs: [{role: result, type: L2.DirectoryResult}]
+      outputs: [{role: outer_acquire, type: L2.OuterAcquire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: result, field: hit, sort: {name: bool}}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: outer_acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: outer_acquire, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].directory_checked", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+    - name: outer_memory_grants_${product.repeat_index}
+      inputs: [{role: outer_acquire, type: L2.OuterAcquire}]
+      outputs: [{role: outer_grant, type: L2.OuterGrant}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: outer_acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: outer_grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: outer_acquire, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: outer_grant, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].value", at: outer_grant, op: eq, value: {node: event_field, event_id: outer_grant, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: outer_grant, op: eq, value: {node: event_field, event_id: outer_grant, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: outer_grant, op: eq, value: {node: event_field, event_id: outer_grant, field: source_op_id, sort: {name: op_id}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].outer_ready", at: outer_grant, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+
+    - name: probe_h0_to_n_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: probe, type: TL.Probe}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: ne, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: ne, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: N}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].h0_perm", at: probe, op: ne, value: {node: literal, sort: {name: string}, value: N}}
+      state_mode: guard
+      exact: true
+    - name: probe_h1_to_n_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: probe, type: TL.Probe}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: ne, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: ne, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: N}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].h1_perm", at: probe, op: ne, value: {node: literal, sort: {name: string}, value: N}}
+      state_mode: guard
+      exact: true
+    - name: probe_h0_to_b_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: probe, type: TL.Probe}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: ne, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].h0_perm", at: probe, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      state_mode: guard
+      exact: true
+    - name: probe_h1_to_b_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: probe, type: TL.Probe}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: ne, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].h1_perm", at: probe, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      state_mode: guard
+      exact: true
+
+    - name: accept_probe_data_h0_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ProbeAck}]
+      outputs: [{role: publish, type: Coherence.VersionPublish}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: ProbeAckData}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: version, sort: {name: int}}, right: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: publish, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: ack, op: eq, value: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].version", at: ack, op: le, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].h0_perm", at: ack, value: {node: event_field, event_id: ack, field: cap, sort: {name: string}}}
+      - {state: "L2.line[${line.line_id}].owner", at: ack, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].dirty", at: ack, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].value", at: ack, value: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: ack, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: ack, value: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      exact: true
+    - name: accept_probe_clean_h0_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ProbeAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: ack, op: eq, value: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].h0_perm", at: ack, value: {node: event_field, event_id: ack, field: cap, sort: {name: string}}}
+      - {state: "L2.line[${line.line_id}].owner", at: ack, value: {node: literal, sort: {name: int}, value: -1}}
+    - name: accept_probe_data_h1_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ProbeAck}]
+      outputs: [{role: publish, type: Coherence.VersionPublish}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: ProbeAckData}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: version, sort: {name: int}}, right: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: publish, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: ack, op: eq, value: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].version", at: ack, op: le, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].h1_perm", at: ack, value: {node: event_field, event_id: ack, field: cap, sort: {name: string}}}
+      - {state: "L2.line[${line.line_id}].owner", at: ack, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].dirty", at: ack, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].value", at: ack, value: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: ack, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: ack, value: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      exact: true
+    - name: accept_probe_clean_h1_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ProbeAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: ack, op: eq, value: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].h1_perm", at: ack, value: {node: event_field, event_id: ack, field: cap, sort: {name: string}}}
+      - {state: "L2.line[${line.line_id}].owner", at: ack, value: {node: literal, sort: {name: int}, value: -1}}
+
+    - name: probe_data_is_published_before_grant_${product.repeat_index}
+      inputs: [{role: publish, type: Coherence.VersionPublish}, {role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: ProbeAckData}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: publish, field: txn_id, sort: {name: op_id}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: publish, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+
+    - name: grant_to_t_h0_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: T}}
+      ensure: &grant_data_match
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}, right: {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: grant, op: eq, value: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].directory_checked", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].outer_ready", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].h1_perm", at: grant, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L2.line[${line.line_id}].value", at: grant, op: eq, value: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: grant, op: eq, value: {node: event_field, event_id: grant, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: grant, op: eq, value: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: grant_to_b_h0_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
+      ensure:
+      - {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: grant, op: eq, value: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].directory_checked", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].outer_ready", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].h1_perm", at: grant, op: eq, value: {node: literal, sort: {name: string}, value: B}}
+      - {state: "L2.line[${line.line_id}].value", at: grant, op: eq, value: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: grant, op: eq, value: {node: event_field, event_id: grant, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: grant, op: eq, value: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: grant_to_t_h1_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: T}}
+      ensure: *grant_data_match
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: grant, op: eq, value: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].directory_checked", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].outer_ready", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].h0_perm", at: grant, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L2.line[${line.line_id}].value", at: grant, op: eq, value: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: grant, op: eq, value: {node: event_field, event_id: grant, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: grant, op: eq, value: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: grant_to_b_h1_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
+      ensure:
+      - {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: grant, op: eq, value: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].directory_checked", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].outer_ready", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].h0_perm", at: grant, op: eq, value: {node: literal, sort: {name: string}, value: B}}
+      - {state: "L2.line[${line.line_id}].value", at: grant, op: eq, value: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: grant, op: eq, value: {node: event_field, event_id: grant, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: grant, op: eq, value: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+
+    - name: grant_obligation_${product.repeat_index}
+      inputs: [{role: acquire, type: TL.Acquire}, {role: directory, type: L2.DirectoryResult}]
+      outputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: directory, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: line_id, sort: {name: string}}, right: {node: event_field, event_id: acquire, field: line_id, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}, right: {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}}
+      - node: nary
+        op: or
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: T}}
+        - node: nary
+          op: and
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: grant, op: eq, value: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].directory_checked", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].outer_ready", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+
+    - name: apply_grant_t_h0_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: T}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].state", at: grant, value: {node: literal, sort: {name: string}, value: TRUNK}}
+      - {state: "L2.line[${line.line_id}].owner", at: grant, value: {node: literal, sort: {name: int}, value: 0}}
+      - {state: "L2.line[${line.line_id}].h0_perm", at: grant, value: {node: literal, sort: {name: string}, value: T}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, value: {node: literal, sort: {name: bool}, value: true}}
+    - name: apply_grant_b_h0_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].state", at: grant, value: {node: literal, sort: {name: string}, value: TIP}}
+      - {state: "L2.line[${line.line_id}].owner", at: grant, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].h0_perm", at: grant, value: {node: literal, sort: {name: string}, value: B}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, value: {node: literal, sort: {name: bool}, value: true}}
+    - name: apply_grant_t_h1_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: T}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].state", at: grant, value: {node: literal, sort: {name: string}, value: TRUNK}}
+      - {state: "L2.line[${line.line_id}].owner", at: grant, value: {node: literal, sort: {name: int}, value: 1}}
+      - {state: "L2.line[${line.line_id}].h1_perm", at: grant, value: {node: literal, sort: {name: string}, value: T}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, value: {node: literal, sort: {name: bool}, value: true}}
+    - name: apply_grant_b_h1_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].state", at: grant, value: {node: literal, sort: {name: string}, value: TIP}}
+      - {state: "L2.line[${line.line_id}].owner", at: grant, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].h1_perm", at: grant, value: {node: literal, sort: {name: string}, value: B}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: grant, value: {node: literal, sort: {name: bool}, value: true}}
+
+    - name: grant_ack_retires_transaction_${product.repeat_index}
+      inputs: [{role: ack, type: TL.GrantAck}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: ack, op: eq, value: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].grant_pending", at: ack, value: {node: literal, sort: {name: bool}, value: false}}
+
+- axes:
+  - {over: evictions, as: eviction}
+  - {over: lines, as: line}
+  include:
+    transformations:
+    - name: l2_release_data_h0_${product.repeat_index}
+      inputs: [{role: release, type: TL.Release}]
+      outputs: [{role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: release, field: has_data, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].version", at: release, op: le, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].busy", at: release, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: release, value: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].state", at: release, value: {node: literal, sort: {name: string}, value: TIP}}
+      - {state: "L2.line[${line.line_id}].owner", at: release, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].h0_perm", at: release, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L2.line[${line.line_id}].dirty", at: release, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].value", at: release, value: {node: event_field, event_id: release, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: release, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: release, value: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}}
+      exact: false
+    - name: l2_release_clean_h0_${product.repeat_index}
+      inputs: [{role: release, type: TL.Release}]
+      outputs: [{role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: release, field: has_data, sort: {name: bool}}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].busy", at: release, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: release, value: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].state", at: release, value: {node: literal, sort: {name: string}, value: TIP}}
+      - {state: "L2.line[${line.line_id}].owner", at: release, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].h0_perm", at: release, value: {node: literal, sort: {name: string}, value: N}}
+      exact: false
+    - name: l2_release_data_h1_${product.repeat_index}
+      inputs: [{role: release, type: TL.Release}]
+      outputs: [{role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: event_field, event_id: release, field: has_data, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L2.line[${line.line_id}].version", at: release, op: le, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].busy", at: release, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: release, value: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].state", at: release, value: {node: literal, sort: {name: string}, value: TIP}}
+      - {state: "L2.line[${line.line_id}].owner", at: release, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].h1_perm", at: release, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L2.line[${line.line_id}].dirty", at: release, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].value", at: release, value: {node: event_field, event_id: release, field: value, sort: {name: value, width: 64}}}
+      - {state: "L2.line[${line.line_id}].version", at: release, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      - {state: "L2.line[${line.line_id}].source", at: release, value: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}}
+      exact: false
+    - name: l2_release_clean_h1_${product.repeat_index}
+      inputs: [{role: release, type: TL.Release}]
+      outputs: [{role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: release, field: has_data, sort: {name: bool}}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].busy", at: release, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: release, value: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}}
+      - {state: "L2.line[${line.line_id}].state", at: release, value: {node: literal, sort: {name: string}, value: TIP}}
+      - {state: "L2.line[${line.line_id}].owner", at: release, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: "L2.line[${line.line_id}].h1_perm", at: release, value: {node: literal, sort: {name: string}, value: N}}
+      exact: false
+
+    - name: release_ack_support_${product.repeat_index}
+      inputs: [{role: release, type: TL.Release}]
+      outputs: [{role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      exact: true
+
+    - name: publish_release_data_${product.repeat_index}
+      inputs: [{role: release, type: TL.Release}]
+      outputs: [{role: publish, type: Coherence.VersionPublish}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: event_field, event_id: release, field: has_data, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${eviction.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: ReleaseData}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: release, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: version, sort: {name: int}}, right: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: publish, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: release_data_is_published_before_ack_${product.repeat_index}
+      inputs: [{role: publish, type: Coherence.VersionPublish}, {role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: publish, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: ReleaseData}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: publish, field: txn_id, sort: {name: op_id}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: publish, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+    - name: release_ack_retires_eviction_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ReleaseAck}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+      state_requirements:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L2.line[${line.line_id}].current_txn", at: ack, op: eq, value: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}}
+      state_updates:
+      - {state: "L2.line[${line.line_id}].busy", at: ack, value: {node: literal, sort: {name: bool}, value: false}}

@@ -1,0 +1,233 @@
+schema_version: umcm.module.v0.15.0
+name: retire_core
+metadata:
+  version: 0.17.0
+  source: ROB-to-architectural memory projection
+  scope: committed load/store/AMO/LR/SC/fence events; failed SC is non-writing
+  hierarchy: pure public-event projection with no private state
+ports:
+- {name: commit, direction: input, event_type: ROB.Commit}
+- {name: arch_load, direction: output, event_type: Arch.Load}
+- {name: arch_store, direction: output, event_type: Arch.Store}
+- {name: arch_amo, direction: output, event_type: Arch.AMO}
+- {name: arch_lr, direction: output, event_type: Arch.LR}
+- {name: arch_sc, direction: output, event_type: Arch.SC}
+- {name: arch_sc_failure, direction: output, event_type: Arch.SCFailure}
+- {name: lrsc_pair, direction: output, event_type: Arch.LRSCPair}
+- {name: commit_load, direction: output, event_type: Arch.CommitLoad}
+- {name: commit_store, direction: output, event_type: Arch.CommitStore}
+- {name: commit_fence, direction: output, event_type: Arch.CommitFence}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: memory_ops
+  as: op
+  include:
+    slots:
+    - id: retired_arch_load_${op.repeat_index}
+      type: Arch.Load
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: "${op.value}", byte_mask: "${op.byte_mask}"}
+    - id: retired_arch_store_${op.repeat_index}
+      type: Arch.Store
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: "${op.write_value}", byte_mask: "${op.byte_mask}"}
+    - id: retired_arch_amo_${op.repeat_index}
+      type: Arch.AMO
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", write_value: "${op.write_value}", byte_mask: "${op.byte_mask}"}
+    - id: retired_arch_lr_${op.repeat_index}
+      type: Arch.LR
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: "${op.value}", byte_mask: "${op.byte_mask}"}
+    - id: retired_arch_sc_${op.repeat_index}
+      type: Arch.SC
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: "${op.write_value}", byte_mask: "${op.byte_mask}"}
+    - id: retired_arch_sc_failure_${op.repeat_index}
+      type: Arch.SCFailure
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}"}
+    - id: retired_commit_load_${op.repeat_index}
+      type: Arch.CommitLoad
+      required: false
+      fields: {op_id: "${op.op_id}", value: "${op.value}"}
+    - id: retired_commit_store_${op.repeat_index}
+      type: Arch.CommitStore
+      required: false
+      fields: {op_id: "${op.op_id}"}
+    - id: retired_commit_fence_${op.repeat_index}
+      type: Arch.CommitFence
+      required: false
+      fields: {op_id: "${op.op_id}"}
+    transformations:
+    - name: retire_load_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch, type: Arch.Load}]
+      when: &load_commit
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_store_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch, type: Arch.Store}]
+      when: &store_commit
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_amo_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch, type: Arch.AMO}]
+      when: &amo_commit
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_lr_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch, type: Arch.LR}]
+      when: &lr_commit
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_successful_sc_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch, type: Arch.SC}]
+      when: &successful_sc_commit
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}
+        - {node: event_field, event_id: commit, field: success, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_failed_sc_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch, type: Arch.SCFailure}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: commit, field: success, sort: {name: bool}}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_read_value_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch_commit, type: Arch.CommitLoad}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch_commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch_commit, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_write_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch_commit, type: Arch.CommitStore}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}
+            - {node: event_field, event_id: commit, field: success, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch_commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch_commit, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: retire_fence_${op.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: arch_commit, type: Arch.CommitFence}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: fence}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch_commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch_commit, field: cycle, sort: {name: int}}}
+      exact: true
+repeat_product:
+- axes:
+  - {over: lr_ops, as: lr}
+  - {over: sc_ops, as: sc}
+  include:
+    slots:
+    - id: retired_lrsc_pair_${product.repeat_index}
+      type: Arch.LRSCPair
+      required: false
+      fields: {source_op_id: "${lr.op_id}", target_op_id: "${sc.op_id}"}
+    transformations:
+    - name: retire_lrsc_pair_${product.repeat_index}
+      inputs:
+      - {role: lr_event, type: Arch.LR}
+      - {role: sc_event, type: Arch.SC}
+      outputs: [{role: pair, type: Arch.LRSCPair}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: lr_event, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lr.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: sc_event, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${sc.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${lr.hart}"}, right: {node: literal, sort: {name: int}, value: "${sc.hart}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${lr.reservation_id}"}, right: {node: literal, sort: {name: string}, value: "${sc.reservation_id}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${lr.program_index}"}, right: {node: literal, sort: {name: int}, value: "${sc.program_index}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: pair, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lr.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: pair, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${sc.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: sc_event, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: pair, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [lr-sc, architectural-pair]

@@ -10,7 +10,7 @@ from umcm.errors import AxiomError, SerializationError
 from umcm.serialization import dump_data, load_data
 
 
-GRAPH_MODEL_SCHEMA_VERSION = "umcm.graph_model.v0.2"
+GRAPH_MODEL_SCHEMA_VERSION = "umcm.graph_model.v0.3"
 
 
 def _unknown_keys(data: Mapping[str, Any], allowed: set[str], context: str) -> None:
@@ -112,6 +112,51 @@ class COHintSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class RelationHintSpec:
+    """A trace event that contributes one architectural relation edge."""
+
+    name: str
+    event_type: str
+    source_id_field: str = "source_op_id"
+    target_id_field: str = "target_op_id"
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise AxiomError("relation hint name must be non-empty")
+        if self.name in {"po", "rf", "rfi", "rfe", "co", "fr", "fri", "fre", "ppo", "gmo"} or self.name.startswith("ppo_rule"):
+            raise AxiomError(f"relation hint cannot override reserved relation {self.name!r}")
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "RelationHintSpec":
+        if not isinstance(data, Mapping):
+            raise SerializationError("relation hint must be a mapping")
+        _unknown_keys(
+            data,
+            {"name", "event_type", "source_id_field", "target_id_field"},
+            "relation hint",
+        )
+        try:
+            return cls(
+                name=str(data["name"]),
+                event_type=str(data["event_type"]),
+                source_id_field=str(data.get("source_id_field", "source_op_id")),
+                target_id_field=str(data.get("target_id_field", "target_op_id")),
+            )
+        except KeyError as exc:
+            raise SerializationError(
+                f"relation hint is missing {exc.args[0]!r}"
+            ) from exc
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "event_type": self.event_type,
+            "source_id_field": self.source_id_field,
+            "target_id_field": self.target_id_field,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectionSpec:
     init_write_event: str
     load_event: str
@@ -123,8 +168,14 @@ class ProjectionSpec:
     hart_field: str = "hart"
     program_index_field: str = "program_index"
     require_committed_loads: bool = True
+    amo_event: str | None = None
+    lr_event: str | None = None
+    sc_event: str | None = None
+    write_value_field: str = "write_value"
+    metadata_fields: Mapping[str, str] = field(default_factory=dict)
     rf_hints: tuple[RFHintSpec, ...] = ()
     co_hints: tuple[COHintSpec, ...] = ()
+    relation_hints: tuple[RelationHintSpec, ...] = ()
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ProjectionSpec":
@@ -143,17 +194,29 @@ class ProjectionSpec:
                 "hart_field",
                 "program_index_field",
                 "require_committed_loads",
+                "amo_event",
+                "lr_event",
+                "sc_event",
+                "write_value_field",
+                "metadata_fields",
                 "rf_hints",
                 "co_hints",
+                "relation_hints",
             },
             "projection",
         )
         raw_hints = data.get("rf_hints", [])
         raw_co_hints = data.get("co_hints", [])
+        raw_relation_hints = data.get("relation_hints", [])
+        raw_metadata_fields = data.get("metadata_fields", {})
         if not isinstance(raw_hints, list):
             raise SerializationError("projection.rf_hints must be a list")
         if not isinstance(raw_co_hints, list):
             raise SerializationError("projection.co_hints must be a list")
+        if not isinstance(raw_relation_hints, list):
+            raise SerializationError("projection.relation_hints must be a list")
+        if not isinstance(raw_metadata_fields, Mapping):
+            raise SerializationError("projection.metadata_fields must be a mapping")
         try:
             return cls(
                 init_write_event=str(data["init_write_event"]),
@@ -170,8 +233,24 @@ class ProjectionSpec:
                 require_committed_loads=bool(
                     data.get("require_committed_loads", True)
                 ),
+                amo_event=(
+                    None if data.get("amo_event") is None else str(data["amo_event"])
+                ),
+                lr_event=(
+                    None if data.get("lr_event") is None else str(data["lr_event"])
+                ),
+                sc_event=(
+                    None if data.get("sc_event") is None else str(data["sc_event"])
+                ),
+                write_value_field=str(data.get("write_value_field", "write_value")),
+                metadata_fields={
+                    str(key): str(value) for key, value in raw_metadata_fields.items()
+                },
                 rf_hints=tuple(RFHintSpec.from_dict(item) for item in raw_hints),
                 co_hints=tuple(COHintSpec.from_dict(item) for item in raw_co_hints),
+                relation_hints=tuple(
+                    RelationHintSpec.from_dict(item) for item in raw_relation_hints
+                ),
             )
         except KeyError as exc:
             raise SerializationError(
@@ -190,8 +269,14 @@ class ProjectionSpec:
             "hart_field": self.hart_field,
             "program_index_field": self.program_index_field,
             "require_committed_loads": self.require_committed_loads,
+            "amo_event": self.amo_event,
+            "lr_event": self.lr_event,
+            "sc_event": self.sc_event,
+            "write_value_field": self.write_value_field,
+            "metadata_fields": dict(self.metadata_fields),
             "rf_hints": [item.to_dict() for item in self.rf_hints],
             "co_hints": [item.to_dict() for item in self.co_hints],
+            "relation_hints": [item.to_dict() for item in self.relation_hints],
         }
 
 
@@ -294,6 +379,7 @@ class GraphModelSpec:
     projection: ProjectionSpec
     derived_relations: tuple[DerivedRelationSpec, ...] = ()
     axioms: tuple[AxiomSpec, ...] = ()
+    builtin_model: str | None = None
     ppo_rules: tuple[str, ...] = ("load_load_different_write",)
     metadata: dict[str, Any] = field(default_factory=dict)
     schema_version: str = GRAPH_MODEL_SCHEMA_VERSION
@@ -302,6 +388,8 @@ class GraphModelSpec:
         if not self.model:
             raise AxiomError("graph model name must be non-empty")
         self.metadata = dict(self.metadata)
+        if self.builtin_model not in {None, "rvwmo"}:
+            raise AxiomError(f"unsupported built-in model: {self.builtin_model}")
         supported = {"load_load_different_write"}
         unknown = set(self.ppo_rules) - supported
         if unknown:
@@ -326,6 +414,7 @@ class GraphModelSpec:
                 "model",
                 "metadata",
                 "projection",
+                "builtin_model",
                 "ppo_rules",
                 "derived_relations",
                 "axioms",
@@ -352,6 +441,11 @@ class GraphModelSpec:
                     DerivedRelationSpec.from_dict(item) for item in raw_derived
                 ),
                 axioms=tuple(AxiomSpec.from_dict(item) for item in raw_axioms),
+                builtin_model=(
+                    None
+                    if data.get("builtin_model") is None
+                    else str(data["builtin_model"])
+                ),
                 ppo_rules=tuple(str(item) for item in raw_ppo),
                 metadata=dict(metadata),
                 schema_version=str(
@@ -369,6 +463,7 @@ class GraphModelSpec:
             "model": self.model,
             "metadata": dict(self.metadata),
             "projection": self.projection.to_dict(),
+            "builtin_model": self.builtin_model,
             "ppo_rules": list(self.ppo_rules),
             "derived_relations": [item.to_dict() for item in self.derived_relations],
             "axioms": [item.to_dict() for item in self.axioms],

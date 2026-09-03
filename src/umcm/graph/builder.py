@@ -20,6 +20,7 @@ class CandidateSpace:
     operations: Mapping[str, MemoryOperation]
     rf_choices: Mapping[str, tuple[str, ...]]
     co_orders: Mapping[Any, tuple[tuple[str, ...], ...]]
+    relation_hints: Mapping[str, Relation]
 
     @property
     def estimated_candidates(self) -> int:
@@ -61,6 +62,16 @@ def project_operations(trace: Trace, projection: ProjectionSpec) -> dict[str, Me
 
     operations: dict[str, MemoryOperation] = {}
 
+    def metadata(event: EventInstance, *, atomic_kind: str | None = None) -> dict[str, Any]:
+        result = {
+            semantic_name: event.fields[field_name]
+            for semantic_name, field_name in projection.metadata_fields.items()
+            if field_name in event.fields
+        }
+        if atomic_kind is not None:
+            result["atomic_kind"] = atomic_kind
+        return result
+
     def add(operation: MemoryOperation) -> None:
         if operation.id in operations:
             raise GraphError(f"duplicate architectural operation id: {operation.id}")
@@ -76,9 +87,34 @@ def project_operations(trace: Trace, projection: ProjectionSpec) -> dict[str, Me
                     address=_field(event, projection.address_field),
                     value=_field(event, projection.value_field),
                     source_event_id=event.id,
+                    metadata=metadata(event),
                 )
             )
-        elif event.event_type == projection.store_event:
+        elif projection.amo_event is not None and event.event_type == projection.amo_event:
+            op_id = str(_field(event, projection.id_field))
+            commit = commits.get(op_id)
+            if commit is None:
+                if projection.require_committed_loads:
+                    raise GraphError(f"AMO {op_id!r} has no {projection.load_commit_event}")
+                continue
+            add(
+                MemoryOperation(
+                    id=op_id,
+                    kind=OperationKind.AMO,
+                    address=_field(event, projection.address_field),
+                    value=_field(commit, projection.value_field),
+                    write_value=_field(event, projection.write_value_field),
+                    hart=int(_field(event, projection.hart_field)),
+                    program_index=int(_field(event, projection.program_index_field)),
+                    source_event_id=event.id,
+                    commit_event_id=commit.id,
+                    metadata=metadata(event, atomic_kind="amo"),
+                )
+            )
+        elif event.event_type in {
+            projection.store_event,
+            projection.sc_event,
+        }:
             op_id = str(_field(event, projection.id_field))
             add(
                 MemoryOperation(
@@ -89,9 +125,21 @@ def project_operations(trace: Trace, projection: ProjectionSpec) -> dict[str, Me
                     hart=int(_field(event, projection.hart_field)),
                     program_index=int(_field(event, projection.program_index_field)),
                     source_event_id=event.id,
+                    metadata=metadata(
+                        event,
+                        atomic_kind=(
+                            "sc"
+                            if projection.sc_event is not None
+                            and event.event_type == projection.sc_event
+                            else None
+                        ),
+                    ),
                 )
             )
-        elif event.event_type == projection.load_event:
+        elif event.event_type in {
+            projection.load_event,
+            projection.lr_event,
+        }:
             op_id = str(_field(event, projection.id_field))
             commit = commits.get(op_id)
             if commit is None:
@@ -109,6 +157,15 @@ def project_operations(trace: Trace, projection: ProjectionSpec) -> dict[str, Me
                     program_index=int(_field(event, projection.program_index_field)),
                     source_event_id=event.id,
                     commit_event_id=commit.id,
+                    metadata=metadata(
+                        event,
+                        atomic_kind=(
+                            "lr"
+                            if projection.lr_event is not None
+                            and event.event_type == projection.lr_event
+                            else None
+                        ),
+                    ),
                 )
             )
 
@@ -180,6 +237,31 @@ def _co_hints(trace: Trace, spec: GraphModelSpec) -> tuple[_COHintEvidence, ...]
     return tuple(hints[key] for key in sorted(hints, key=repr))
 
 
+def _relation_hints(
+    trace: Trace,
+    spec: GraphModelSpec,
+    operations: Mapping[str, MemoryOperation],
+) -> dict[str, Relation]:
+    edges: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    declared_names = {hint.name for hint in spec.projection.relation_hints}
+    for hint in spec.projection.relation_hints:
+        for event in trace.events_of_type(hint.event_type):
+            if not _concrete_event(event):
+                continue
+            source = str(_field(event, hint.source_id_field))
+            target = str(_field(event, hint.target_id_field))
+            if source not in operations or target not in operations:
+                raise GraphError(
+                    f"relation hint event {event.id!r} references unknown operation "
+                    f"{source!r}->{target!r}"
+                )
+            edges[hint.name].add((source, target))
+    return {
+        name: Relation.from_edges(name, edges.get(name, ()))
+        for name in sorted(declared_names)
+    }
+
+
 def build_candidate_space(trace: Trace, spec: GraphModelSpec) -> CandidateSpace:
     operations = project_operations(trace, spec.projection)
     writes = [item for item in operations.values() if item.is_write]
@@ -192,7 +274,9 @@ def build_candidate_space(trace: Trace, spec: GraphModelSpec) -> CandidateSpace:
         candidates = [
             write.id
             for write in writes
-            if write.address == read.address and write.value == read.value
+            if write.id != read.id
+            and write.address == read.address
+            and write.stored_value == read.read_value
         ]
         if read.id in hints:
             evidence = hints[read.id]
@@ -206,7 +290,7 @@ def build_candidate_space(trace: Trace, spec: GraphModelSpec) -> CandidateSpace:
                 raise GraphError(
                     f"rf hint event {evidence.event_id!r} has inconsistent address"
                 )
-            if evidence.value != read.value or evidence.value != write.value:
+            if evidence.value != read.read_value or evidence.value != write.stored_value:
                 raise GraphError(
                     f"rf hint event {evidence.event_id!r} has inconsistent value"
                 )
@@ -285,6 +369,7 @@ def build_candidate_space(trace: Trace, spec: GraphModelSpec) -> CandidateSpace:
         operations=operations,
         rf_choices=rf_choices,
         co_orders=co_orders,
+        relation_hints=_relation_hints(trace, spec, operations),
     )
 
 
@@ -427,6 +512,25 @@ def iter_execution_graphs(
             relations: dict[str, Relation] = {
                 item.name: item for item in (po, rf, rfe, co, fr, ppo)
             }
+            relations.update(space.relation_hints)
+            graph = ExecutionGraph(
+                operations=dict(space.operations),
+                relations=relations,
+                candidate_id=candidate_id,
+                metadata={
+                    "graph_model": spec.model,
+                    "rf_assignment": dict(sorted(rf_sources.items())),
+                    "co_orders": {
+                        str(address): list(order)
+                        for address, order in zip(addresses, co_selected, strict=True)
+                    },
+                },
+            )
+            if spec.builtin_model == "rvwmo":
+                from umcm.graph.rvwmo import complete_rvwmo_relations
+
+                graph = complete_rvwmo_relations(graph)
+                relations = dict(graph.relations)
             for derived in spec.derived_relations:
                 relation = _derive_relation(
                     derived,
@@ -437,18 +541,10 @@ def iter_execution_graphs(
                     raise GraphError(f"derived relation overwrites {relation.name!r}")
                 relations[relation.name] = relation
 
-            metadata = {
-                "graph_model": spec.model,
-                "rf_assignment": dict(sorted(rf_sources.items())),
-                "co_orders": {
-                    str(address): list(order)
-                    for address, order in zip(addresses, co_selected, strict=True)
-                },
-            }
             yield ExecutionGraph(
                 operations=dict(space.operations),
                 relations=relations,
                 candidate_id=candidate_id,
-                metadata=metadata,
+                metadata=graph.metadata,
             )
             candidate_id += 1

@@ -1,0 +1,247 @@
+schema_version: umcm.module.v0.15.0
+name: rob_core
+metadata:
+  version: 0.17.0
+  source: bounded BOOM memory ROB/recovery abstraction
+  scope: allocation, writeback, in-order commit, precise memory exception, squash, and branch recovery
+  hierarchy: ROB entry state and bookkeeping events are private; commit/exception/squash/kill are public
+ports:
+- {name: memory_instruction, direction: input, event_type: Core.MemoryInstruction, required_connection: false}
+- {name: memory_complete, direction: input, event_type: Core.MemoryComplete, required_connection: false}
+- {name: memory_fault, direction: input, event_type: Core.MemoryFault, required_connection: false}
+- {name: branch_mispredict, direction: input, event_type: Core.BranchMispredict, required_connection: false}
+- {name: commit, direction: output, event_type: ROB.Commit}
+- {name: precise_exception, direction: output, event_type: ROB.PreciseException}
+- {name: squash_memory, direction: output, event_type: Core.SquashMemory}
+- {name: branch_kill, direction: output, event_type: Core.BranchKill}
+internal_events: [ROB.Allocate, ROB.Writeback, ROB.ExceptionRecord]
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: memory_ops
+  as: op
+  include:
+    state_variables:
+    - {name: "ROB.entry[${op.op_id}].allocated", sort: {name: bool}, initial: false}
+    - {name: "ROB.entry[${op.op_id}].completed", sort: {name: bool}, initial: false}
+    - {name: "ROB.entry[${op.op_id}].faulted", sort: {name: bool}, initial: false}
+    - {name: "ROB.entry[${op.op_id}].squashed", sort: {name: bool}, initial: false}
+    - {name: "ROB.entry[${op.op_id}].committed", sort: {name: bool}, initial: false}
+    slots:
+    - id: rob_allocate_${op.repeat_index}
+      type: ROB.Allocate
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", rob_idx: "${op.rob_idx}"}
+    - id: rob_writeback_${op.repeat_index}
+      type: ROB.Writeback
+      required: false
+      fields: {op_id: "${op.op_id}", rob_idx: "${op.rob_idx}"}
+    - id: rob_exception_record_${op.repeat_index}
+      type: ROB.ExceptionRecord
+      required: false
+      fields: {op_id: "${op.op_id}", rob_idx: "${op.rob_idx}", cause: page_fault}
+    - id: rob_commit_${op.repeat_index}
+      type: ROB.Commit
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        mem_kind: ${op.mem_kind}
+        address: ${op.address}
+        value: ${op.value}
+        write_value: ${op.write_value}
+        byte_mask: ${op.byte_mask}
+        success:
+          $expr: {node: symbol, name: "rob::${op.op_id}::success", sort: {name: bool}}
+    - id: rob_precise_exception_${op.repeat_index}
+      type: ROB.PreciseException
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", cause: page_fault}
+    - id: rob_exception_squash_${op.repeat_index}
+      type: Core.SquashMemory
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", reason: precise_memory_exception}
+    - id: rob_branch_squash_${op.repeat_index}
+      type: Core.SquashMemory
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", reason: branch_mispredict}
+    - id: rob_branch_kill_${op.repeat_index}
+      type: Core.BranchKill
+      required: false
+      fields: {op_id: "${op.op_id}"}
+    transformations:
+    - name: rob_allocates_memory_op_${op.repeat_index}
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: allocate, type: ROB.Allocate}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "ROB.entry[${op.op_id}].allocated", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "ROB.entry[${op.op_id}].allocated", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rob, allocate]
+    - name: rob_captures_completion_${op.repeat_index}
+      inputs: [{role: complete, type: Core.MemoryComplete}]
+      outputs: [{role: writeback, type: ROB.Writeback}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "ROB.entry[${op.op_id}].allocated", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "ROB.entry[${op.op_id}].squashed", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "ROB.entry[${op.op_id}].completed", at: writeback, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rob, writeback]
+    - name: rob_commits_completed_op_${op.repeat_index}
+      inputs:
+      - {role: complete, type: Core.MemoryComplete}
+      - {role: writeback, type: ROB.Writeback}
+      outputs: [{role: commit, type: ROB.Commit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: success, sort: {name: bool}}, right: {node: event_field, event_id: commit, field: success, sort: {name: bool}}}
+      state_requirements:
+      - {state: "ROB.entry[${op.op_id}].allocated", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "ROB.entry[${op.op_id}].completed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "ROB.entry[${op.op_id}].faulted", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "ROB.entry[${op.op_id}].squashed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "ROB.entry[${op.op_id}].committed", at: commit, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rob, commit]
+    - name: rob_records_memory_fault_${op.repeat_index}
+      inputs: [{role: fault, type: Core.MemoryFault}]
+      outputs: [{role: record, type: ROB.ExceptionRecord}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: fault, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: record, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: record, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "ROB.entry[${op.op_id}].allocated", at: record, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "ROB.entry[${op.op_id}].faulted", at: record, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rob, exception]
+    - name: rob_raises_precise_exception_${op.repeat_index}
+      inputs: [{role: record, type: ROB.ExceptionRecord}]
+      outputs: [{role: precise, type: ROB.PreciseException}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: record, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: precise, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: record, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: precise, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "ROB.entry[${op.op_id}].faulted", at: precise, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "ROB.entry[${op.op_id}].squashed", at: precise, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [rob, precise-exception]
+    - name: squash_marks_entry_${op.repeat_index}
+      inputs: [{role: squash, type: Core.SquashMemory}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: squash, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      state_updates:
+      - {state: "ROB.entry[${op.op_id}].squashed", at: squash, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [rob, squash]
+repeat_product:
+- axes:
+  - {over: memory_ops, as: older}
+  - {over: memory_ops, as: target}
+  include:
+    transformations:
+    - name: commit_waits_for_older_${product.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${target.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${older.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: event_field, event_id: commit, field: program_index, sort: {name: int}}}
+      state_requirements:
+      - {state: "ROB.entry[${older.op_id}].committed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [rob, in-order-commit]
+    - name: precise_exception_waits_for_older_${product.repeat_index}
+      inputs: [{role: precise, type: ROB.PreciseException}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: precise, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${target.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: precise, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${older.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: event_field, event_id: precise, field: program_index, sort: {name: int}}}
+      state_requirements:
+      - {state: "ROB.entry[${older.op_id}].committed", at: precise, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [rob, precise-exception]
+    - name: precise_exception_squashes_younger_${product.repeat_index}
+      inputs: [{role: precise, type: ROB.PreciseException}]
+      outputs: [{role: squash, type: Core.SquashMemory}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: precise, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: precise, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${target.hart}"}}
+        - {node: binary, op: le, left: {node: event_field, event_id: precise, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${target.program_index}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: squash, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${target.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: squash, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: precise_memory_exception}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: precise, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: squash, field: cycle, sort: {name: int}}}
+      exact: false
+      tags: [rob, precise-exception, squash, oldest-fault-forward]
+- axes:
+  - {over: branch_events, as: branch}
+  - {over: memory_ops, as: victim}
+  include:
+    transformations:
+    - name: branch_recovery_squashes_younger_${product.repeat_index}
+      inputs: [{role: branch, type: Core.BranchMispredict}]
+      outputs: [{role: squash, type: Core.SquashMemory}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: branch, field: branch_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${branch.branch_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: branch, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${victim.hart}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: branch, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: squash, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${victim.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: squash, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: branch_mispredict}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: branch, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: squash, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [rob, branch-recovery, squash]
+    - name: branch_recovery_broadcasts_kill_${product.repeat_index}
+      inputs: [{role: branch, type: Core.BranchMispredict}]
+      outputs: [{role: kill, type: Core.BranchKill}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: branch, field: branch_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${branch.branch_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: branch, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${victim.hart}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: branch, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: kill, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${victim.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: branch, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: kill, field: cycle, sort: {name: int}}}
+      exact: true

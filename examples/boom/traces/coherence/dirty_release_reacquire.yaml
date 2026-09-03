@@ -1,0 +1,9 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {case: dirty-release-reacquire, expected: FEASIBLE, input_contract: ReleaseData publication and later cached Grant are derived}
+events:
+- {id: init_x, type: Coherence.LineInit, occurs: true, cycle: 0, fields: {line_id: x, address: x, value: 0, version: 0, source_op_id: InitX}}
+- {id: store_h0, type: Coherence.Access, occurs: true, cycle: 1, fields: {op_id: W0, hart: 0, program_index: 0, line_id: x, address: x, mem_kind: store, write_value: 1, after_op_id: NONE}}
+- {id: evict_h0, type: Coherence.Evict, occurs: true, cycle: 12, fields: {txn_id: E0, hart: 0, line_id: x, address: x, after_op_id: W0}}
+- {id: load_h1, type: Coherence.Access, occurs: true, cycle: 22, fields: {op_id: L1, hart: 1, program_index: 0, line_id: x, address: x, mem_kind: load, write_value: 0, after_op_id: W0}}
+constraints: []

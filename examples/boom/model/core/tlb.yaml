@@ -1,0 +1,356 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_nbdtlb
+metadata:
+  version: 0.17.0
+  component: BOOM v4 NBDTLB
+  source_repository: https://github.com/riscv-boom/riscv-boom
+  source_commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+  source_files:
+  - src/main/scala/v4/lsu/tlb.scala:18-373
+  - src/main/scala/v4/lsu/lsu.scala:313-317,644-830
+  scope: bounded per-hart entry-valid state, hit/miss, one outstanding PTW walk, refill, miss-ready, and SFENCE invalidation
+  hierarchy: entry/walker state and decision/refill/invalidate events are private; LSU/PTW communication uses declared public ports
+  abstractions:
+  - finite traces supply page entries instead of reproducing sectored/superpage arrays and PLRU replacement
+  - permission checks are collapsed to the page-map accessible bit
+  - PMP/PMA, canonical-address, multiple-hit flush, passthrough, kill, and same-cycle multi-port arbitration remain outside this slice
+ports:
+- {name: request, direction: input, event_type: TLB.Request}
+- {name: ptw_result, direction: input, event_type: TLB.PTWResult}
+- {name: sfence, direction: input, event_type: TLB.SFence, required_connection: false}
+- {name: response, direction: output, event_type: TLB.Response}
+- {name: miss, direction: output, event_type: TLB.Miss}
+- {name: ptw_request, direction: output, event_type: TLB.PTWRequest}
+- {name: miss_ready, direction: output, event_type: TLB.MissReady}
+internal_events: [TLB.Decision, TLB.Refill, TLB.Invalidate]
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: tlb_harts
+  as: tlb_hart
+  include:
+    state_variables:
+    - name: NBDTLB[${tlb_hart.hart}].state
+      sort: {name: string}
+      initial: READY
+      description: BOOM NBDTLB s_ready/s_request/s_wait state, bounded per hart.
+- over: pages
+  as: page
+  include:
+    state_variables:
+    - name: NBDTLB.entry[${page.entry_id}].valid
+      sort: {name: bool}
+      initial: ${page.initial_valid}
+      description: Valid bit for one finitely instantiated BOOM NBDTLB entry.
+    slots:
+    - id: tlb_invalidate_${page.repeat_index}
+      type: TLB.Invalidate
+      required: false
+      fields: {fence_id: "sfence_${page.entry_id}", hart: "${page.hart}", entry_id: "${page.entry_id}", vpn: "${page.vpn}"}
+    transformations:
+    - name: sfence_invalidates_entry_${page.repeat_index}
+      inputs: [{role: sfence, type: TLB.SFence}]
+      outputs: [{role: invalidate, type: TLB.Invalidate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: scope, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: all}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: scope, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: vpn}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "NBDTLB.entry[${page.entry_id}].valid", at: invalidate, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [tlb, sfence, source:352-364]
+repeat_product:
+- axes:
+  - {over: tlb_ops, as: op}
+  - {over: pages, as: page}
+  include:
+    slots:
+    - id: tlb_decision_initial_${product.repeat_index}
+      type: TLB.Decision
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        vpn: ${page.vpn}
+        attempt: 0
+        hit: {$expr: {node: symbol, name: "nbdtlb::${op.op_id}::initial_hit", sort: {name: bool}}}
+    - id: tlb_response_initial_${product.repeat_index}
+      type: TLB.Response
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        vpn: ${page.vpn}
+        attempt: 0
+        paddr: ${page.paddr}
+        miss: {$expr: {node: symbol, name: "nbdtlb::${op.op_id}::initial_miss", sort: {name: bool}}}
+        page_fault: {$expr: {node: symbol, name: "nbdtlb::${op.op_id}::initial_pf", sort: {name: bool}}}
+        cacheable: ${op.cacheable}
+    - id: tlb_miss_${product.repeat_index}
+      type: TLB.Miss
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", vpn: "${page.vpn}"}
+    - id: ptw_request_${product.repeat_index}
+      type: TLB.PTWRequest
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", vpn: "${page.vpn}"}
+    - id: tlb_refill_${product.repeat_index}
+      type: TLB.Refill
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", vpn: "${page.vpn}", paddr: "${page.paddr}"}
+    - id: tlb_miss_ready_${product.repeat_index}
+      type: TLB.MissReady
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", vpn: "${page.vpn}"}
+    - id: tlb_decision_retry_${product.repeat_index}
+      type: TLB.Decision
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        vpn: ${page.vpn}
+        attempt: 1
+        hit: {$expr: {node: symbol, name: "nbdtlb::${op.op_id}::retry_hit", sort: {name: bool}}}
+    - id: tlb_response_retry_${product.repeat_index}
+      type: TLB.Response
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        vpn: ${page.vpn}
+        attempt: 1
+        paddr: ${page.paddr}
+        miss: {$expr: {node: symbol, name: "nbdtlb::${op.op_id}::retry_miss", sort: {name: bool}}}
+        page_fault: {$expr: {node: symbol, name: "nbdtlb::${op.op_id}::retry_pf", sort: {name: bool}}}
+        cacheable: ${op.cacheable}
+    transformations:
+    - name: sfence_precedes_subsequent_lookup_${product.repeat_index}
+      inputs:
+      - {role: invalidate, type: TLB.Invalidate}
+      - {role: decision, type: TLB.Decision}
+      outputs: []
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      tags: [tlb, sfence, source:352-364]
+    - name: initial_request_reads_entry_${product.repeat_index}
+      inputs: [{role: request, type: TLB.Request}]
+      outputs: [{role: decision, type: TLB.Decision}]
+      when: &initial_request_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when: &decision_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "NBDTLB.entry[${page.entry_id}].valid", at: decision, op: eq, value: {node: event_field, event_id: decision, field: hit, sort: {name: bool}}}
+      exact: true
+      tags: [tlb, lookup, source:174-179,276-277]
+    - name: initial_decision_returns_response_${product.repeat_index}
+      inputs: [{role: decision, type: TLB.Decision}]
+      outputs: [{role: response, type: TLB.Response}]
+      when: *decision_scope
+      output_when: &initial_response_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: response, field: miss, sort: {name: bool}}
+        right: {node: unary, op: not, operand: {node: event_field, event_id: decision, field: hit, sort: {name: bool}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: response, field: page_fault, sort: {name: bool}}
+        right:
+          node: nary
+          op: and
+          operands:
+          - {node: event_field, event_id: decision, field: hit, sort: {name: bool}}
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.accessible}"}}
+      exact: true
+      tags: [tlb, response, source:295-319]
+    - name: miss_captures_refill_tag_${product.repeat_index}
+      inputs: [{role: response, type: TLB.Response}]
+      outputs: [{role: miss, type: TLB.Miss}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *initial_response_scope
+        - {node: event_field, event_id: response, field: miss, sort: {name: bool}}
+      output_when: &miss_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "NBDTLB[${op.hart}].state", at: miss, op: eq, value: {node: literal, sort: {name: string}, value: READY}}
+      state_updates:
+      - {state: "NBDTLB[${op.hart}].state", at: miss, value: {node: literal, sort: {name: string}, value: REQUEST}}
+      exact: true
+      tags: [tlb, miss, source:327-338]
+    - name: miss_issues_ptw_request_${product.repeat_index}
+      inputs: [{role: miss, type: TLB.Miss}]
+      outputs: [{role: request, type: TLB.PTWRequest}]
+      when: *miss_scope
+      output_when: &ptw_request_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "NBDTLB[${op.hart}].state", at: request, op: eq, value: {node: literal, sort: {name: string}, value: REQUEST}}
+      state_updates:
+      - {state: "NBDTLB[${op.hart}].state", at: request, value: {node: literal, sort: {name: string}, value: WAIT}}
+      exact: true
+      tags: [tlb, ptw, source:321-349]
+    - name: ptw_result_refills_entry_${product.repeat_index}
+      inputs: [{role: result, type: TLB.PTWResult}]
+      outputs: [{role: refill, type: TLB.Refill}]
+      when: &ptw_result_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      output_when: &refill_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "NBDTLB[${op.hart}].state", at: refill, op: eq, value: {node: literal, sort: {name: string}, value: WAIT}}
+      state_updates:
+      - {state: "NBDTLB.entry[${page.entry_id}].valid", at: refill, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "NBDTLB[${op.hart}].state", at: refill, value: {node: literal, sort: {name: string}, value: READY}}
+      exact: true
+      tags: [tlb, refill, source:145-214,348-350]
+    - name: ready_after_refill_${product.repeat_index}
+      inputs: [{role: refill, type: TLB.Refill}]
+      outputs: [{role: ready, type: TLB.MissReady}]
+      when: *refill_scope
+      output_when: &miss_ready_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "NBDTLB[${op.hart}].state", at: ready, op: eq, value: {node: literal, sort: {name: string}, value: READY}}
+      exact: true
+      tags: [tlb, miss-ready, source:295]
+    - name: retry_request_reads_refilled_entry_${product.repeat_index}
+      inputs: [{role: request, type: TLB.Request}]
+      outputs: [{role: decision, type: TLB.Decision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      output_when:
+        &retry_decision_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: hit, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "NBDTLB.entry[${page.entry_id}].valid", at: decision, op: eq, value: {node: event_field, event_id: decision, field: hit, sort: {name: bool}}}
+      exact: true
+      tags: [tlb, retry-lookup, source:595-606,676-677]
+    - name: retry_decision_returns_response_${product.repeat_index}
+      inputs: [{role: decision, type: TLB.Decision}]
+      outputs: [{role: response, type: TLB.Response}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *retry_decision_scope
+        - {node: event_field, event_id: decision, field: hit, sort: {name: bool}}
+      output_when: &retry_response_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: unary, op: not, operand: {node: event_field, event_id: response, field: miss, sort: {name: bool}}}
+      - node: binary
+        op: ne
+        left: {node: event_field, event_id: response, field: page_fault, sort: {name: bool}}
+        right: {node: literal, sort: {name: bool}, value: "${page.accessible}"}
+      exact: true
+      tags: [tlb, retry-response, source:295-319]

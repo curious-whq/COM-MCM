@@ -1,0 +1,82 @@
+schema_version: umcm.module.v0.15.0
+name: fence_core
+metadata:
+  version: 0.17.0
+  source: BOOM fence retirement boundary abstraction
+  scope: a fence completes only after the public DCache.Ordered observation
+  hierarchy: no child-private state is observed
+ports:
+- {name: memory_instruction, direction: input, event_type: Core.MemoryInstruction, required_connection: false}
+- {name: dcache_ordered, direction: input, event_type: DCache.Ordered, required_connection: false}
+- {name: arch_fence, direction: output, event_type: Arch.Fence}
+- {name: memory_complete, direction: output, event_type: Core.MemoryComplete}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: fence_ops
+  as: fence_seed
+  include:
+    slots:
+    - id: arch_fence_${fence_seed.repeat_index}
+      type: Arch.Fence
+      required: false
+      fields: {op_id: "${fence_seed.op_id}", hart: "${fence_seed.hart}", program_index: "${fence_seed.program_index}"}
+    transformations:
+    - name: decode_fence_${fence_seed.repeat_index}
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: fence, type: Arch.Fence}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${fence_seed.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: fence}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: fence, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${fence_seed.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fence, field: cycle, sort: {name: int}}}
+      exact: true
+repeat_product:
+- axes:
+  - {over: fence_ops, as: op}
+  - {over: ordered_markers, as: ordered}
+  include:
+    slots:
+    - id: fence_complete_${product.repeat_index}
+      type: Core.MemoryComplete
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        mem_kind: ${op.mem_kind}
+        address: ${op.address}
+        value: ${op.value}
+        write_value: ${op.write_value}
+        byte_mask: ${op.byte_mask}
+        success: true
+    transformations:
+    - name: fence_waits_for_ordered_${product.repeat_index}
+      inputs:
+      - {role: instruction, type: Core.MemoryInstruction}
+      - {role: fence, type: Arch.Fence}
+      - {role: ordered, type: DCache.Ordered}
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: fence}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: hart, sort: {name: int}}, right: {node: event_field, event_id: ordered, field: hart, sort: {name: int}}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ordered, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: fence, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: fence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ordered, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: ordered, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [fence, ordered-interface]

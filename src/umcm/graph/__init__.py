@@ -9,6 +9,7 @@ from umcm.graph.checker import (
     MemoryModelStatus,
     check_axiom,
     check_execution_graph,
+    check_rvwmo_execution_graph,
     check_trace_memory_model,
 )
 from umcm.graph.execution import ExecutionGraph, MemoryOperation, OperationKind
@@ -19,6 +20,7 @@ from umcm.graph.model import (
     GraphModelSpec,
     ProjectionSpec,
     RFHintSpec,
+    RelationHintSpec,
 )
 from umcm.graph.relation import (
     Edge,
@@ -46,10 +48,12 @@ __all__ = [
     "OperationKind",
     "ProjectionSpec",
     "RFHintSpec",
+    "RelationHintSpec",
     "Relation",
     "build_candidate_space",
     "check_axiom",
     "check_execution_graph",
+    "check_rvwmo_execution_graph",
     "check_trace_memory_model",
     "find_labeled_cycle",
     "iter_execution_graphs",

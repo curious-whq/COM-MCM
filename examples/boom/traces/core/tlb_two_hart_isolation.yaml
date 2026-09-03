@@ -1,0 +1,17 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {case: tlb-two-hart-isolation, expected: FEASIBLE, goal: same VPN has independent per-hart hit state}
+events:
+- {id: page_h0, type: Core.PageMap, occurs: true, cycle: 0, fields: {map_id: P_H0, hart: 0, entry_id: h0_v9, vpn: 9, paddr: x, initial_valid: true, accessible: true}}
+- {id: page_h1, type: Core.PageMap, occurs: true, cycle: 0, fields: {map_id: P_H1, hart: 1, entry_id: h1_v9, vpn: 9, paddr: x, initial_valid: false, accessible: true}}
+- id: load_h0
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields: {op_id: H0_LOAD, hart: 0, program_index: 0, rob_idx: 0, mem_kind: load, vaddr: va9, address: x, vpn: 9, value: 0, write_value: 0, byte_mask: 255, cacheable: true, io_id: 0, reservation_id: h0_x, uses_tlb: true, execution_class: cache}
+- id: load_h1
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields: {op_id: H1_LOAD, hart: 1, program_index: 0, rob_idx: 0, mem_kind: load, vaddr: va9, address: x, vpn: 9, value: 0, write_value: 0, byte_mask: 255, cacheable: true, io_id: 0, reservation_id: h1_x, uses_tlb: true, execution_class: cache}
+constraints: []

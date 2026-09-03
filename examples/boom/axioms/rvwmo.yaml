@@ -1,0 +1,43 @@
+schema_version: umcm.graph_model.v0.3
+model: rvwmo-v2.0-boom-projection-v0.17
+builtin_model: rvwmo
+metadata:
+  scope: Aligned scalar regular-memory operations, AMOs, and successful LR/SC projected from the BOOM µMCM.
+  note: Failed SC is represented by Arch.SCFailure and intentionally does not enter the write relation.
+projection:
+  init_write_event: Arch.InitWrite
+  load_event: Arch.Load
+  store_event: Arch.Store
+  load_commit_event: Arch.CommitLoad
+  amo_event: Arch.AMO
+  lr_event: Arch.LR
+  sc_event: Arch.SC
+  id_field: op_id
+  address_field: address
+  value_field: value
+  write_value_field: write_value
+  hart_field: hart
+  program_index_field: program_index
+  require_committed_loads: false
+  rf_hints:
+  - event_type: MSHR.GrantData
+    read_id_field: op_id
+    write_id_field: source_op_id
+    address_field: address
+    value_field: value
+  - event_type: Hierarchy.ReadFromEvidence
+    read_id_field: read_op_id
+    write_id_field: write_op_id
+    address_field: address
+    value_field: value
+  co_hints:
+  - event_type: Hierarchy.CoherenceOrderEvidence
+    before_write_id_field: before_write_id
+    after_write_id_field: after_write_id
+    address_field: address
+  relation_hints:
+  - name: pair
+    event_type: Arch.LRSCPair
+ppo_rules: []
+derived_relations: []
+axioms: []

@@ -1,0 +1,24 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  purpose: Minimal CoRR-style forbidden execution for the built-in RVWMO checker.
+events:
+- id: init_x
+  type: Arch.InitWrite
+  fields: {op_id: InitX, address: x, value: 0}
+- id: store_w
+  type: Arch.Store
+  fields: {op_id: W, hart: 1, program_index: 0, address: x, value: 1}
+- id: load_new
+  type: Arch.Load
+  fields: {op_id: R0, hart: 0, program_index: 0, address: x}
+- id: commit_new
+  type: Arch.CommitRead
+  fields: {op_id: R0, value: 1}
+- id: load_old
+  type: Arch.Load
+  fields: {op_id: R1, hart: 0, program_index: 1, address: x}
+- id: commit_old
+  type: Arch.CommitRead
+  fields: {op_id: R1, value: 0}
+constraints: []

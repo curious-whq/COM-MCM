@@ -1,0 +1,12 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {case: branch-recovery, expected: FEASIBLE, goal: younger memory op is squashed and killed}
+events:
+- {id: unused_page, type: Core.PageMap, occurs: true, cycle: 0, fields: {map_id: P0, hart: 0, entry_id: h0_v0, vpn: 0, paddr: x, initial_valid: true, accessible: true}}
+- id: speculative_load
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields: {op_id: SPEC, hart: 0, program_index: 2, rob_idx: 2, mem_kind: load, vaddr: x, address: x, vpn: 0, value: 0, write_value: 0, byte_mask: 255, cacheable: true, io_id: 0, reservation_id: h0_x, uses_tlb: false, execution_class: cache}
+- {id: mispredict, type: Core.BranchMispredict, occurs: true, cycle: 2, fields: {branch_op_id: BR0, hart: 0, program_index: 1}}
+constraints: []

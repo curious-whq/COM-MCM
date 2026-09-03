@@ -1,0 +1,19 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {case: lr-probe-sc-fail, expected: FEASIBLE, goal: probe invalidates reservation before SC}
+events:
+- {id: page_4, type: Core.PageMap, occurs: true, cycle: 0, fields: {map_id: P4, hart: 0, entry_id: h0_v4, vpn: 4, paddr: x, initial_valid: true, accessible: true}}
+- id: instruction_lr
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields: {op_id: LR1, hart: 0, program_index: 0, rob_idx: 0, mem_kind: lr, vaddr: va4, address: x, vpn: 4, value: 0, write_value: 0, byte_mask: 255, cacheable: true, io_id: 0, reservation_id: h0_x, uses_tlb: true, execution_class: atomic}
+- {id: goal_lr_retired, type: Arch.LR, occurs: true, cycle: 10, fields: {op_id: LR1, hart: 0, program_index: 0, address: x, value: 0, byte_mask: 255}}
+- {id: probe_release, type: DCache.ProbeRelease, occurs: true, cycle: 11, fields: {source_op_id: W1, address: x}}
+- id: instruction_sc
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 13
+  fields: {op_id: SC1, hart: 0, program_index: 1, rob_idx: 1, mem_kind: sc, vaddr: va4, address: x, vpn: 4, value: 0, write_value: 1, byte_mask: 255, cacheable: true, io_id: 0, reservation_id: h0_x, uses_tlb: true, execution_class: atomic}
+- {id: goal_sc_failure, type: Arch.SCFailure, occurs: true, cycle: 24, fields: {op_id: SC1, hart: 0, program_index: 1, address: x}}
+constraints: []
