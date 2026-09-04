@@ -4,6 +4,10 @@ horizon: 32
 metadata:
   version: 0.15.0
   purpose: Standalone bounded BOOM MSHR/RPQ/SDQ/IOMSHR regression composition.
+parameters:
+  mshr_tilelink_ports_enabled: false
+  mshr_grant_port_direction: output
+  mshr_internal_grant_generation: true
 modules:
 - name: mshr
   path: ../model/mshr/module.yaml

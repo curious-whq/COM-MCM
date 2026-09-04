@@ -1,4 +1,4 @@
-"""Two-level architecture-skeleton and public-interface realization search."""
+"""Bounds-driven architectural and hierarchical public-interface search."""
 
 from umcm.search.engine import (
     ArchitecturalSkeleton,

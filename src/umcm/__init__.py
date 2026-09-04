@@ -5,4 +5,4 @@ from umcm.hierarchy import *  # noqa: F401,F403
 from umcm.composition import *  # noqa: F401,F403
 from umcm.coverage import *  # noqa: F401,F403
 
-__version__ = "0.20.0"
+__version__ = "0.21.0"

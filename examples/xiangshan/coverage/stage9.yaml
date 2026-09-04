@@ -1,0 +1,122 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage9-physical-store-queue
+catalog: ../events.yaml
+metadata:
+  version: 0.9.0
+  purpose: Reachability coverage for PSQ payload lifetime, youngest byte forwarding, normalized/split drain, cross-page tail buffering, redirect recovery, and Stage 8 integration.
+  witness_policy: Standalone inputs contain only public issue/commit, address/data payloads, layout geometry, tail addresses, forward queries and redirects; all PSQ state, candidates, selections, split beats, and drains are solver-derived.
+models:
+- name: physical_store_queue
+  composition: ../composition/physical_store_queue.yaml
+  input_event_types: [Core.MemoryIssue, Core.MemoryCommit, Core.Redirect, Store.AddressReady, Store.DataReady, Store.Layout, Store.UnalignedTailReady, Store.ForwardQuery]
+  inputs:
+  - {name: aligned-drain, path: ../traces/physical_store_queue/aligned_drain.yaml}
+  - {name: within16-drain, path: ../traces/physical_store_queue/within16_drain.yaml}
+  - {name: cross16-drain, path: ../traces/physical_store_queue/cross16_drain.yaml}
+  - {name: cross-page-drain, path: ../traces/physical_store_queue/cross_page_drain.yaml}
+  - {name: forward-partial, path: ../traces/physical_store_queue/forward_partial.yaml}
+  - {name: forward-youngest, path: ../traces/physical_store_queue/forward_youngest.yaml}
+  - {name: forward-data-invalid, path: ../traces/physical_store_queue/forward_data_invalid.yaml}
+  - {name: forward-miss, path: ../traces/physical_store_queue/forward_miss.yaml}
+  - {name: redirect-reclaims, path: ../traces/physical_store_queue/redirect_reclaims.yaml}
+- name: scalar_store_physical_queue
+  composition: ../composition/scalar_store_physical_queue.yaml
+  input_event_types: [Core.MemoryIssue, MMU.TranslateResponse, Core.MemoryCommit, Core.MemoryWriteback, Store.Layout]
+  inputs:
+  - {name: integrated-psq-drain, path: ../traces/store/integrated_psq_drain.yaml}
+goals:
+- id: issue_allocates_physical_store_entry
+  model: physical_store_queue
+  category: PSQ lifetime
+  inputs: [aligned-drain]
+  require:
+  - {transformation: "store_issue_opens_physical_entry_*"}
+  - {event: SQ.PhysicalAllocate}
+- id: independent_address_data_become_all_valid
+  model: physical_store_queue
+  category: PSQ lifetime
+  inputs: [aligned-drain]
+  require:
+  - {transformation: "usable_sta_writes_physical_address_*"}
+  - {transformation: "std_writes_physical_data_*"}
+  - {transformation: "independent_payloads_make_entry_ready_*"}
+  - {event: SQ.EntryReady}
+- id: all_valid_retired_store_commits_and_drains
+  model: physical_store_queue
+  category: Commit and drain
+  inputs: [aligned-drain]
+  require:
+  - {transformation: "retired_all_valid_entry_commits_psq_*"}
+  - {transformation: "aligned_entry_selects_single_drain_*"}
+  - {transformation: "single_selection_enters_sbuffer_queue_*"}
+  - {event: Store.Drain}
+- id: within16_store_normalizes_to_one_beat
+  model: physical_store_queue
+  category: Unaligned normalization
+  inputs: [within16-drain]
+  require:
+  - {transformation: "within16_entry_normalizes_to_single_drain_*"}
+  - {event: Store.Drain}
+- id: cross16_store_uses_both_drain_ports
+  model: physical_store_queue
+  category: Unaligned split
+  inputs: [cross16-drain]
+  require:
+  - {transformation: "cross16_entry_splits_two_drain_beats_*"}
+  - {transformation: "split_low_selects_sbuffer_port0_*"}
+  - {transformation: "split_high_selects_sbuffer_port1_*"}
+  - {transformation: "split_high_enters_sbuffer_and_dequeues_*"}
+- id: cross_page_store_consumes_unalign_queue_tail
+  model: physical_store_queue
+  category: UnalignQueue
+  inputs: [cross-page-drain]
+  require:
+  - {transformation: "cross_page_tail_enables_two_beat_split_*"}
+  - {event: SQ.UnalignedSplit}
+- id: byte_intersection_is_forwarded
+  model: physical_store_queue
+  category: Store forwarding
+  inputs: [forward-partial]
+  require:
+  - {transformation: "older_overlapping_address_becomes_candidate_*"}
+  - {transformation: "selected_ready_candidate_returns_data_*"}
+  - {event: Store.ForwardResponse}
+- id: forwarding_fold_keeps_youngest_candidate
+  model: physical_store_queue
+  category: Store forwarding
+  inputs: [forward-youngest]
+  require:
+  - {transformation: "forwarding_fold_keeps_youngest_match_*"}
+  - {event: SQ.ForwardSelect, min_count: 2}
+- id: address_match_without_data_requests_replay
+  model: physical_store_queue
+  category: Store forwarding
+  inputs: [forward-data-invalid]
+  require:
+  - {transformation: "selected_address_without_data_replays_*"}
+  - {event: Store.ForwardResponse}
+- id: disjoint_masks_return_forward_miss
+  model: physical_store_queue
+  category: Store forwarding
+  inputs: [forward-miss]
+  require:
+  - {transformation: "no_address_candidate_returns_miss_*"}
+  - {event: Store.ForwardResponse}
+- id: redirect_reclaims_uncommitted_physical_entry
+  model: physical_store_queue
+  category: Recovery
+  inputs: [redirect-reclaims]
+  require:
+  - {transformation: "redirect_selects_uncommitted_physical_entry_*"}
+  - {transformation: "physical_cancel_reclaims_entry_*"}
+  - {event: SQ.PhysicalCancel}
+- id: scalar_pipeline_closes_through_physical_drain
+  model: scalar_store_physical_queue
+  category: Stage 9 integration
+  inputs: [integrated-psq-drain]
+  require:
+  - {transformation: "store_s1_publishes_address_*"}
+  - {transformation: "std_writes_store_data_*"}
+  - {transformation: "retired_all_valid_entry_commits_psq_*"}
+  - {event: Store.Drain}
+auto_goals: []

@@ -465,8 +465,10 @@ modules:
   - Store.Drain
   private_slot_ids: []
   private_event_types:
+  - SBuffer.Allocate
   - SBuffer.DrainSelect
   - SBuffer.Merge
+  - SBuffer.WriteAccepted
   private_state_names: []
   private_transformation_names: []
 - module: uncache

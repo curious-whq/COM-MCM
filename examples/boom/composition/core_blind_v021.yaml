@@ -1,0 +1,284 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-core-blind-realization-v021
+horizon: 64
+metadata:
+  version: 0.21.0
+  purpose: Executable BOOM core-side blind-realization child with NBDTLB/LSU retry, cacheable LSQ/MSHR bridge, ROB, and retire projection.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+  exclusions:
+  - L1 and L2 private state remain in the separately solved coherence child.
+  - The external PTW remains a bounded environment rather than a Rocket Chip PTW implementation.
+  - Exact pipeline latency, arbitration, SRAM timing, and full BOOM signal behavior are outside this memory-order slice.
+modules:
+- {name: boom_v4_lsu_translation, path: ../model/core/lsu_translation.yaml}
+- {name: boom_v4_nbdtlb, path: ../model/core/tlb.yaml}
+- {name: bounded_ptw_environment, path: ../model/core/ptw_environment.yaml}
+- {name: atomic_core, path: ../model/core/atomic.yaml}
+- {name: reservation_bridge, path: ../model/core/reservation_bridge.yaml}
+- {name: mmio_core, path: ../model/core/mmio.yaml}
+- {name: fence_core, path: ../model/core/fence.yaml}
+- {name: rob_core, path: ../model/core/rob.yaml}
+- {name: retire_core, path: ../model/core/retire.yaml}
+- {name: boom_v4_cacheable_path, path: ../model/search/cacheable_path.yaml}
+connections:
+- name: lsu_request_to_nbdtlb
+  source: {module: boom_v4_lsu_translation, port: tlb_request}
+  target: {module: boom_v4_nbdtlb, port: request}
+  mode: shared_event
+- name: nbdtlb_response_to_lsu
+  source: {module: boom_v4_nbdtlb, port: response}
+  target: {module: boom_v4_lsu_translation, port: tlb_response}
+  mode: shared_event
+- name: nbdtlb_ready_to_lsu_retry
+  source: {module: boom_v4_nbdtlb, port: miss_ready}
+  target: {module: boom_v4_lsu_translation, port: miss_ready}
+  mode: shared_event
+- name: nbdtlb_request_to_ptw
+  source: {module: boom_v4_nbdtlb, port: ptw_request}
+  target: {module: bounded_ptw_environment, port: ptw_request}
+  mode: shared_event
+- name: ptw_result_to_nbdtlb
+  source: {module: bounded_ptw_environment, port: ptw_result}
+  target: {module: boom_v4_nbdtlb, port: ptw_result}
+  mode: shared_event
+- name: tlb_translation_to_atomic
+  source: {module: boom_v4_lsu_translation, port: translated_memory}
+  target: {module: atomic_core, port: translated_memory}
+  mode: shared_event
+- name: tlb_translation_to_mmio
+  source: {module: boom_v4_lsu_translation, port: translated_memory}
+  target: {module: mmio_core, port: translated_memory}
+  mode: shared_event
+- name: probe_to_atomic_reservation
+  source: {module: reservation_bridge, port: reservation_invalidate}
+  target: {module: atomic_core, port: reservation_invalidate}
+  mode: shared_event
+- name: tlb_fault_to_rob
+  source: {module: boom_v4_lsu_translation, port: memory_fault}
+  target: {module: rob_core, port: memory_fault}
+  mode: shared_event
+- name: rob_commit_to_retire
+  source: {module: rob_core, port: commit}
+  target: {module: retire_core, port: commit}
+  mode: shared_event
+- name: translated_to_cacheable_path
+  source: {module: boom_v4_lsu_translation, port: translated_memory}
+  target: {module: boom_v4_cacheable_path, port: translated_memory}
+  mode: shared_event
+- name: cacheable_complete_to_rob
+  source: {module: boom_v4_cacheable_path, port: memory_complete}
+  target: {module: rob_core, port: memory_complete}
+  mode: shared_event
+- name: rob_commit_to_store_visibility
+  source: {module: rob_core, port: commit}
+  target: {module: boom_v4_cacheable_path, port: rob_commit}
+  mode: shared_event
+roles:
+- name: loads
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: load}
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    address: fields.address
+    byte_mask: fields.byte_mask
+    queue_idx: fields.rob_idx
+    mshr_id: fields.rob_idx
+- name: stores
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store}
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    address: fields.address
+    queue_idx: fields.rob_idx
+- name: accesses
+  event_type: Coherence.Access
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    line_id: fields.line_id
+    address: fields.address
+    mem_kind: fields.mem_kind
+    write_value: fields.write_value
+    after_op_id: fields.after_op_id
+- name: tlb_harts
+  event_type: Core.MemoryInstruction
+  where: {fields.uses_tlb: true}
+  cardinality: many
+  min_matches: 0
+  distinct_by: fields.hart
+  exports:
+    hart: fields.hart
+- name: memory_ops
+  event_type: Core.MemoryInstruction
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    vaddr: fields.vaddr
+    address: fields.address
+    vpn: fields.vpn
+    value: fields.value
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+    cacheable: fields.cacheable
+    io_id: fields.io_id
+    reservation_id: fields.reservation_id
+    uses_tlb: fields.uses_tlb
+    execution_class: fields.execution_class
+- name: tlb_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.uses_tlb: true}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    vaddr: fields.vaddr
+    address: fields.address
+    vpn: fields.vpn
+    value: fields.value
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+    cacheable: fields.cacheable
+    io_id: fields.io_id
+    reservation_id: fields.reservation_id
+    execution_class: fields.execution_class
+- name: atomic_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.execution_class: atomic}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    address: fields.address
+    value: fields.value
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+    reservation_id: fields.reservation_id
+- name: mmio_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.execution_class: mmio}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    address: fields.address
+    value: fields.value
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+    io_id: fields.io_id
+- name: lr_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: lr}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    reservation_id: fields.reservation_id
+- name: sc_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: sc}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    reservation_id: fields.reservation_id
+- name: fence_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.execution_class: fence}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    address: fields.address
+    value: fields.value
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+- name: pages
+  event_type: Core.PageMap
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.entry_id
+  exports:
+    hart: fields.hart
+    entry_id: fields.entry_id
+    vpn: fields.vpn
+    paddr: fields.paddr
+    initial_valid: fields.initial_valid
+    accessible: fields.accessible
+- name: sfences
+  event_type: TLB.SFence
+  cardinality: many
+  min_matches: 0
+  exports:
+    fence_id: fields.fence_id
+    hart: fields.hart
+    vpn: fields.vpn
+    scope: fields.scope
+- name: reservation_lines
+  event_type: Core.MemoryInstruction
+  where: {fields.execution_class: atomic}
+  cardinality: many
+  min_matches: 0
+  distinct_by: fields.reservation_id
+  exports:
+    reservation_id: fields.reservation_id
+    address: fields.address
+    hart: fields.hart
+- name: probe_events
+  event_type: DCache.ProbeRelease
+  cardinality: many
+  min_matches: 0
+  exports:
+    source_op_id: fields.source_op_id
+    address: fields.address
+- name: branch_events
+  event_type: Core.BranchMispredict
+  cardinality: many
+  min_matches: 0
+  exports:
+    branch_op_id: fields.branch_op_id
+    hart: fields.hart
+    program_index: fields.program_index
+- name: ordered_markers
+  event_type: DCache.Ordered
+  cardinality: many
+  min_matches: 0
+  exports:
+    hart: fields.hart
+constraints: []

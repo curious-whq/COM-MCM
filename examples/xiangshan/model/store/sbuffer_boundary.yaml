@@ -13,8 +13,10 @@ ports:
 - {name: memory_ordered, direction: output, event_type: Core.MemoryOrdered}
 - {name: prefetch_train, direction: output, event_type: Prefetch.Train}
 internal_events:
+- SBuffer.Allocate
 - SBuffer.Merge
 - SBuffer.DrainSelect
+- SBuffer.WriteAccepted
 slots: []
 state_variables: []
 transformations: []

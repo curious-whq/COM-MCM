@@ -1,0 +1,502 @@
+schema_version: umcm.module.v0.15.0
+name: uncache
+metadata:
+  version: 0.11.0
+  stage: 11
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_sha256: 496ccd6029be275e384da5885d3568dac09d5fbab2cff92779ec315a7814ed02
+  source_files:
+  - src/main/scala/xiangshan/cache/dcache/Uncache.scala:32-181,187-190,203-575
+  - src/main/scala/xiangshan/mem/MemBlock.scala:1018-1111,1143-1164
+  - src/main/scala/xiangshan/Parameters.scala:107,188,792,831-832
+  parameters:
+    uncache_buffer_size: 16
+    load_uncache_buffer_size: 16
+    data_bytes: 8
+    response_beats: 1
+  scope: bounded one/two-member Uncache entry allocation and NC merge, LSQ acceptance, MMIO/NC arbitration, optional outstanding requests, same-word serialization, single-beat memory grant, and return to requestors
+  hierarchy: entry data/mask, valid/inflight/waitSame/waitReturn, source-id allocation, arbitration and bus issue are private; LSQ request/accept/response, entry geometry, and memory request/response are public boundaries
+  abstractions:
+  - Uncache.BufferLayout finitely maps one or two accepted aligned accesses to an entry; two-member merging is legal only for compatible NC accesses in the same 8-byte word
+  - byte data merging is exact and later bytes win; the layout records the hardware-selected lowest-byte bus address and legal merged transfer size
+  - disabled outstanding mode serializes every entry through LSQ return; enabled mode still serializes entries for the same 8-byte word but permits different words to overlap
+  - TileLink-UL opcode/source-id encoding and ready/valid stalls are compressed into Memory.Request/Response while one-beat completion, payload and error identity remain exact
+ports:
+- {name: request, direction: input, event_type: Uncache.Request, required_connection: false}
+- {name: accept, direction: output, event_type: Uncache.Accept}
+- {name: response, direction: output, event_type: Uncache.Response}
+- {name: memory_request, direction: output, event_type: Memory.Request}
+- {name: memory_response, direction: input, event_type: Memory.Response, required_connection: false}
+internal_events:
+- Uncache.BufferAllocate
+- Uncache.BufferMerge
+- Uncache.Arbitrate
+- Uncache.BusIssue
+- Uncache.Return
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: buffer_entries
+  as: entry
+  include:
+    state_variables:
+    - {name: "Uncache[${entry.entry_id}].valid", sort: {name: bool}, initial: false}
+    - {name: "Uncache[${entry.entry_id}].inflight", sort: {name: bool}, initial: false}
+    - {name: "Uncache[${entry.entry_id}].wait_return", sort: {name: bool}, initial: false}
+    slots:
+    - id: uncache_allocate_${entry.repeat_index}
+      type: Uncache.BufferAllocate
+      required: false
+      fields: &first_entry_fields
+        entry_id: ${entry.entry_id}
+        txn_id: ${entry.first_txn_id}
+        op_id: ${entry.first_op_id}
+        hart: ${entry.first_hart}
+        program_index: ${entry.first_program_index}
+        rob_idx: ${entry.first_rob_idx}
+        mem_kind: ${entry.first_mem_kind}
+        vaddr: ${entry.first_vaddr}
+        address: ${entry.first_address}
+        value: ${entry.first_value}
+        size: ${entry.first_size}
+        word_mask: ${entry.first_mask}
+        path: ${entry.first_region}
+    - id: uncache_merge_${entry.repeat_index}
+      type: Uncache.BufferMerge
+      required: false
+      fields:
+        entry_id: ${entry.entry_id}
+        txn_id: ${entry.second_txn_id}
+        op_id: ${entry.second_op_id}
+        hart: ${entry.second_hart}
+        program_index: ${entry.second_program_index}
+        rob_idx: ${entry.second_rob_idx}
+        mem_kind: ${entry.second_mem_kind}
+        vaddr: ${entry.second_vaddr}
+        address: ${entry.bus_address}
+        value:
+          $expr: &merged_value
+            node: call
+            function: masked_merge
+            arguments:
+            - {node: literal, sort: {name: value, width: 64}, value: "${entry.first_value}"}
+            - {node: literal, sort: {name: value, width: 64}, value: "${entry.second_value}"}
+            - {node: literal, sort: {name: bv, width: 8}, value: "${entry.second_mask}"}
+            - {node: literal, sort: {name: int}, value: 64}
+            sort: {name: value, width: 64}
+        size: ${entry.merged_size}
+        word_mask:
+          $expr: &merged_mask
+            node: call
+            function: mask_union
+            arguments:
+            - {node: literal, sort: {name: bv, width: 8}, value: "${entry.first_mask}"}
+            - {node: literal, sort: {name: bv, width: 8}, value: "${entry.second_mask}"}
+            sort: {name: bv, width: 8}
+        path: ${entry.second_region}
+    - id: uncache_accept_first_${entry.repeat_index}
+      type: Uncache.Accept
+      required: false
+      fields:
+        txn_id: ${entry.first_txn_id}
+        op_id: ${entry.first_op_id}
+        entry_id: ${entry.entry_id}
+        mem_kind: ${entry.first_mem_kind}
+        region: ${entry.first_region}
+    - id: uncache_accept_second_${entry.repeat_index}
+      type: Uncache.Accept
+      required: false
+      fields:
+        txn_id: ${entry.second_txn_id}
+        op_id: ${entry.second_op_id}
+        entry_id: ${entry.entry_id}
+        mem_kind: ${entry.second_mem_kind}
+        region: ${entry.second_region}
+    - id: uncache_arbitrate_${entry.repeat_index}
+      type: Uncache.Arbitrate
+      required: false
+      fields: &final_entry_fields
+        entry_id: ${entry.entry_id}
+        txn_id:
+          $expr: &final_txn
+            node: ite
+            condition: &has_second {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+            then: {node: literal, sort: {name: op_id}, value: "${entry.second_txn_id}"}
+            else: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}
+        op_id:
+          $expr: &final_op
+            node: ite
+            condition: *has_second
+            then: {node: literal, sort: {name: op_id}, value: "${entry.second_op_id}"}
+            else: {node: literal, sort: {name: op_id}, value: "${entry.first_op_id}"}
+        hart: ${entry.first_hart}
+        program_index:
+          $expr:
+            node: ite
+            condition: *has_second
+            then: {node: literal, sort: {name: int}, value: "${entry.second_program_index}"}
+            else: {node: literal, sort: {name: int}, value: "${entry.first_program_index}"}
+        mem_kind: ${entry.first_mem_kind}
+        address: ${entry.bus_address}
+        value:
+          $expr:
+            node: ite
+            condition: *has_second
+            then: *merged_value
+            else: {node: literal, sort: {name: value, width: 64}, value: "${entry.first_value}"}
+        size: ${entry.merged_size}
+        word_mask:
+          $expr:
+            node: ite
+            condition: *has_second
+            then: *merged_mask
+            else: {node: literal, sort: {name: bv, width: 8}, value: "${entry.first_mask}"}
+        path: ${entry.first_region}
+    - id: uncache_bus_issue_${entry.repeat_index}
+      type: Uncache.BusIssue
+      required: false
+      fields: *final_entry_fields
+    - id: uncache_memory_request_${entry.repeat_index}
+      type: Memory.Request
+      required: false
+      fields:
+        txn_id: ${entry.first_txn_id}
+        request_kind: ${entry.first_mem_kind}
+        address: ${entry.bus_address}
+        value:
+          $expr:
+            node: ite
+            condition: *has_second
+            then: *merged_value
+            else: {node: literal, sort: {name: value, width: 64}, value: "${entry.first_value}"}
+        word_mask:
+          $expr: &final_word_mask
+            node: ite
+            condition: *has_second
+            then: *merged_mask
+            else: {node: literal, sort: {name: bv, width: 8}, value: "${entry.first_mask}"}
+        size: ${entry.merged_size}
+        source_op_id: {$expr: *final_op}
+        requester_id: ${entry.entry_order}
+    - id: uncache_memory_response_${entry.repeat_index}
+      type: Memory.Response
+      required: false
+      fields:
+        txn_id: ${entry.first_txn_id}
+        response_kind: uncache_grant
+        value: {$expr: &response_value {node: symbol, name: "uncache::${entry.entry_id}::response_value", sort: {name: value, width: 64}}}
+        success: {$expr: &response_success {node: symbol, name: "uncache::${entry.entry_id}::response_success", sort: {name: bool}}}
+        denied: {$expr: &response_denied {node: symbol, name: "uncache::${entry.entry_id}::response_denied", sort: {name: bool}}}
+        corrupt: {$expr: &response_corrupt {node: symbol, name: "uncache::${entry.entry_id}::response_corrupt", sort: {name: bool}}}
+    - id: uncache_return_${entry.repeat_index}
+      type: Uncache.Return
+      required: false
+      fields:
+        <<: *final_entry_fields
+        success: {$expr: *response_success}
+        cause: {$expr: {node: symbol, name: "uncache::${entry.entry_id}::response_kind", sort: {name: string}}}
+    - id: uncache_response_first_${entry.repeat_index}
+      type: Uncache.Response
+      required: false
+      fields:
+        txn_id: ${entry.first_txn_id}
+        op_id: ${entry.first_op_id}
+        entry_id: ${entry.entry_id}
+        mem_kind: ${entry.first_mem_kind}
+        region: ${entry.first_region}
+        value: {$expr: *response_value}
+        success: {$expr: *response_success}
+        denied: {$expr: *response_denied}
+        corrupt: {$expr: *response_corrupt}
+    - id: uncache_response_second_${entry.repeat_index}
+      type: Uncache.Response
+      required: false
+      fields:
+        txn_id: ${entry.second_txn_id}
+        op_id: ${entry.second_op_id}
+        entry_id: ${entry.entry_id}
+        mem_kind: ${entry.second_mem_kind}
+        region: ${entry.second_region}
+        value: {$expr: *response_value}
+        success: {$expr: *response_success}
+        denied: {$expr: *response_denied}
+        corrupt: {$expr: *response_corrupt}
+    transformations:
+    - name: first_request_allocates_uncache_entry_${entry.repeat_index}
+      inputs: [{role: request, type: Uncache.Request}]
+      outputs: [{role: allocate, type: Uncache.BufferAllocate}]
+      when: &first_request_match
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${entry.first_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${entry.first_value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: byte_mask, sort: {name: bv, width: 8}}, right: {node: literal, sort: {name: bv, width: 8}, value: "${entry.first_mask}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.first_mem_kind}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: region, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.first_region}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Uncache[${entry.entry_id}].valid", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Uncache[${entry.entry_id}].valid", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [uncache, allocate, source:Uncache.scala:334-378]
+    - name: allocation_returns_first_source_id_${entry.repeat_index}
+      inputs: [{role: allocate, type: Uncache.BufferAllocate}]
+      outputs: [{role: accept, type: Uncache.Accept}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: accept, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [uncache, id-response, source:Uncache.scala:373-378]
+    - name: compatible_second_nc_request_merges_${entry.repeat_index}
+      inputs:
+      - {role: allocate, type: Uncache.BufferAllocate}
+      - {role: request, type: Uncache.Request}
+      outputs: [{role: merge, type: Uncache.BufferMerge}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *has_second
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.second_txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.second_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${entry.second_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${entry.second_value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: byte_mask, sort: {name: bv, width: 8}}, right: {node: literal, sort: {name: bv, width: 8}, value: "${entry.second_mask}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: merge, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: merge, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Uncache[${entry.entry_id}].valid", at: merge, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Uncache[${entry.entry_id}].inflight", at: merge, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [uncache, nc-merge, byte-merge, source:Uncache.scala:34-39,285-298,334-369]
+    - name: merge_returns_second_source_id_${entry.repeat_index}
+      inputs: [{role: merge, type: Uncache.BufferMerge}]
+      outputs: [{role: accept, type: Uncache.Accept}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *has_second
+        - {node: binary, op: eq, left: {node: event_field, event_id: merge, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: accept, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.second_txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: merge, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [uncache, merge-accept]
+    - name: single_entry_becomes_arbitration_candidate_${entry.repeat_index}
+      inputs:
+      - {role: allocate, type: Uncache.BufferAllocate}
+      - {role: accept, type: Uncache.Accept}
+      outputs: [{role: arbitrate, type: Uncache.Arbitrate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: accept, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}}
+        - {node: unary, op: not, operand: *has_second}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arbitrate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arbitrate, field: cycle, sort: {name: int}}}
+      # Arbitration has two mutually exclusive producers (single and merged).
+      # Keep each forward implication, but do not make either producer the
+      # exclusive support relation for the shared arbitration slot.
+      exact: false
+      tags: [uncache, arbitrate]
+    - name: merged_entry_becomes_arbitration_candidate_${entry.repeat_index}
+      inputs:
+      - {role: merge, type: Uncache.BufferMerge}
+      - {role: accept, type: Uncache.Accept}
+      outputs: [{role: arbitrate, type: Uncache.Arbitrate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *has_second
+        - {node: binary, op: eq, left: {node: event_field, event_id: merge, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: accept, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.second_txn_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: arbitrate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arbitrate, field: cycle, sort: {name: int}}}
+      exact: false
+      tags: [uncache, arbitrate, merged]
+    - name: selected_entry_issues_bus_transaction_${entry.repeat_index}
+      inputs: [{role: arbitrate, type: Uncache.Arbitrate}]
+      outputs: [{role: issue, type: Uncache.BusIssue}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: arbitrate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: issue, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: arbitrate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Uncache[${entry.entry_id}].valid", at: issue, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Uncache[${entry.entry_id}].inflight", at: issue, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [uncache, bus-select, source:Uncache.scala:392-437]
+    - name: bus_issue_emits_memory_request_${entry.repeat_index}
+      inputs: [{role: issue, type: Uncache.BusIssue}]
+      outputs: [{role: request, type: Memory.Request}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: issue, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "Uncache[${entry.entry_id}].inflight", at: request, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [uncache, tilelink-ul, memory-request, source:Uncache.scala:398-429]
+    - name: memory_grant_enters_wait_return_${entry.repeat_index}
+      inputs:
+      - {role: request, type: Memory.Request}
+      - {role: response, type: Memory.Response}
+      outputs: [{role: returned, type: Uncache.Return}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: returned, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: returned, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: returned, field: success, sort: {name: bool}}, right: {node: event_field, event_id: response, field: success, sort: {name: bool}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: returned, field: cause, sort: {name: string}}
+        right:
+          node: ite
+          condition: {node: event_field, event_id: response, field: denied, sort: {name: bool}}
+          then: {node: literal, sort: {name: string}, value: denied}
+          else:
+            node: ite
+            condition: {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}
+            then: {node: literal, sort: {name: string}, value: corrupt}
+            else: {node: literal, sort: {name: string}, value: success}
+      state_requirements:
+      - {state: "Uncache[${entry.entry_id}].inflight", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "Uncache[${entry.entry_id}].inflight", at: returned, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Uncache[${entry.entry_id}].wait_return", at: returned, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [uncache, one-beat-grant, source:Uncache.scala:450-485]
+    - name: return_replies_to_first_requestor_${entry.repeat_index}
+      inputs: [{role: returned, type: Uncache.Return}]
+      outputs: [{role: response, type: Uncache.Response}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: returned, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: returned, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: success, sort: {name: bool}}, right: {node: event_field, event_id: returned, field: success, sort: {name: bool}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: denied, sort: {name: bool}}, right: {node: binary, op: eq, left: {node: event_field, event_id: returned, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: denied}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}, right: {node: binary, op: eq, left: {node: event_field, event_id: returned, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: corrupt}}}
+      state_requirements:
+      - {state: "Uncache[${entry.entry_id}].wait_return", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "Uncache[${entry.entry_id}].wait_return", at: response, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Uncache[${entry.entry_id}].valid", at: response, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [uncache, return-first]
+    - name: merged_return_replies_to_second_requestor_${entry.repeat_index}
+      inputs: [{role: returned, type: Uncache.Return}]
+      outputs: [{role: response, type: Uncache.Response}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *has_second
+        - {node: binary, op: eq, left: {node: event_field, event_id: returned, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${entry.entry_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.second_txn_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: returned, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: success, sort: {name: bool}}, right: {node: event_field, event_id: returned, field: success, sort: {name: bool}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: denied, sort: {name: bool}}, right: {node: binary, op: eq, left: {node: event_field, event_id: returned, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: denied}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}, right: {node: binary, op: eq, left: {node: event_field, event_id: returned, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: corrupt}}}
+      exact: true
+      tags: [uncache, return-second, merged]
+    constraints:
+    - node: nary
+      op: or
+      operands:
+      - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 1}}
+      - *has_second
+    - node: binary
+      op: implies
+      left: *has_second
+      right:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.first_region}"}, right: {node: literal, sort: {name: string}, value: nc}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.second_region}"}, right: {node: literal, sort: {name: string}, value: nc}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.first_mem_kind}"}, right: {node: literal, sort: {name: string}, value: "${entry.second_mem_kind}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.first_hart}"}, right: {node: literal, sort: {name: int}, value: "${entry.second_hart}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: bool}, value: "${entry.first_mem_back_type_mm}"}, right: {node: literal, sort: {name: bool}, value: "${entry.second_mem_back_type_mm}"}}
+        - node: unary
+          op: not
+          operand: {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${entry.first_txn_id}"}, right: {node: literal, sort: {name: op_id}, value: "${entry.second_txn_id}"}}
+    - node: binary
+      op: implies
+      left: {node: unary, op: not, operand: *has_second}
+      right:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: bv, width: 8}, value: "${entry.second_mask}"}, right: {node: literal, sort: {name: bv, width: 8}, value: 0}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.merged_size}"}, right: {node: literal, sort: {name: int}, value: "${entry.first_size}"}}
+    - node: nary
+      op: or
+      operands:
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 1}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 2}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 4}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 8}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 16}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 32}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 64}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 128}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 3}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 12}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 48}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 192}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 15}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 240}}
+      - {node: binary, op: eq, left: *final_word_mask, right: {node: literal, sort: {name: bv, width: 8}, value: 255}}
+
+repeat_product:
+- axes:
+  - {over: buffer_entries, as: older}
+  - {over: buffer_entries, as: younger}
+  include:
+    constraints:
+    - node: binary
+      op: implies
+      left:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.entry_order}"}, right: {node: literal, sort: {name: int}, value: "${younger.entry_order}"}}
+        - {node: event_field, event_id: "uncache_memory_request_${younger.repeat_index}", field: occurs, sort: {name: bool}}
+        - node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${younger.outstanding_enabled}"}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: address, width: 64}, value: "${older.word_address}"}, right: {node: literal, sort: {name: address, width: 64}, value: "${younger.word_address}"}}
+      right:
+        node: nary
+        op: and
+        operands:
+        - {node: event_field, event_id: "uncache_return_${older.repeat_index}", field: occurs, sort: {name: bool}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: "uncache_return_${older.repeat_index}", field: cycle, sort: {name: int}}, right: {node: event_field, event_id: "uncache_memory_request_${younger.repeat_index}", field: cycle, sort: {name: int}}}
+    - {node: binary, op: eq, left: {node: literal, sort: {name: bool}, value: "${older.outstanding_enabled}"}, right: {node: literal, sort: {name: bool}, value: "${younger.outstanding_enabled}"}}

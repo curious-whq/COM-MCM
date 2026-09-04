@@ -1,0 +1,40 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 10, case: replay-then-retry, expected: FEASIBLE}
+events:
+- id: er_layout
+  type: SBuffer.LineLayout
+  occurs: true
+  cycle: 0
+  fields:
+    entry_id: ER
+    hart: 0
+    entry_order: 0
+    line_address: 12288
+    member_count: 1
+    first_op_id: SR
+    first_beat: 0
+    first_address: 12288
+    first_value: 90
+    first_drain_mask: 1
+    first_line_data: 90
+    first_line_mask: 1
+    second_op_id: SR
+    second_beat: 0
+    second_address: 12288
+    second_value: 0
+    second_drain_mask: 0
+    second_line_data: 0
+    second_line_mask: 0
+    drain_reason: timeout
+- id: sr_drain
+  type: Store.Drain
+  occurs: true
+  cycle: 1
+  fields: {op_id: SR, beat: 0, hart: 0, address: 12288, value: 90, byte_mask: 1, last: true, cross_page: false}
+- id: er_replay
+  type: L1.Response
+  occurs: true
+  cycle: 5
+  fields: {txn_id: ER, op_id: SR, response_kind: replay, success: false, denied: false, corrupt: false}
+constraints: []

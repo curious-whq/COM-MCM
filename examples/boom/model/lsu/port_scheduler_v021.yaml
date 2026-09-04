@@ -1,0 +1,252 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_lsu_port_scheduler
+metadata:
+  version: 0.21.0
+  status: source-derived
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/lsu.scala
+    sha256: 405dffe86cca0d5632ee75f481b6a64202691e2e169e6a5961363d20ca33a40e
+    lines: [576, 703]
+  abstraction:
+  - ArbitrationFrame is a snapshot of LSU-local can_fire wires, not an architectural/environment choice.
+  - Each port has exactly one TLB, DCache, and LCAM resource token per hardware cycle.
+  - The twelve lsu_sched calls are evaluated in source order; disjoint resources may issue together.
+  - The source require(lsuWidth <= 2), fixed-port restrictions, and incoming-agen assertion are executable constraints.
+  hierarchy: Candidate-wire construction belongs to the LSU parent; ArbitrationDecision is private; ScheduleGrant is the only selected-request interface.
+
+ports:
+- {name: arbitration_frame, direction: input, event_type: LSU.ArbitrationFrame, required_connection: false}
+- {name: schedule_grant, direction: output, event_type: LSU.ScheduleGrant, required_connection: false}
+
+internal_events:
+- LSU.ArbitrationDecision
+
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: arbitration_frames
+  as: frame
+  include:
+    slots:
+    - id: 'arb_decision_${frame.repeat_index}'
+      type: LSU.ArbitrationDecision
+      required: false
+      fields:
+        frame_id: '${frame.frame_id}'
+        hardware_cycle: '${frame.hardware_cycle}'
+        port: '${frame.port}'
+        will_sfence: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_sfence', sort: {name: bool}}}
+        will_store_commit_fast: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_store_commit_fast', sort: {name: bool}}}
+        will_load_agen_exec: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_load_agen_exec', sort: {name: bool}}}
+        will_load_agen: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_load_agen', sort: {name: bool}}}
+        will_store_agen: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_store_agen', sort: {name: bool}}}
+        will_release: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_release', sort: {name: bool}}}
+        will_hella_incoming: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_hella_incoming', sort: {name: bool}}}
+        will_hella_wakeup: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_hella_wakeup', sort: {name: bool}}}
+        will_store_retry: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_store_retry', sort: {name: bool}}}
+        will_load_retry: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_load_retry', sort: {name: bool}}}
+        will_load_wakeup: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_load_wakeup', sort: {name: bool}}}
+        will_store_commit_slow: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::will_store_commit_slow', sort: {name: bool}}}
+        tlb_used: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::tlb_used', sort: {name: bool}}}
+        dcache_used: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::dcache_used', sort: {name: bool}}}
+        lcam_used: {$expr: {node: symbol, name: 'lsu::arb::${frame.repeat_index}::lcam_used', sort: {name: bool}}}
+    - &grant_sfence
+      id: 'arb_grant_sfence_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: sfence, op_id: '${frame.sfence_op_id}', uses_tlb: true, uses_dcache: false, uses_lcam: false}
+    - id: 'arb_grant_store_commit_fast_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: store-commit-fast, op_id: '${frame.store_commit_op_id}', uses_tlb: false, uses_dcache: true, uses_lcam: false}
+    - id: 'arb_grant_load_agen_exec_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: load-agen-exec, op_id: '${frame.load_agen_op_id}', uses_tlb: true, uses_dcache: true, uses_lcam: true}
+    - id: 'arb_grant_load_agen_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: load-agen, op_id: '${frame.load_agen_op_id}', uses_tlb: true, uses_dcache: false, uses_lcam: true}
+    - id: 'arb_grant_store_agen_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: store-agen, op_id: '${frame.store_agen_op_id}', uses_tlb: true, uses_dcache: false, uses_lcam: true}
+    - id: 'arb_grant_release_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: release, op_id: '${frame.release_op_id}', uses_tlb: false, uses_dcache: false, uses_lcam: true}
+    - id: 'arb_grant_hella_incoming_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: hella-incoming, op_id: '${frame.hella_incoming_op_id}', uses_tlb: true, uses_dcache: true, uses_lcam: false}
+    - id: 'arb_grant_hella_wakeup_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: hella-wakeup, op_id: '${frame.hella_wakeup_op_id}', uses_tlb: false, uses_dcache: true, uses_lcam: false}
+    - id: 'arb_grant_store_retry_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: store-retry, op_id: '${frame.store_retry_op_id}', uses_tlb: true, uses_dcache: false, uses_lcam: true}
+    - id: 'arb_grant_load_retry_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: load-retry, op_id: '${frame.load_retry_op_id}', uses_tlb: true, uses_dcache: true, uses_lcam: true}
+    - id: 'arb_grant_load_wakeup_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: load-wakeup, op_id: '${frame.load_wakeup_op_id}', uses_tlb: false, uses_dcache: true, uses_lcam: true}
+    - id: 'arb_grant_store_commit_slow_${frame.repeat_index}'
+      type: LSU.ScheduleGrant
+      required: false
+      fields: {frame_id: '${frame.frame_id}', hardware_cycle: '${frame.hardware_cycle}', port: '${frame.port}', request_kind: store-commit-slow, op_id: '${frame.store_commit_op_id}', uses_tlb: false, uses_dcache: true, uses_lcam: false}
+
+    transformations:
+    - name: 'evaluate_source_order_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      outputs: [{role: decision, type: LSU.ArbitrationDecision}]
+      when: &this_frame {node: binary, op: eq, left: {node: event_field, event_id: frame, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: frame, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: hardware_cycle, sort: {name: int}}, right: {node: event_field, event_id: frame, field: hardware_cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: port, sort: {name: int}}, right: {node: event_field, event_id: frame, field: port, sort: {name: int}}}
+      - {node: binary, op: eq, left: &w0 {node: event_field, event_id: decision, field: will_sfence, sort: {name: bool}}, right: &c0 {node: event_field, event_id: frame, field: can_sfence, sort: {name: bool}}}
+      - {node: binary, op: eq, left: &w1 {node: event_field, event_id: decision, field: will_store_commit_fast, sort: {name: bool}}, right: {node: nary, op: and, operands: [&cc {node: event_field, event_id: frame, field: can_store_commit, sort: {name: bool}}, &full {node: event_field, event_id: frame, field: stq_almost_full, sort: {name: bool}}]}}
+      - {node: binary, op: eq, left: &w2 {node: event_field, event_id: decision, field: will_load_agen_exec, sort: {name: bool}}, right: {node: nary, op: and, operands: [&cl {node: event_field, event_id: frame, field: can_load_agen, sort: {name: bool}}, {node: unary, op: not, operand: *w0}, {node: unary, op: not, operand: *w1}]}}
+      - {node: binary, op: eq, left: &w3 {node: event_field, event_id: decision, field: will_load_agen, sort: {name: bool}}, right: {node: nary, op: and, operands: [*cl, {node: unary, op: not, operand: *w0}, {node: unary, op: not, operand: *w2}]}}
+      - {node: binary, op: eq, left: &w4 {node: event_field, event_id: decision, field: will_store_agen, sort: {name: bool}}, right: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_store_agen, sort: {name: bool}}, {node: unary, op: not, operand: *w0}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w3}]}}
+      - {node: binary, op: eq, left: &w5 {node: event_field, event_id: decision, field: will_release, sort: {name: bool}}, right: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_release, sort: {name: bool}}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w3}, {node: unary, op: not, operand: *w4}]}}
+      - {node: binary, op: eq, left: &w6 {node: event_field, event_id: decision, field: will_hella_incoming, sort: {name: bool}}, right: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_hella_incoming, sort: {name: bool}}, {node: unary, op: not, operand: *w0}, {node: unary, op: not, operand: *w1}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w3}, {node: unary, op: not, operand: *w4}]}}
+      - {node: binary, op: eq, left: &w7 {node: event_field, event_id: decision, field: will_hella_wakeup, sort: {name: bool}}, right: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_hella_wakeup, sort: {name: bool}}, {node: unary, op: not, operand: *w1}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w6}]}}
+      - {node: binary, op: eq, left: &w8 {node: event_field, event_id: decision, field: will_store_retry, sort: {name: bool}}, right: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_store_retry, sort: {name: bool}}, {node: unary, op: not, operand: *w0}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w3}, {node: unary, op: not, operand: *w4}, {node: unary, op: not, operand: *w5}, {node: unary, op: not, operand: *w6}]}}
+      - {node: binary, op: eq, left: &w9 {node: event_field, event_id: decision, field: will_load_retry, sort: {name: bool}}, right: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_load_retry, sort: {name: bool}}, {node: unary, op: not, operand: *w0}, {node: unary, op: not, operand: *w1}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w3}, {node: unary, op: not, operand: *w4}, {node: unary, op: not, operand: *w5}, {node: unary, op: not, operand: *w6}, {node: unary, op: not, operand: *w7}, {node: unary, op: not, operand: *w8}]}}
+      - {node: binary, op: eq, left: &w10 {node: event_field, event_id: decision, field: will_load_wakeup, sort: {name: bool}}, right: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_load_wakeup, sort: {name: bool}}, {node: unary, op: not, operand: *w1}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w3}, {node: unary, op: not, operand: *w4}, {node: unary, op: not, operand: *w5}, {node: unary, op: not, operand: *w6}, {node: unary, op: not, operand: *w7}, {node: unary, op: not, operand: *w8}, {node: unary, op: not, operand: *w9}]}}
+      - {node: binary, op: eq, left: &w11 {node: event_field, event_id: decision, field: will_store_commit_slow, sort: {name: bool}}, right: {node: nary, op: and, operands: [*cc, {node: unary, op: not, operand: *w1}, {node: unary, op: not, operand: *w2}, {node: unary, op: not, operand: *w6}, {node: unary, op: not, operand: *w7}, {node: unary, op: not, operand: *w9}, {node: unary, op: not, operand: *w10}]}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: tlb_used, sort: {name: bool}}, right: {node: nary, op: or, operands: [*w0, *w2, *w3, *w4, *w6, *w8, *w9]}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: dcache_used, sort: {name: bool}}, right: {node: nary, op: or, operands: [*w1, *w2, *w6, *w7, *w9, *w10, *w11]}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: lcam_used, sort: {name: bool}}, right: {node: nary, op: or, operands: [*w2, *w3, *w4, *w5, *w8, *w9, *w10]}}
+      - {node: nary, op: or, operands: [{node: unary, op: not, operand: *cl}, *w2, *w3]}
+      - {node: nary, op: or, operands: [{node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_store_agen, sort: {name: bool}}}, *w4]}
+      exact: true
+      tags: [source:lsu.scala:644-691, exact-source-order, per-port]
+
+    - name: 'validate_source_port_guards_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      outputs: []
+      when: *this_frame
+      ensure:
+      - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: lsu_width, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: frame, field: lsu_width, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      - {node: binary, op: le, left: {node: literal, sort: {name: int}, value: 0}, right: {node: event_field, event_id: frame, field: port, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: event_field, event_id: frame, field: lsu_width, sort: {name: int}}}
+      - {node: unary, op: not, operand: {node: nary, op: and, operands: [{node: event_field, event_id: frame, field: can_load_agen, sort: {name: bool}}, {node: event_field, event_id: frame, field: can_store_agen, sort: {name: bool}}]}}
+      - &last_port_release {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: binary, op: sub, left: {node: event_field, event_id: frame, field: lsu_width, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}, {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_release, sort: {name: bool}}}]}
+      - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: binary, op: sub, left: {node: event_field, event_id: frame, field: lsu_width, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}, {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_store_retry, sort: {name: bool}}}]}
+      - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: binary, op: sub, left: {node: event_field, event_id: frame, field: lsu_width, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}, {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_load_retry, sort: {name: bool}}}]}
+      - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: binary, op: sub, left: {node: event_field, event_id: frame, field: lsu_width, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}, {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_load_wakeup, sort: {name: bool}}}]}
+      - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_store_commit, sort: {name: bool}}}]}
+      - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_hella_incoming, sort: {name: bool}}}]}
+      - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: port, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_hella_wakeup, sort: {name: bool}}}]}
+      tags: [source:lsu.scala:592-639, source:lsu.scala:693-703, fixed-port-guards]
+
+    - &grant_rule
+      name: 'grant_sfence_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_sfence, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sfence}}]}
+      ensure: &grant_same_cycle [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [priority-0, source:lsu.scala:668]
+    - name: 'grant_store_commit_fast_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_store_commit_fast, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-commit-fast}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-1, source:lsu.scala:669]
+    - name: 'grant_load_agen_exec_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_load_agen_exec, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load-agen-exec}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-2, source:lsu.scala:670]
+    - name: 'grant_load_agen_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_load_agen, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load-agen}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-3, source:lsu.scala:671]
+    - name: 'grant_store_agen_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_store_agen, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-agen}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-4, source:lsu.scala:672]
+    - name: 'grant_release_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_release, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: release}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-5, source:lsu.scala:673]
+    - name: 'grant_hella_incoming_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_hella_incoming, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hella-incoming}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-6, source:lsu.scala:674]
+    - name: 'grant_hella_wakeup_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_hella_wakeup, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hella-wakeup}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-7, source:lsu.scala:675]
+    - name: 'grant_store_retry_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_store_retry, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-retry}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-8, source:lsu.scala:676]
+    - name: 'grant_load_retry_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_load_retry, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load-retry}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-9, source:lsu.scala:677]
+    - name: 'grant_load_wakeup_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_load_wakeup, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load-wakeup}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-10, source:lsu.scala:678]
+    - name: 'grant_store_commit_slow_${frame.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}, {role: decision, type: LSU.ArbitrationDecision}]
+      outputs: [{role: grant, type: LSU.ScheduleGrant}]
+      when: {node: nary, op: and, operands: [*this_frame, {node: binary, op: eq, left: {node: event_field, event_id: decision, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: event_field, event_id: decision, field: will_store_commit_slow, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${frame.frame_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-commit-slow}}]}
+      ensure: *grant_same_cycle
+      exact: true
+      tags: [priority-11, source:lsu.scala:679]

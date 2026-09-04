@@ -18,6 +18,11 @@ metadata:
     it does not alter the current memory-order relation set
   hierarchy: LDQ/STQ/retry/search state and events are private; only Core and DCache boundary events are ports.
 ports:
+- name: memory_instruction
+  direction: input
+  event_type: Core.MemoryInstruction
+  required_connection: false
+  description: Source-derived dispatch boundary used by the rebuilt v0.21 composition.
 - name: arch_load
   direction: input
   event_type: Arch.Load
@@ -347,7 +352,7 @@ repeat:
     - name: ldq_allocate_${load.op_id}
       inputs:
       - role: arch
-        type: Arch.Load
+        type: ${load.dispatch_event_type}
       outputs:
       - role: alloc
         type: LSU.LDQAllocate
@@ -2380,7 +2385,7 @@ repeat:
     - name: stq_allocate_${store.op_id}
       inputs:
       - role: arch
-        type: Arch.Store
+        type: ${store.dispatch_event_type}
       outputs:
       - role: alloc
         type: LSU.STQAllocate
@@ -3610,7 +3615,7 @@ repeat:
     - name: fence_enqueue_${fence.op_id}
       inputs:
       - role: arch
-        type: Arch.Fence
+        type: ${fence.dispatch_event_type}
       outputs:
       - role: enq
         type: LSU.FenceEnqueue

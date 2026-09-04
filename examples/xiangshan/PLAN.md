@@ -1,6 +1,6 @@
 # XiangShan µMCM 建模计划
 
-> 当前进度：第 8 阶段已完成（`v0.8.0`）；下一阶段是 PSQ、转发、非对齐拆分和 drain。
+> 当前进度：第 10 阶段已完成（`v0.10.0`）；下一阶段是 Uncache/MMIO 有序路径。
 
 ## 结论
 
@@ -50,8 +50,8 @@ examples/xiangshan/
 | 6 ✓ | Load 生命期与违例检测 | `VirtualLoadQueue.scala`、`LoadQueueRAR.scala`、`LoadQueueRAW.scala` | redirect 回收；RAR/RAW 违例精确恢复 |
 | 7 ✓ | Load replay 与内存依赖预测 | `LoadQueueReplay.scala`、`StoreSet.scala`、`WaitTable.scala`（当前配置未实例化） | replay cause/wakeup 不丢不重；预测只延迟不改值 |
 | 8 ✓ | Store 地址/数据管线与 VSQ | `NewStoreUnit.scala`、`StdExeUnit.scala`、`VirtualStoreQueue.scala` | addr/data 配对；commit/redirect 后生命期正确 |
-| 9 | PSQ、转发、非对齐拆分和 drain | `NewStoreQueue.scala` 中 `PhysicalStoreQueue/ForwardModule/UnalignQueue/DeqModule` | 字节 mask、youngest-match 转发、拆分/异常边界通过 |
-| 10 | SBuffer 合并、排空与已提交 store 可见性 | `sbuffer/Sbuffer.scala` | 未提交 store 不外泄；fence 等待需要的 drain |
+| 9 ✓ | PSQ、转发、非对齐拆分和 drain | `NewStoreQueue.scala` 中 `PhysicalStoreQueue/ForwardModule/UnalignQueue/DeqModule` | 字节 mask、youngest-match 转发、拆分/异常边界通过 |
+| 10 ✓ | SBuffer 合并、排空与已提交 store 可见性 | `sbuffer/Sbuffer.scala` | 未提交 store 不外泄；fence 等待需要的 drain |
 | 11 | Uncache/MMIO 有序路径 | `LoadQueueUncache.scala`、`dcache/Uncache.scala`、`MemBlock.scala` | cached/uncached 互斥；MMIO 请求、响应和提交顺序可证 |
 | 12 | 向量访存与标量非对齐扩展 | `NewLoadUnit/NewStoreUnit`、LSQ/SBuffer 向量分支、`Rob.scala` | 标量 S4 头尾拼接、unit/stride/index/segment、`vstart`、fault-only-first 和精确异常 |
 | 13 | L1D arrays 与 hit 管线 | `DCacheWrapper.scala`、`LoadPipe.scala`、`StorePipe.scala`、`MainPipe.scala`、data/meta | load/store hit、bank conflict、bypass/nack 通过 |

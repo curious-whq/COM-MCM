@@ -1,0 +1,48 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata:
+  case: source-derived-mshr-tilelink-primary
+  description: The request is an L1/MSHR public boundary input; GrantData is not supplied.
+events:
+- id: line0_init
+  type: Coherence.LineInit
+  occurs: true
+  cycle: 0
+  fields: {line_id: line0, address: x, value: 11, version: 0, source_op_id: InitX}
+- id: access0
+  type: Coherence.Access
+  occurs: true
+  cycle: 0
+  fields: {op_id: Ld0, hart: 0, program_index: 0, line_id: line0, address: x, mem_kind: load, write_value: 0, after_op_id: NONE}
+- id: req0
+  type: DCache.MSHRRequest
+  occurs: true
+  cycle: 1
+  fields:
+    op_id: Ld0
+    queue_kind: ldq
+    queue_idx: 0
+    address: x
+    value: 0
+    mem_kind: load
+    mshr_id: 0
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: true
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+    sdq_id: 0
+- id: response_obligation
+  type: MSHR.ResponseDequeue
+  occurs: true
+  cycle: 10
+  fields: {mshr_id: 0, op_id: Ld0, queue_idx: 0, address: x, value: 11}
+- id: grant_ack_obligation
+  type: TL.GrantAck
+  occurs: true
+  cycle: 14
+  fields: {txn_id: Ld0, hart: 0, sink_id: 0}
+constraints: []

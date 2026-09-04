@@ -1,0 +1,250 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_lsq_runtime
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/lsu.scala
+    sha256: 405dffe86cca0d5632ee75f481b6a64202691e2e169e6a5961363d20ca33a40e
+    lines: [367, 435, 872, 986, 1140, 1235, 1535, 1592]
+  purpose: Model the BOOM v4 LDQ lifetime at the public TLB/DCache/ROB boundaries without recreating TLB decisions inside the LSQ.
+  abstraction:
+  - Queue indices are finite role-derived identities; circular head/tail arithmetic is represented by same-hart program order and bounded unique allocation.
+  - Core.TranslatedMemory replaces the old environment-authored LSU.TLBHit/LSU.TLBMiss events and records the physical address selected by the NBDTLB child.
+  - A DCache fire sets executed, a nack clears it, and either normal or long-latency response sets succeeded and captures the value.
+  hierarchy: LDQ state and lifecycle events are private. Only instruction, translated-memory, DCache, recovery, and ROB interfaces are public ports.
+
+ports:
+- {name: memory_instruction, direction: input, event_type: Core.MemoryInstruction, required_connection: false}
+- {name: translated_memory, direction: input, event_type: Core.TranslatedMemory, required_connection: false}
+- {name: dcache_req_fire, direction: input, event_type: LSU.DCacheReqFire, required_connection: false}
+- {name: dcache_load_nack, direction: input, event_type: DCache.LoadNack, required_connection: false}
+- {name: dcache_load_response, direction: input, event_type: DCache.LoadResponse, required_connection: false}
+- {name: dcache_ll_response, direction: input, event_type: DCache.LongLatencyLoadResponse, required_connection: false}
+- {name: probe_release, direction: input, event_type: DCache.ProbeRelease, required_connection: false}
+- {name: squash_memory, direction: input, event_type: Core.SquashMemory, required_connection: false}
+- {name: rob_commit, direction: input, event_type: ROB.Commit, required_connection: false}
+- {name: memory_order_exception, direction: output, event_type: Core.MemoryOrderingException, required_connection: false}
+
+internal_events:
+- LSU.LDQAllocate
+- LSU.LoadExecuted
+- LSU.LoadNackSeen
+- LSU.LoadSucceeded
+- LSU.LoadObserved
+- LSU.LDLDSearch
+- LSU.LDLDConflict
+- LSU.AssertViolation
+
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: loads
+  as: load
+  include:
+    state_variables:
+    - {name: 'LSQ.ldq[${load.ldq_idx}].valid', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].addr_valid', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].addr_is_virtual', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].address', sort: {name: address, width: 64}, initial: 0}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].executed', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].succeeded', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].observed', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].order_fail', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].squashed', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.ldq[${load.ldq_idx}].value', sort: {name: value, width: 64}, initial: 0}
+    slots:
+    - {id: 'lsq_ldq_allocate_${load.repeat_index}', type: LSU.LDQAllocate, required: false, fields: {op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}'}}
+    - {id: 'lsq_load_executed_${load.repeat_index}', type: LSU.LoadExecuted, required: false, fields: {op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', address: '${load.address}'}}
+    - {id: 'lsq_load_nack_seen_${load.repeat_index}', type: LSU.LoadNackSeen, required: false, fields: {op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', address: '${load.address}'}}
+    - {id: 'lsq_load_success_hit_${load.repeat_index}', type: LSU.LoadSucceeded, required: false, fields: {op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', address: '${load.address}', value: {$expr: {node: symbol, name: 'lsq::${load.op_id}::hit_value', sort: {name: value, width: 64}}}, source: dcache}}
+    - {id: 'lsq_load_success_refill_${load.repeat_index}', type: LSU.LoadSucceeded, required: false, fields: {op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', address: '${load.address}', value: {$expr: {node: symbol, name: 'lsq::${load.op_id}::refill_value', sort: {name: value, width: 64}}}, source: mshr}}
+    - {id: 'lsq_load_observed_${load.repeat_index}', type: LSU.LoadObserved, required: false, fields: {op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', address: '${load.address}'}}
+    - {id: 'lsq_ldld_search_${load.repeat_index}', type: LSU.LDLDSearch, required: false, fields: {searcher_op_id: '${load.op_id}', searcher_ldq_idx: '${load.ldq_idx}', address: '${load.address}', port: '${load.port}'}}
+    - {id: 'lsq_memory_order_exception_${load.repeat_index}', type: Core.MemoryOrderingException, required: false, fields: {op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', cause: MINI_EXCEPTION_MEM_ORDERING}}
+
+    transformations:
+    - name: 'dispatch_allocates_ldq_${load.repeat_index}'
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: allocate, type: LSU.LDQAllocate}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'LSQ.ldq[${load.ldq_idx}].valid', at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}]
+      state_updates:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].valid', at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].addr_valid', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].executed', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].succeeded', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].observed', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].order_fail', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].squashed', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [source:lsu.scala:367-435, ldq, dispatch]
+
+    - name: 'translation_records_physical_address_${load.repeat_index}'
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      state_requirements:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].valid', at: translated, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].squashed', at: translated, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].addr_valid', at: translated, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].addr_is_virtual', at: translated, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].address', at: translated, value: {node: event_field, event_id: translated, field: address, sort: {name: address, width: 64}}}
+      tags: [source:lsu.scala:960-986, ldq, translation]
+
+    - name: 'accepted_request_marks_executed_${load.repeat_index}'
+      inputs: [{role: fire, type: LSU.DCacheReqFire}]
+      outputs: [{role: executed, type: LSU.LoadExecuted}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: fire, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: executed, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: executed, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: fire, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: executed, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: fire, field: address, sort: {name: address, width: 64}}}
+      state_requirements:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].valid', at: fire, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].addr_valid', at: fire, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].executed', at: fire, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates: [{state: 'LSQ.ldq[${load.ldq_idx}].executed', at: executed, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [source:lsu.scala:872-905, source:lsu.scala:1140-1172, ldq, execute]
+
+    - name: 'nack_clears_executed_${load.repeat_index}'
+      inputs: [{role: nack, type: DCache.LoadNack}]
+      outputs: [{role: seen, type: LSU.LoadNackSeen}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: nack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: seen, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: seen, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: nack, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'LSQ.ldq[${load.ldq_idx}].executed', at: nack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}]
+      state_updates: [{state: 'LSQ.ldq[${load.ldq_idx}].executed', at: nack, value: {node: literal, sort: {name: bool}, value: false}}]
+      exact: true
+      tags: [source:lsu.scala:1535-1548, ldq, nack]
+
+    - name: 'hit_response_records_success_${load.repeat_index}'
+      inputs: [{role: response, type: DCache.LoadResponse}]
+      outputs: [{role: success, type: LSU.LoadSucceeded}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: success, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: success, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: dcache}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: success, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: success, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:lsu.scala:1551-1592, ldq, response]
+
+    - name: 'long_response_records_success_${load.repeat_index}'
+      inputs: [{role: response, type: DCache.LongLatencyLoadResponse}]
+      outputs: [{role: success, type: LSU.LoadSucceeded}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: success, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: success, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mshr}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: success, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: success, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:lsu.scala:1549-1592, ldq, long-latency]
+
+    - name: 'success_sets_ldq_state_${load.repeat_index}'
+      inputs: [{role: success, type: LSU.LoadSucceeded}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: success, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      state_requirements:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].valid', at: success, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].executed', at: success, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].succeeded', at: success, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].value', at: success, value: {node: event_field, event_id: success, field: value, sort: {name: value, width: 64}}}
+      tags: [source:lsu.scala:1551-1592, ldq, response-state]
+
+    - name: 'executed_load_starts_ldld_search_${load.repeat_index}'
+      inputs: [{role: executed, type: LSU.LoadExecuted}]
+      outputs: [{role: search, type: LSU.LDLDSearch}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: executed, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: search, field: searcher_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: search, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: executed, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:lsu.scala:1140-1235, ldq, lcam]
+
+    - name: 'matching_release_marks_observed_${load.repeat_index}'
+      inputs: [{role: release, type: DCache.ProbeRelease}]
+      outputs: [{role: observed, type: LSU.LoadObserved}]
+      when: {node: call, function: same_block, arguments: [{node: event_field, event_id: release, field: address, sort: {name: address, width: 64}}, {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}], sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: observed, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: observed, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].valid', at: release, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].addr_valid', at: release, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [source:lsu.scala:1190-1214, ldq, coherence]
+
+    - name: 'observed_sets_ldq_state_${load.repeat_index}'
+      inputs: [{role: observed, type: LSU.LoadObserved}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: observed, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      state_updates: [{state: 'LSQ.ldq[${load.ldq_idx}].observed', at: observed, value: {node: literal, sort: {name: bool}, value: true}}]
+      tags: [source:lsu.scala:1207-1214, ldq, observed-state]
+
+    - name: 'squash_invalidates_ldq_${load.repeat_index}'
+      inputs: [{role: squash, type: Core.SquashMemory}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: squash, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      state_updates:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].squashed', at: squash, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].valid', at: squash, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [source:lsu.scala:branch-recovery, ldq, squash]
+
+    - name: 'commit_deallocates_ldq_${load.repeat_index}'
+      inputs: [{role: commit, type: ROB.Commit}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      state_requirements:
+      - {state: 'LSQ.ldq[${load.ldq_idx}].valid', at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${load.ldq_idx}].succeeded', at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates: [{state: 'LSQ.ldq[${load.ldq_idx}].valid', at: commit, value: {node: literal, sort: {name: bool}, value: false}}]
+      tags: [source:lsu.scala:commit-head, ldq, commit]
+
+repeat_product:
+- axes:
+  - {over: loads, as: older}
+  - {over: loads, as: younger}
+  include:
+    slots:
+    - {id: 'lsq_ldld_conflict_${product.repeat_index}', type: LSU.LDLDConflict, required: false, fields: {older_op_id: '${older.op_id}', older_ldq_idx: '${older.ldq_idx}', younger_op_id: '${younger.op_id}', younger_ldq_idx: '${younger.ldq_idx}', address: '${older.address}'}}
+    - {id: 'lsq_ldld_assert_${product.repeat_index}', type: LSU.AssertViolation, required: false, fields: {property: older_load_found_observed_younger, older_op_id: '${older.op_id}', younger_op_id: '${younger.op_id}', address: '${older.address}'}}
+    transformations:
+    - name: 'older_retry_finds_observed_younger_${product.repeat_index}'
+      inputs: [{role: search, type: LSU.LDLDSearch}]
+      outputs: [{role: conflict, type: LSU.LDLDConflict}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: search, field: searcher_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${older.op_id}'}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: '${older.program_index}'}, right: {node: literal, sort: {name: int}, value: '${younger.program_index}'}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: '${older.hart}'}, right: {node: literal, sort: {name: int}, value: '${younger.hart}'}}
+        - {node: call, function: same_address, arguments: [{node: literal, sort: {name: address, width: 64}, value: '${older.address}'}, {node: literal, sort: {name: address, width: 64}, value: '${younger.address}'}], sort: {name: bool}}
+        - {node: call, function: mask_overlap, arguments: [{node: literal, sort: {name: bv, width: 8}, value: '${older.byte_mask}'}, {node: literal, sort: {name: bv, width: 8}, value: '${younger.byte_mask}'}], sort: {name: bool}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: conflict, field: older_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${older.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: conflict, field: younger_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${younger.op_id}'}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: conflict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: search, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'LSQ.ldq[${older.ldq_idx}].valid', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${older.ldq_idx}].addr_valid', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${younger.ldq_idx}].valid', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${younger.ldq_idx}].addr_valid', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${younger.ldq_idx}].addr_is_virtual', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.ldq[${younger.ldq_idx}].executed', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${younger.ldq_idx}].succeeded', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${younger.ldq_idx}].observed', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.ldq[${younger.ldq_idx}].squashed', at: search, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [source:lsu.scala:1240-1278, ldq, load-load-order]
+    - name: 'impossible_ldld_case_raises_source_assert_${product.repeat_index}'
+      inputs: [{role: conflict, type: LSU.LDLDConflict}]
+      outputs: [{role: assertion, type: LSU.AssertViolation}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: conflict, field: older_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${older.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: conflict, field: younger_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${younger.op_id}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: assertion, field: older_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${older.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: assertion, field: younger_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${younger.op_id}'}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: assertion, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: conflict, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:lsu.scala:1269-1278, assert-false]

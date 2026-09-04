@@ -1,0 +1,490 @@
+schema_version: umcm.module.v0.15.0
+name: uncache_frontend
+metadata:
+  version: 0.11.0
+  stage: 11
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_sha256: a9e2cad80211c95c3346da8cc83a3fa1ecad1fd44768b2e5d74e7471aeba7267
+  source_files:
+  - src/main/scala/xiangshan/mem/pipeline/NewLoadUnit.scala:895-925,1484-1530
+  - src/main/scala/xiangshan/mem/lsqueue/LoadQueueUncache.scala:33-240,267-647
+  - src/main/scala/xiangshan/mem/pipeline/NewStoreUnit.scala:580-680,701-825
+  - src/main/scala/xiangshan/mem/lsqueue/NewStoreQueue.scala:973-1085,1160-1219,1263-1316,1584-1666,1931-1973
+  scope: bounded aligned scalar MMIO/NC classification, LoadQueueUncache and StoreQueue head eligibility, Uncache acceptance, response wakeup, writeback/fault, and redirect cancellation
+  hierarchy: PBMT/PMA classification is a public LSU.AccessClass boundary; LQ/SQ entry state, MMIO head selection, response wakeup, and cancellation are private
+  abstractions:
+  - LSU.AccessClass records the post-translation PBMT/PMA result that NewLoadUnit/NewStoreUnit place in their private pipeline payloads
+  - MMIO accesses wait for all older modeled same-hart operations to commit; NC loads may request early, while NC stores request only after their early pipeline writeback has committed
+  - MMIO stores suppress the ordinary StoreUnit writeback and complete only after the Uncache response; NC stores complete before the background bus response
+  - aligned scalar accesses are modeled here; vector and unaligned access-fault/misalignment behavior remains Stage 12
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: memory_commit, direction: input, event_type: Core.MemoryCommit, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+- {name: access_class, direction: input, event_type: LSU.AccessClass, required_connection: false}
+- {name: uncache_request, direction: output, event_type: Uncache.Request}
+- {name: uncache_accept, direction: input, event_type: Uncache.Accept, required_connection: false}
+- {name: uncache_response, direction: input, event_type: Uncache.Response, required_connection: false}
+- {name: writeback, direction: output, event_type: Core.MemoryWriteback}
+- {name: memory_fault, direction: output, event_type: Core.MemoryFault}
+internal_events:
+- Uncache.LoadQueueAllocate
+- Uncache.StoreQueueSelect
+- Uncache.FrontendAccept
+- Uncache.FrontendWakeup
+- Uncache.FrontendCancel
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: accesses
+  as: access
+  include:
+    state_variables:
+    - {name: "UncacheFrontend[${access.op_id}].live", sort: {name: bool}, initial: false}
+    - {name: "UncacheFrontend[${access.op_id}].request_sent", sort: {name: bool}, initial: false}
+    - {name: "UncacheFrontend[${access.op_id}].accepted", sort: {name: bool}, initial: false}
+    - {name: "UncacheFrontend[${access.op_id}].core_completed", sort: {name: bool}, initial: false}
+    - {name: "UncacheFrontend[${access.op_id}].cancelled", sort: {name: bool}, initial: false}
+    slots:
+    - id: frontend_load_allocate_${access.repeat_index}
+      type: Uncache.LoadQueueAllocate
+      required: false
+      fields: &frontend_fields
+        op_id: ${access.op_id}
+        txn_id: "${access.op_id}.uncache"
+        hart: ${access.hart}
+        program_index: ${access.program_index}
+        rob_idx: ${access.rob_idx}
+        lq_idx: ${access.lq_idx}
+        sq_idx: ${access.sq_idx}
+        mem_kind: ${access.mem_kind}
+        vaddr: ${access.vaddr}
+        address: ${access.address}
+        value: ${access.value}
+        size: ${access.size}
+        byte_mask: ${access.byte_mask}
+        path: ${access.region}
+    - id: frontend_store_select_${access.repeat_index}
+      type: Uncache.StoreQueueSelect
+      required: false
+      fields: *frontend_fields
+    - id: frontend_request_${access.repeat_index}
+      type: Uncache.Request
+      required: false
+      fields:
+        txn_id: "${access.op_id}.uncache"
+        op_id: ${access.op_id}
+        hart: ${access.hart}
+        program_index: ${access.program_index}
+        rob_idx: ${access.rob_idx}
+        lq_idx: ${access.lq_idx}
+        sq_idx: ${access.sq_idx}
+        mem_kind: ${access.mem_kind}
+        region: ${access.region}
+        vaddr: ${access.vaddr}
+        address: ${access.address}
+        value: ${access.value}
+        byte_mask: ${access.word_mask}
+        size: ${access.size}
+        nc: ${access.nc}
+        mem_back_type_mm: ${access.mem_back_type_mm}
+    - id: frontend_writeback_${access.repeat_index}
+      type: Core.MemoryWriteback
+      required: false
+      fields: &frontend_writeback_fields
+        op_id: ${access.op_id}
+        hart: ${access.hart}
+        rob_idx: ${access.rob_idx}
+        mem_kind: ${access.mem_kind}
+        value: ${access.value}
+        success: true
+    - id: frontend_accept_${access.repeat_index}
+      type: Uncache.FrontendAccept
+      required: false
+      fields:
+        <<: *frontend_fields
+        entry_id: {$expr: {node: symbol, name: "uncache_frontend::${access.op_id}::entry_id", sort: {name: string}}}
+    - id: frontend_wakeup_${access.repeat_index}
+      type: Uncache.FrontendWakeup
+      required: false
+      fields:
+        <<: *frontend_fields
+        entry_id: {$expr: {node: symbol, name: "uncache_frontend::${access.op_id}::entry_id", sort: {name: string}}}
+        success: {$expr: {node: symbol, name: "uncache_frontend::${access.op_id}::response_success", sort: {name: bool}}}
+    - id: frontend_fault_${access.repeat_index}
+      type: Core.MemoryFault
+      required: false
+      fields:
+        op_id: ${access.op_id}
+        hart: ${access.hart}
+        rob_idx: ${access.rob_idx}
+        vaddr: ${access.vaddr}
+        cause: {$expr: {node: symbol, name: "uncache_frontend::${access.op_id}::fault_cause", sort: {name: string}}}
+    - id: frontend_cancel_${access.repeat_index}
+      type: Uncache.FrontendCancel
+      required: false
+      fields:
+        <<: *frontend_fields
+        cause: {$expr: {node: symbol, name: "uncache_frontend::${access.op_id}::redirect_cause", sort: {name: string}}}
+    transformations:
+    - name: classified_load_allocates_uncache_entry_${access.repeat_index}
+      inputs:
+      - {role: issue, type: Core.MemoryIssue}
+      - {role: classification, type: LSU.AccessClass}
+      outputs: [{role: allocate, type: Uncache.LoadQueueAllocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: classification, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: load}}
+        - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${access.cacheable}"}}
+        - {node: literal, sort: {name: bool}, value: "${access.aligned}"}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: classification, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: classification, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].live", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "UncacheFrontend[${access.op_id}].live", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [uncache, load-queue, classify, source:NewLoadUnit.scala:895-925,LoadQueueUncache.scala:326-374]
+    - name: classified_store_selects_uncache_head_${access.repeat_index}
+      inputs:
+      - {role: issue, type: Core.MemoryIssue}
+      - {role: classification, type: LSU.AccessClass}
+      outputs: [{role: select, type: Uncache.StoreQueueSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: classification, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: store}}
+        - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${access.cacheable}"}}
+        - {node: literal, sort: {name: bool}, value: "${access.aligned}"}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: write_value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${access.value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${access.byte_mask}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: classification, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: classification, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].live", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "UncacheFrontend[${access.op_id}].live", at: select, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [uncache, store-queue, classify, source:NewStoreUnit.scala:606-645,NewStoreQueue.scala:985-1000]
+    - name: nc_store_keeps_ordinary_early_writeback_${access.repeat_index}
+      inputs: [{role: select, type: Uncache.StoreQueueSelect}]
+      outputs: [{role: writeback, type: Core.MemoryWriteback}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: nc}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: store}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: nc}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [uncache, nc-store, early-writeback, source:NewStoreUnit.scala:739-742,800-808]
+    - name: load_uncache_entry_sends_request_${access.repeat_index}
+      inputs: [{role: allocate, type: Uncache.LoadQueueAllocate}]
+      outputs: [{role: request, type: Uncache.Request}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: load}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [uncache, load-request, source:LoadQueueUncache.scala:113-190,377-451]
+    - name: mmio_store_head_sends_request_${access.repeat_index}
+      inputs:
+      - {role: select, type: Uncache.StoreQueueSelect}
+      - {role: commit, type: Core.MemoryCommit}
+      outputs: [{role: request, type: Uncache.Request}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: mmio}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: store}}
+        - {node: unary, op: not, operand: {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: nc}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [uncache, mmio-store, rob-head, source:NewStoreQueue.scala:973-1038]
+    - name: committed_nc_store_sends_background_request_${access.repeat_index}
+      inputs:
+      - {role: select, type: Uncache.StoreQueueSelect}
+      - {role: commit, type: Core.MemoryCommit}
+      - {role: early_writeback, type: Core.MemoryWriteback}
+      outputs: [{role: request, type: Uncache.Request}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: early_writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: nc}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: store}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: nc}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: early_writeback, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].core_completed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "UncacheFrontend[${access.op_id}].cancelled", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [uncache, nc-store, post-commit-request, source:NewStoreQueue.scala:985-1006,1280-1296,1610-1612]
+    - name: buffer_accept_acknowledges_frontend_${access.repeat_index}
+      inputs:
+      - {role: request, type: Uncache.Request}
+      - {role: accept, type: Uncache.Accept}
+      outputs: [{role: captured, type: Uncache.FrontendAccept}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}.uncache"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: accept, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}.uncache"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: captured, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: accept, field: entry_id, sort: {name: string}}, right: {node: event_field, event_id: captured, field: entry_id, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: captured, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].request_sent", at: accept, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "UncacheFrontend[${access.op_id}].accepted", at: captured, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [uncache, id-response, source:Uncache.scala:373-378,LoadQueueUncache.scala:76-77,104-106]
+    - name: response_wakes_waiting_load_or_mmio_store_${access.repeat_index}
+      inputs:
+      - {role: response, type: Uncache.Response}
+      - {role: captured, type: Uncache.FrontendAccept}
+      outputs: [{role: wakeup, type: Uncache.FrontendWakeup}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}.uncache"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: captured, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: captured, field: entry_id, sort: {name: string}}, right: {node: event_field, event_id: response, field: entry_id, sort: {name: string}}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: load}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: mmio}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: captured, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: entry_id, sort: {name: string}}, right: {node: event_field, event_id: wakeup, field: entry_id, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: success, sort: {name: bool}}, right: {node: event_field, event_id: wakeup, field: success, sort: {name: bool}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: wakeup, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].cancelled", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [uncache, response, wakeup, source:LoadQueueUncache.scala:144-167,192-234,NewStoreQueue.scala:1009-1017]
+    - name: successful_uncache_response_writes_back_${access.repeat_index}
+      inputs:
+      - {role: wakeup, type: Uncache.FrontendWakeup}
+      - {role: response, type: Uncache.Response}
+      outputs: [{role: writeback, type: Core.MemoryWriteback}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}.uncache"}}
+        - {node: event_field, event_id: response, field: success, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: denied, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: load}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: mmio}}
+      ensure:
+      - node: binary
+        op: implies
+        left: {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: load}}
+        right: {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: wakeup, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].cancelled", at: wakeup, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [uncache, writeback, source:LoadQueueUncache.scala:199-239,NewStoreQueue.scala:1043-1083]
+    - name: denied_or_corrupt_uncache_response_faults_${access.repeat_index}
+      inputs:
+      - {role: wakeup, type: Uncache.FrontendWakeup}
+      - {role: response, type: Uncache.Response}
+      outputs: [{role: fault, type: Core.MemoryFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}.uncache"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: event_field, event_id: response, field: denied, sort: {name: bool}}
+          - {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: fault, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}
+        right:
+          node: ite
+          condition: {node: event_field, event_id: response, field: denied, sort: {name: bool}}
+          then:
+            node: ite
+            condition: {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.mem_kind}"}, right: {node: literal, sort: {name: string}, value: load}}
+            then: {node: literal, sort: {name: string}, value: load_access_fault}
+            else: {node: literal, sort: {name: string}, value: store_access_fault}
+          else: {node: literal, sort: {name: string}, value: hardware_error}
+      - {node: binary, op: lt, left: {node: event_field, event_id: wakeup, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "UncacheFrontend[${access.op_id}].core_completed", at: fault, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [uncache, access-fault, hardware-error, source:LoadQueueUncache.scala:192-239,NewStoreQueue.scala:1043-1066]
+    - name: redirect_cancels_live_uncache_frontend_${access.repeat_index}
+      inputs:
+      - {role: redirect, type: Core.Redirect}
+      outputs: [{role: cancel, type: Uncache.FrontendCancel}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${access.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${access.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${access.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: cancel, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}, right: {node: event_field, event_id: cancel, field: cause, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: cancel, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].live", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [uncache, redirect, delayed-flush, source:LoadQueueUncache.scala:79-110,127-167]
+    - name: emitted_request_marks_frontend_sent_${access.repeat_index}
+      inputs: [{role: request, type: Uncache.Request}]
+      outputs: []
+      when: {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}.uncache"}}
+      state_requirements:
+      - {state: "UncacheFrontend[${access.op_id}].request_sent", at: request, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "UncacheFrontend[${access.op_id}].request_sent", at: request, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [uncache, request-state]
+    - name: successful_writeback_marks_frontend_complete_${access.repeat_index}
+      inputs: [{role: writeback, type: Core.MemoryWriteback}]
+      outputs: []
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: event_field, event_id: writeback, field: success, sort: {name: bool}}
+      state_updates:
+      - {state: "UncacheFrontend[${access.op_id}].core_completed", at: writeback, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [uncache, completion-state]
+    - name: derived_cancel_marks_frontend_cancelled_${access.repeat_index}
+      inputs: [{role: cancel, type: Uncache.FrontendCancel}]
+      outputs: []
+      when: {node: binary, op: eq, left: {node: event_field, event_id: cancel, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      state_updates:
+      - {state: "UncacheFrontend[${access.op_id}].cancelled", at: cancel, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [uncache, cancel-state]
+    constraints:
+    - node: nary
+      op: or
+      operands:
+      - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: cacheable}}
+      - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: nc}}
+      - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: mmio}}
+    - {node: binary, op: eq, left: {node: literal, sort: {name: bool}, value: "${access.cacheable}"}, right: {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: cacheable}}}
+    - {node: binary, op: eq, left: {node: literal, sort: {name: bool}, value: "${access.nc}"}, right: {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: nc}}}
+    - {node: binary, op: eq, left: {node: literal, sort: {name: bool}, value: "${access.mmio}"}, right: {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${access.region}"}, right: {node: literal, sort: {name: string}, value: mmio}}}
+    - node: binary
+      op: implies
+      left: {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${access.cacheable}"}}
+      right: {node: literal, sort: {name: bool}, value: "${access.aligned}"}
+
+- over: issued_memory_ops
+  as: op
+  include:
+    slots:
+    - id: frontend_commit_marker_${op.repeat_index}
+      type: Core.MemoryCommit
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", rob_idx: "${op.rob_idx}", mem_kind: "${op.mem_kind}"}
+
+repeat_product:
+- axes:
+  - {over: issued_memory_ops, as: older}
+  - {over: accesses, as: target}
+  include:
+    constraints:
+    - node: binary
+      op: implies
+      left:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${target.region}"}, right: {node: literal, sort: {name: string}, value: mmio}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${target.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${target.program_index}"}}
+        - {node: event_field, event_id: "frontend_request_${target.repeat_index}", field: occurs, sort: {name: bool}}
+      right:
+        node: nary
+        op: and
+        operands:
+        - {node: event_field, event_id: "frontend_commit_marker_${older.repeat_index}", field: occurs, sort: {name: bool}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: "frontend_commit_marker_${older.repeat_index}", field: cycle, sort: {name: int}}, right: {node: event_field, event_id: "frontend_request_${target.repeat_index}", field: cycle, sort: {name: int}}}

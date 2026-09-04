@@ -1,25 +1,34 @@
-# BOOM memory µMCM coverage at v0.20
+# BOOM memory µMCM coverage at v0.21
 
 This file is an inventory, not a claim that the entire BOOM RTL is modeled signal-for-signal. `covered` means the current µMCM contains the memory-order-relevant behavior needed to expose that path at a module boundary. `partial (source-grounded)` means an executable subset is tied to named RTL regions and its omissions are listed. `abstracted` means a deliberate boundary model exists. `future` means the behavior is not yet represented adequately for blind bug discovery.
 
-The retained v0.19 executable coverage report is `examples/boom/coverage/BOOM_PATH_COVERAGE.yaml`: 27/27 required goals have witnesses, with one optional uncovered repeated L1-hit goal retained as a model finding. v0.20 additionally discovers a forbidden RVWMO skeleton and realizes its version flow in the coherence slice; the detailed end-to-end join remains explicitly blocked. See `PATH_COVERAGE_V0.19.md` and `HIERARCHICAL_SEARCH_V0.20.md`.
+The retained v0.19 executable coverage report is
+`examples/boom/coverage/BOOM_PATH_COVERAGE.yaml`, but its path witnesses do not
+establish an integrated source-complete BOOM model. The former v0.21 blind
+result used a cacheable-path summary and has been withdrawn. The authoritative
+rebuild status and source mapping now live in
+`examples/boom/source/v021.yaml`.
 
 | Area | Status | Current semantic surface |
 |---|---|---|
-| LDQ allocation/lifetime | covered | allocate, address, executed, succeeded, observed, order-fail, squash, commit |
+| LDQ allocation/lifetime | partial (source-grounded) | empty-tail bounded LDQ/STQ allocation is derived from dispatch order; wraparound, simultaneous multiport allocation and redirect interaction still need integration |
 | Load TLB retry | covered | miss, retry queue, retry issue, translated request |
 | Load nack/wakeup | covered | nack clears executed, sleep/wakeup, re-execution |
 | LD-LD ordering | covered | generic pair search, observed-younger conflict, buggy/fixed recovery |
-| STQ/SDQ abstraction | covered | allocate, address/data ready, commit/drain/ack/clear |
+| STQ/SDQ abstraction | covered for ordinary stores (source-derived bounded) | STQ allocate, independent physical-address/data ready, delayed ROB-ready, commit, drain, hit-or-MSHR-accept ack and head clear; a DCache nack rewinds/re-enqueues the execute queue and reaches a second exact scheduler/drain decision; MSHR SDQ data is retained until store replay |
 | Store→Load forwarding | covered | overlap/age-based forwarding surface |
 | ST-LD violation | covered | generic order-fail path |
 | Fence | covered | wait for DCache ordered and release |
 | Branch/exception recovery | covered | load/store kill/flush, retry-queue effects, ROB younger squash, branch-kill broadcast |
-| L1 request/response boundary | partial | request accept, miss/refill and response/nack are covered; v0.19 found the same-hart refill→second-read-hit trace UNSAT in the separate v0.18 coherence slice |
-| L1 Probe boundary | covered | source-pinned clean ProbeAck and dirty ProbeAckData, permission downgrade/invalidation, and data publication |
-| MSHR primary/secondary/RPQ | covered | admission, RPQ, refill/direct response/replay |
-| MSHR SDQ/IOMSHR | covered | bounded store-data lifetime and MMIO-MSHR path |
-| MSHR writeback/meta/finish | covered | memory-order-relevant state-machine path |
+| LSU per-port scheduling | covered (source-derived) | all twelve source-ordered `lsu_sched` classes share exact per-port TLB/DCache/LCAM tokens; fixed-port guards, fast/slow store drain and incoming-agen assertion are executable; the selected DCache payload is connected to the generalized L1 |
+| LSU LDQ runtime in detailed composition | covered for ordinary loads (source-derived bounded) | dispatch allocation, translated physical address, DCache fire/executed, nack, hit/refill success, Probe observed, ROB deallocation, and the source `assert(false.B)` older-load/observed-younger case are generated without LSU-local TLB outcome inputs |
+| L1 request/response boundary | covered (source-derived bounded) | finite requests traverse s0/s1/s2; per-set/per-way tag and permission state derives read/write hit, tag miss, permission miss, replacement metadata, load response, store hit/MSHR-accept acknowledgement and all five source nack classes |
+| L1 data/refill/bypass | covered (source-derived bounded) | runtime MSHR meta/refill interfaces update selected ways; store hits and fixed-way MSHR replays produce the timed s3 write and next-cycle ghost-word availability for the source s3/s4/s5 bypass |
+| L1 Probe boundary | covered (source-derived bounded) | generalized ProbeUnit metadata lookup, MSHR retry, clean ProbeAck, dirty writeback/ProbeAckData, toN invalidation and toB downgrade; subsequent accesses observe the updated line state |
+| L1 TileLink probe integration | partial | clean `TL.Probe → ProbeReceive → ProbeRelease → TL.ProbeAck` is connected through public interfaces; dirty ProbeAckData and separate per-hart generalized L1 instances remain |
+| MSHR primary/secondary/RPQ | covered (source-derived bounded) | a fixed two-entry Small/Medium BOOM pool derives round-robin primary IDs, same-block secondary IDs, conflict/all-busy blocking, finish reuse, Probe gating, and Rocket-Chip write-intent checks; allocator permits are connected to phase-dependent entry ready, primary/secondary acceptance, and explicit RPQ lifetime |
+| MSHR SDQ/IOMSHR | covered | bounded store-data lifetime, internally allocated SDQ entry, RPQ fixed-way replay/free, and MMIO-MSHR path |
+| MSHR writeback/meta/finish | partial (source-grounded) | memory-order-relevant state-machine path plus A/D/E closure are executable in a bounded primary-path integration trace |
 | ROB | covered | bounded allocation, completion, in-order commit, fault record, precise exception, younger squash |
 | BOOM v4 NBDTLB lookup/FSM | partial (source-grounded) | per-hart entry validity, hit/miss, one outstanding `READY→REQUEST→WAIT→READY` walk, refill, miss-ready, and all/VPN SFENCE invalidation |
 | LSU translation retry | covered | TLB miss records a virtual address, round-trips through the LSU-owned retry queue, and reissues only after NBDTLB miss-ready |
@@ -38,13 +47,35 @@ The retained v0.19 executable coverage report is `examples/boom/coverage/BOOM_PA
 
 ## Composition boundary
 
-The detailed `memory_buggy.yaml` / `memory_fixed_reference.yaml` compositions continue to own ordinary cacheable LSQ/L1/MSHR behavior. `core_side_v017.yaml` owns ROB, NBDTLB/LSU retry, bounded PTW, atomic, fence, MMIO, and recovery behavior. `coherence_v018.yaml` independently owns the new BOOM-L1/SiFive-L2 permission and data protocol. All are executable strict compositions; a signal-level adapter unifying their three root request vocabularies is not claimed yet.
+The historical directed compositions remain independently executable:
+`memory_buggy.yaml` / `memory_fixed_reference.yaml` own the detailed ordinary
+LSQ/L1/MSHR slice, `core_side_v017.yaml` owns the core-side extensions, and
+`coherence_v018.yaml` owns the BOOM-L1/SiFive-L2 protocol.
 
-v0.20 makes the consequence machine-readable. `umcm search boom --rvwmo` finds the architectural forbidden skeleton and realizes `R1 -> W -> R0` in `coherence_v018.yaml`, but emits `status: partial` and `end_to_end: false` because the detailed LSQ/L1/MSHR join is a required `interface_gap`. No TLB/MSHR/cache-path hint is injected to turn that gap into a witness.
+The rebuild also contains deliberately narrow source-integration
+compositions: `lsq_source_v021.yaml` derives empty-tail queue allocation,
+`l1_source_v021.yaml` derives generalized four-way L1 decisions and Probe/refill state changes,
+`lsu_port_scheduler_source_v021.yaml` derives the exact per-port arbitration result,
+`lsu_l1_source_v021.yaml` connects the selected DCache request into that generalized L1,
+`mshr_allocator_source_v021.yaml` derives MSHR primary/secondary selection and
+IDs, `mshr_entry_frontend_source_v021.yaml` connects that selection to fixed
+entry phase, RPQ and bounded SDQ readiness, and `mshr_tilelink_source_v021.yaml`
+closes the detailed MSHR primary path through InclusiveCache TileLink A/D/E.
+The integrated `tlb_lsu_l1_source_v021.yaml` now carries ordinary load and
+store hit, TLB-retry and cold-miss paths through retirement, including the
+store MSHR-accept acknowledgement and later RPQ/SDQ replay. It is still not the
+default blind-search composition until the remaining source-ledger blocker is
+closed.
+
+The old `coherence_blind_v021.yaml` / `core_blind_v021.yaml` join is retained
+only as a rejected prototype: the latter includes
+`model/search/cacheable_path.yaml` and is not an admissible detailed BOOM
+realization. `umcm search boom --rvwmo` is deliberately blocked until the
+default detailed full-memory composition passes the v0.21 source ledger gate.
 
 ## Hierarchy status
 
-The v0.15 enforceable hierarchy boundary remains mandatory in v0.20:
+The v0.15 enforceable hierarchy boundary remains mandatory in v0.21:
 
 - state is private to its module;
 - internal event vocabulary is separate from ports;

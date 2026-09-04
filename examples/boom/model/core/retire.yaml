@@ -1,8 +1,8 @@
 schema_version: umcm.module.v0.15.0
 name: retire_core
 metadata:
-  version: 0.17.0
-  source: ROB-to-architectural memory projection
+  version: 0.21.0
+  source: Source-grounded ROB-to-architectural projection; read data is carried from the completed execution rather than the decoded instruction placeholder.
   scope: committed load/store/AMO/LR/SC/fence events; failed SC is non-writing
   hierarchy: pure public-event projection with no private state
 ports:
@@ -30,7 +30,7 @@ repeat:
     - id: retired_arch_load_${op.repeat_index}
       type: Arch.Load
       required: false
-      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: "${op.value}", byte_mask: "${op.byte_mask}"}
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: {$expr: {node: symbol, name: "retire::${op.op_id}::load_value", sort: {name: value, width: 64}}}, byte_mask: "${op.byte_mask}"}
     - id: retired_arch_store_${op.repeat_index}
       type: Arch.Store
       required: false
@@ -42,7 +42,7 @@ repeat:
     - id: retired_arch_lr_${op.repeat_index}
       type: Arch.LR
       required: false
-      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: "${op.value}", byte_mask: "${op.byte_mask}"}
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", address: "${op.address}", value: {$expr: {node: symbol, name: "retire::${op.op_id}::lr_value", sort: {name: value, width: 64}}}, byte_mask: "${op.byte_mask}"}
     - id: retired_arch_sc_${op.repeat_index}
       type: Arch.SC
       required: false
@@ -54,7 +54,7 @@ repeat:
     - id: retired_commit_load_${op.repeat_index}
       type: Arch.CommitLoad
       required: false
-      fields: {op_id: "${op.op_id}", value: "${op.value}"}
+      fields: {op_id: "${op.op_id}", value: {$expr: {node: symbol, name: "retire::${op.op_id}::commit_load_value", sort: {name: value, width: 64}}}}
     - id: retired_commit_store_${op.repeat_index}
       type: Arch.CommitStore
       required: false
@@ -76,6 +76,7 @@ repeat:
       output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: arch, field: value, sort: {name: value, width: 64}}}
       exact: true
     - name: retire_store_${op.repeat_index}
       inputs: [{role: commit, type: ROB.Commit}]
@@ -115,6 +116,7 @@ repeat:
       output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: arch, field: value, sort: {name: value, width: 64}}}
       exact: true
     - name: retire_successful_sc_${op.repeat_index}
       inputs: [{role: commit, type: ROB.Commit}]
@@ -161,6 +163,7 @@ repeat:
       output_when: {node: binary, op: eq, left: {node: event_field, event_id: arch_commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: arch_commit, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: arch_commit, field: value, sort: {name: value, width: 64}}}
       exact: true
     - name: retire_write_${op.repeat_index}
       inputs: [{role: commit, type: ROB.Commit}]

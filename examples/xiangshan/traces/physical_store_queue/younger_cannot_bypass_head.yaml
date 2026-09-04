@@ -1,0 +1,55 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 9, case: younger-cannot-bypass-head, expected: INFEASIBLE}
+events:
+- id: bh_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: BH, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 4096, write_value: 1, size: 1, byte_mask: 1, sq_idx: 0, vector: false}
+- id: bt_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 1
+  fields: {op_id: BT, hart: 0, program_index: 1, rob_idx: 1, mem_kind: store, vaddr: 8192, write_value: 2, size: 1, byte_mask: 1, sq_idx: 1, vector: false}
+- id: bt_layout
+  type: Store.Layout
+  occurs: true
+  cycle: 2
+  fields: {op_id: BT, sq_idx: 1, kind: aligned, cross_page: false, low_address: 16384, high_address: 16384, low_value: 2, high_value: 0, low_mask: 1, high_mask: 0}
+- id: bh_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 3
+  fields: {op_id: BH, sq_idx: 0, address: 12288, byte_mask: 1}
+- id: bt_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 4
+  fields: {op_id: BT, sq_idx: 1, address: 16384, byte_mask: 1}
+- id: bh_data
+  type: Store.DataReady
+  occurs: true
+  cycle: 3
+  fields: {op_id: BH, sq_idx: 0, value: 1, byte_mask: 1}
+- id: bt_data
+  type: Store.DataReady
+  occurs: true
+  cycle: 4
+  fields: {op_id: BT, sq_idx: 1, value: 2, byte_mask: 1}
+- id: bh_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 12
+  fields: {op_id: BH, hart: 0, rob_idx: 0, mem_kind: store}
+- id: bt_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 16
+  fields: {op_id: BT, hart: 0, rob_idx: 1, mem_kind: store}
+- id: bypass_drain
+  type: Store.Drain
+  occurs: true
+  cycle: 23
+  fields: {op_id: BT, beat: 0, hart: 0, address: 16384, value: 2, byte_mask: 1, last: true, cross_page: false}
+constraints: []

@@ -1,0 +1,58 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 11, case: nc-merge, expected: FEASIBLE}
+events:
+- id: nc0_request
+  type: Uncache.Request
+  occurs: true
+  cycle: 1
+  fields: {txn_id: NC0.uncache, op_id: NC0, hart: 0, program_index: 0, rob_idx: 0, lq_idx: -1, sq_idx: 0, mem_kind: store, region: nc, vaddr: 12288, address: 12288, value: 17, byte_mask: 1, size: 1, nc: true, mem_back_type_mm: true}
+- id: nc1_request
+  type: Uncache.Request
+  occurs: true
+  cycle: 3
+  fields: {txn_id: NC1.uncache, op_id: NC1, hart: 0, program_index: 1, rob_idx: 1, lq_idx: -1, sq_idx: 1, mem_kind: store, region: nc, vaddr: 12289, address: 12289, value: 43520, byte_mask: 2, size: 1, nc: true, mem_back_type_mm: true}
+- id: nc_merge_layout
+  type: Uncache.BufferLayout
+  occurs: true
+  cycle: 0
+  fields:
+    entry_id: UM
+    entry_order: 0
+    member_count: 2
+    outstanding_enabled: false
+    word_address: 12288
+    bus_address: 12288
+    merged_size: 2
+    first_txn_id: NC0.uncache
+    first_op_id: NC0
+    first_hart: 0
+    first_program_index: 0
+    first_rob_idx: 0
+    first_mem_kind: store
+    first_region: nc
+    first_vaddr: 12288
+    first_address: 12288
+    first_value: 17
+    first_mask: 1
+    first_size: 1
+    first_mem_back_type_mm: true
+    second_txn_id: NC1.uncache
+    second_op_id: NC1
+    second_hart: 0
+    second_program_index: 1
+    second_rob_idx: 1
+    second_mem_kind: store
+    second_region: nc
+    second_vaddr: 12289
+    second_address: 12289
+    second_value: 43520
+    second_mask: 2
+    second_size: 1
+    second_mem_back_type_mm: true
+- id: nc_merge_memory_response
+  type: Memory.Response
+  occurs: true
+  cycle: 20
+  fields: {txn_id: NC0.uncache, response_kind: uncache_grant, value: 0, success: true, denied: false, corrupt: false}
+constraints: []

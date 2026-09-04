@@ -1,0 +1,74 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_l1_probe_bridge
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    files:
+    - src/main/scala/v4/lsu/dcache.scala:145-265
+    - src/main/scala/v4/lsu/dcache.scala:818-865
+    - src/main/scala/v4/lsu/mshrs.scala:513-718
+  purpose: Connect an InclusiveCache TileLink B probe to the detailed BOOM DCache ProbeUnit boundary and return its clean C-channel acknowledgement.
+  abstraction:
+  - One line-level event represents a multi-beat Probe/ProbeAck transaction.
+  - This bridge currently admits the clean ProbeAck path; dirty ProbeAckData remains owned by the detailed writeback extension.
+  hierarchy: TileLink and DCache probe events are public interfaces; no DCache tag, permission, or data state is read here.
+ports:
+- {name: tilelink_probe, direction: input, event_type: TL.Probe, required_connection: false}
+- {name: dcache_probe_receive, direction: output, event_type: DCache.ProbeReceive, required_connection: false}
+- {name: dcache_probe_release, direction: input, event_type: DCache.ProbeRelease, required_connection: false}
+- {name: tilelink_probe_ack, direction: output, event_type: TL.ProbeAck, required_connection: false}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: accesses
+  as: access
+  include:
+    slots:
+    - id: 'boom_probe_receive_${access.repeat_index}'
+      type: DCache.ProbeReceive
+      required: false
+      fields: {source_op_id: '${access.op_id}', address: '${access.address}', set_index: '${access.set_index}', tag: '${access.tag}', probe_param: {$expr: {node: symbol, name: 'probe_bridge::${access.op_id}::param', sort: {name: string}}}}
+    - id: 'boom_probe_ack_${access.repeat_index}'
+      type: TL.ProbeAck
+      required: false
+      fields:
+        txn_id: '${access.op_id}'
+        hart: {$expr: {node: symbol, name: 'probe_bridge::${access.op_id}::target_hart', sort: {name: int}}}
+        line_id: '${access.line_id}'
+        address: '${access.address}'
+        cap: {$expr: {node: symbol, name: 'probe_bridge::${access.op_id}::cap', sort: {name: string}}}
+        has_data: false
+        value: 0
+        version: 0
+        source_op_id: '${access.op_id}'
+    transformations:
+    - name: 'tilelink_b_enters_probeunit_${access.repeat_index}'
+      inputs: [{role: probe, type: TL.Probe}]
+      outputs: [{role: receive, type: DCache.ProbeReceive}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${access.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: receive, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${access.op_id}'}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: receive, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: receive, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: cap, sort: {name: string}}, right: {node: event_field, event_id: receive, field: probe_param, sort: {name: string}}}
+      exact: true
+      tags: [source:dcache.scala:145-265, tilelink-b, probeunit]
+    - name: 'clean_probeunit_release_returns_tilelink_c_${access.repeat_index}'
+      inputs: [{role: probe, type: TL.Probe}, {role: receive, type: DCache.ProbeReceive}, {role: release, type: DCache.ProbeRelease}]
+      outputs: [{role: ack, type: TL.ProbeAck}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${access.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${access.op_id}'}}, {node: unary, op: not, operand: {node: event_field, event_id: release, field: had_data, sort: {name: bool}}}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${access.op_id}'}}
+      ensure:
+      - {node: binary, op: le, left: {node: event_field, event_id: receive, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: cap, sort: {name: string}}, right: {node: event_field, event_id: probe, field: cap, sort: {name: string}}}
+      exact: true
+      tags: [source:dcache.scala:818-865, tilelink-c, clean-probe-ack]

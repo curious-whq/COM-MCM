@@ -1,0 +1,213 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-scalar-store-physical-queue-v0.9
+policy: ports-only-public-surface
+modules:
+- module: scalar_store_pipeline
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: translate_request
+    direction: output
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: translate_response
+    direction: input
+    event_type: MMU.TranslateResponse
+    required_connection: false
+  - name: address_ready
+    direction: output
+    event_type: Store.AddressReady
+    required_connection: false
+  - name: data_ready
+    direction: output
+    event_type: Store.DataReady
+    required_connection: false
+  - name: writeback
+    direction: output
+    event_type: Core.MemoryWriteback
+    required_connection: false
+  - name: memory_fault
+    direction: output
+    event_type: Core.MemoryFault
+    required_connection: false
+  public_event_types:
+  - Core.MemoryFault
+  - Core.MemoryIssue
+  - Core.MemoryWriteback
+  - Core.Redirect
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  - Store.AddressReady
+  - Store.DataReady
+  private_slot_ids:
+  - store_fault_decision_0
+  - store_redirect_kill_0
+  - store_s0_0
+  - store_s1_0
+  - store_s2_0
+  - store_s3_0
+  - store_std_0
+  - store_tlb_replay_0
+  private_event_types:
+  - Store.FaultDecision
+  - Store.ReplayDecision
+  - Store.StageAdvance
+  private_state_names:
+  - StorePipeline[PSQINT].live
+  private_transformation_names:
+  - address_data_pair_completes_store_0
+  - checked_store_advances_to_s3_0
+  - issue_enters_independent_std_0
+  - issue_enters_store_sta_s0_0
+  - redirect_kills_live_store_pipeline_0
+  - redirected_store_pipeline_becomes_dead_0
+  - sta_s0_requests_translation_0
+  - std_writes_store_data_0
+  - store_fault_reaches_core_0
+  - store_s1_advances_to_s2_0
+  - store_s1_publishes_address_0
+  - store_tlb_miss_requests_replay_0
+  - store_translation_fault_is_classified_0
+  - translation_success_enters_store_s1_0
+- module: virtual_store_queue
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: memory_commit
+    direction: input
+    event_type: Core.MemoryCommit
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  public_event_types:
+  - Core.MemoryCommit
+  - Core.MemoryIssue
+  - Core.Redirect
+  private_slot_ids:
+  - vsq_allocate_0
+  - vsq_redirect_recover_0
+  - vsq_retire_0
+  private_event_types:
+  - SQ.Allocate
+  - SQ.RedirectRecover
+  - SQ.Retire
+  private_state_names:
+  - VSQ[PSQINT].allocated
+  private_transformation_names:
+  - committed_store_retires_vsq_0
+  - redirect_recovery_reclaims_vsq_0
+  - redirect_selects_live_vsq_entry_0
+  - store_issue_allocates_vsq_0
+  - younger_vsq_retire_waits_for_older_0
+- module: physical_store_queue
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: memory_commit
+    direction: input
+    event_type: Core.MemoryCommit
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: address_ready
+    direction: input
+    event_type: Store.AddressReady
+    required_connection: false
+  - name: data_ready
+    direction: input
+    event_type: Store.DataReady
+    required_connection: false
+  - name: layout
+    direction: input
+    event_type: Store.Layout
+    required_connection: false
+  - name: unaligned_tail_ready
+    direction: input
+    event_type: Store.UnalignedTailReady
+    required_connection: false
+  - name: forward_query
+    direction: input
+    event_type: Store.ForwardQuery
+    required_connection: false
+  - name: forward_response
+    direction: output
+    event_type: Store.ForwardResponse
+    required_connection: false
+  - name: store_drain
+    direction: output
+    event_type: Store.Drain
+    required_connection: false
+  public_event_types:
+  - Core.MemoryCommit
+  - Core.MemoryIssue
+  - Core.Redirect
+  - Store.AddressReady
+  - Store.DataReady
+  - Store.Drain
+  - Store.ForwardQuery
+  - Store.ForwardResponse
+  - Store.Layout
+  - Store.UnalignedTailReady
+  private_slot_ids:
+  - drain_high_select_0
+  - drain_low_select_0
+  - drain_single_select_0
+  - psq_address_write_0
+  - psq_allocate_0
+  - psq_cancel_0
+  - psq_commit_0
+  - psq_data_write_0
+  - psq_ready_0
+  - split_high_0
+  - split_low_0
+  private_event_types:
+  - SQ.AddressWrite
+  - SQ.Commit
+  - SQ.DataWrite
+  - SQ.DrainSelect
+  - SQ.EntryReady
+  - SQ.ForwardSelect
+  - SQ.PhysicalAllocate
+  - SQ.PhysicalCancel
+  - SQ.UnalignedSplit
+  private_state_names:
+  - PSQ[PSQINT].address_valid
+  - PSQ[PSQINT].committed
+  - PSQ[PSQINT].data_valid
+  - PSQ[PSQINT].live
+  - PSQ[PSQINT].ordered_done
+  - PSQ[PSQINT].ready
+  private_transformation_names:
+  - aligned_entry_selects_single_drain_0
+  - cross16_entry_splits_two_drain_beats_0
+  - cross_page_tail_enables_two_beat_split_0
+  - independent_payloads_make_entry_ready_0
+  - physical_cancel_reclaims_entry_0
+  - physical_commit_respects_store_age_0
+  - physical_drain_respects_store_age_0
+  - redirect_selects_uncommitted_physical_entry_0
+  - retired_all_valid_entry_commits_psq_0
+  - single_selection_enters_sbuffer_queue_0
+  - split_high_enters_sbuffer_and_dequeues_0
+  - split_high_selects_sbuffer_port1_0
+  - split_low_enters_sbuffer_0
+  - split_low_materializes_high_beat_0
+  - split_low_selects_sbuffer_port0_0
+  - std_writes_physical_data_0
+  - store_issue_opens_physical_entry_0
+  - usable_sta_writes_physical_address_0
+  - within16_entry_normalizes_to_single_drain_0

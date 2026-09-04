@@ -1,8 +1,13 @@
-# µMCM Foundation v0.20.0
+# µMCM Foundation v0.21.0 (source-model rebuild)
 
-v0.20 adds two-level hierarchical search on top of the v0.15 hierarchy, v0.16 RVWMO checker, v0.17 core-side slice, v0.18 coherence model, and v0.19 path coverage. It first discovers an architectural execution skeleton, then asks µMCM slices to realize the resulting obligations through public events only.
+The previous v0.21 blind-rediscovery claim has been withdrawn: it realized the
+architectural skeleton through `model/search/cacheable_path.yaml`, not through
+the detailed BOOM LSU/L1/MSHR state machines. v0.21 is now being rebuilt as a
+source-complete modeling milestone before blind search is enabled again. See
+`examples/boom/source/v021.yaml` for the machine-readable source and blocker
+ledger.
 
-## v0.20 hierarchical search
+## v0.21 search status
 
 ```bash
 umcm search boom --rvwmo --backend z3 \
@@ -10,19 +15,25 @@ umcm search boom --rvwmo --backend z3 \
   --witness-dir examples/boom/search/witnesses
 ```
 
-The checked-in BOOM query searches the bounded architectural values for two
-same-address loads and one remote store. Layer one independently discovers the
-RVWMO-forbidden outcome `R0=1, R1=0` and its
-`R1 -fr-> W -rf-> R0 -ppo-> R1` cycle. Layer two then searches the v0.18
-coherence composition and realizes the version obligations through the public
-request order `R1 -> W -> R0`.
+The command currently returns `BLOCKED`. This is intentional: architecture
+generation is retained, but no BOOM realization result is accepted until the
+detailed source-derived model passes the admission gate. See
+`BLIND_REDISCOVERY_V0.21.md` and `ITERATION_21_REPORT.md`.
 
-The result is deliberately `partial` with `end_to_end: false`. The detailed
-LSQ/L1/MSHR composition still requires private allocation/routing annotations
-at template-instantiation time and is not yet connected to the v0.18 TileLink
-ports. This is reported as an explicit required interface gap; it is the v0.21
-blind-rediscovery task, not hidden as UNSAT or claimed as a completed witness.
-See `HIERARCHICAL_SEARCH_V0.20.md` and `ITERATION_20_REPORT.md`.
+The current rebuild checkpoint can derive bounded LDQ/STQ allocation from
+decoded instructions, generalized four-way L1 hit/miss/nack/Probe/refill state,
+source-ordered LSU port arbitration, two-entry MSHR primary/secondary selection
+and IDs connected to entry/RPQ/SDQ readiness. Ordinary loads and stores now run
+from instruction through NBDTLB, LDQ/STQ and the exact scheduler, generalized
+L1, ROB, and retirement. Cold loads traverse InclusiveCache TileLink A/D/E and
+return refill data; cold stores receive the source-accurate MSHR-accept ack and
+later replay their internally retained SDQ value into L1 with dirty metadata.
+Store nack recovery now reaches execute-queue rewind/re-enqueue and a second
+exact scheduler/drain decision. This does not restore the blind-search claim:
+the second DCache/L1 attempt, separate per-hart L1s, dirty ProbeAckData
+integration, and the search reset-state adapter remain. The L1 source map and
+explicit abstraction boundary are in
+`L1_V0.21_SOURCE_MAP.md`.
 
 ## v0.19 path coverage
 
@@ -189,7 +200,10 @@ For the current regression, 45 concrete events project to 19 interface events wh
 
 ## Validation
 
-v0.20 has 177 passing tests, including four focused hierarchical-search tests.
+The v0.21 regression now checks that search remains blocked while the source
+ledger reports unresolved detailed-model integration work. Historical
+v0.15--v0.20 tests remain available. The current complete suite has 220
+passing tests.
 
 ## v0.12 LSQ model
 

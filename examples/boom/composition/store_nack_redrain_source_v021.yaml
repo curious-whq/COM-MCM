@@ -1,0 +1,85 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-store-nack-redrain-source-v021
+horizon: 24
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded
+  purpose: Prove that a DCache-nacked committed store rewinds and re-enters BOOM's store execute queue, then receives a second exact scheduler decision.
+  encapsulation: strict
+modules:
+- {name: boom_v4_lsu_cacheable_issue_frontend, path: ../model/lsu/cacheable_issue_frontend_v021.yaml}
+- {name: boom_v4_store_runtime, path: ../model/lsu/store_runtime_v021.yaml}
+- {name: boom_v4_lsu_port_scheduler, path: ../model/lsu/port_scheduler_v021.yaml}
+connections:
+- name: candidate_frames_to_scheduler
+  source: {module: boom_v4_lsu_cacheable_issue_frontend, port: arbitration_frame}
+  target: {module: boom_v4_lsu_port_scheduler, port: arbitration_frame}
+  mode: shared_event
+- name: scheduler_grants_to_store_runtime
+  source: {module: boom_v4_lsu_port_scheduler, port: schedule_grant}
+  target: {module: boom_v4_store_runtime, port: schedule_grant}
+  mode: shared_event
+roles:
+- name: loads
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: load, fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id}
+- name: stores
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store, fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    address: fields.address
+    block_address: fields.address
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+  derived:
+    stq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    lsu_width: {kind: constant, value: 1}
+    port: {kind: constant, value: 0}
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    bank: {kind: constant, value: 0}
+- name: arbitration_frames
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store, fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 1
+  copies: 2
+  copy_exports: {frame_id: '${copy.frame_id}.${copy.copy_index}'}
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    frame_id: fields.op_id
+    hardware_cycle: fields.program_index
+    store_commit_op_id: fields.op_id
+  derived:
+    port: {kind: constant, value: 0}
+    lsu_width: {kind: constant, value: 1}
+    can_sfence: {kind: constant, value: false}
+    can_store_commit: {kind: constant, value: true}
+    stq_almost_full: {kind: constant, value: false}
+    can_load_agen: {kind: constant, value: false}
+    can_store_agen: {kind: constant, value: false}
+    can_release: {kind: constant, value: false}
+    can_hella_incoming: {kind: constant, value: false}
+    can_hella_wakeup: {kind: constant, value: false}
+    can_store_retry: {kind: constant, value: false}
+    can_load_retry: {kind: constant, value: false}
+    can_load_wakeup: {kind: constant, value: false}
+    sfence_op_id: {kind: constant, value: NONE}
+    load_agen_op_id: {kind: constant, value: NONE}
+    store_agen_op_id: {kind: constant, value: NONE}
+    release_op_id: {kind: constant, value: NONE}
+    hella_incoming_op_id: {kind: constant, value: NONE}
+    hella_wakeup_op_id: {kind: constant, value: NONE}
+    store_retry_op_id: {kind: constant, value: NONE}
+    load_retry_op_id: {kind: constant, value: NONE}
+    load_wakeup_op_id: {kind: constant, value: NONE}
+constraints: []

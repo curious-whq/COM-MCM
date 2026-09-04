@@ -1,0 +1,416 @@
+schema_version: umcm.module.v0.15.0
+name: boom_mshr_file_allocator_v021
+metadata:
+  version: 0.21.0
+  component: BOOM v4 BoomMSHRFile allocation and matching
+  source_repository: https://github.com/riscv-boom/riscv-boom.git
+  source_commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+  source_files:
+  - src/main/scala/v4/lsu/mshrs.scala:535-540
+  - src/main/scala/v4/lsu/mshrs.scala:571-578
+  - src/main/scala/v4/lsu/mshrs.scala:592-678
+  - src/main/scala/v4/lsu/mshrs.scala:726-730
+  - rocket-chip/src/main/scala/tilelink/Metadata.scala:98-110
+  - rocket-chip/src/main/scala/rocket/Consts.scala:80-86
+  configuration: Small/Medium BOOM nMSHRs=2
+  bounded_abstractions:
+  - block_address/set_index/tag are supplied by the DCache boundary instead of bit slicing inside this module
+  - RegNext around AgePriorityEncoder is represented at the accepted-request cycle
+  - MSHR phase and RPQ/SDQ capacity readiness remain child-entry interface
+    obligations when this allocator is composed with the detailed BoomMSHR model;
+    v0.21 now discharges them through PrimaryReady/SecondaryReady when
+    mshr_entry_ready_integrated is enabled
+ports:
+- {name: admission, direction: input, event_type: DCache.MSHRAdmissionRequest, required_connection: false}
+- {name: finish, direction: input, event_type: MSHR.MemFinish, required_connection: false}
+- {name: primary_ready, direction: input, event_type: MSHRFile.PrimaryReady, required_connection: false}
+- {name: secondary_ready, direction: input, event_type: MSHRFile.SecondaryReady, required_connection: false}
+- {name: request, direction: output, event_type: DCache.MSHRRequest, required_connection: false}
+- {name: blocked, direction: output, event_type: MSHRFile.RequestBlocked, required_connection: false}
+internal_events:
+- MSHRFile.PrimaryPermit
+- MSHRFile.SecondaryPermit
+state_variables:
+- {name: MSHRFile.head, sort: {name: int}, initial: 0}
+- {name: 'MSHRFile.entry[0].block_address', sort: {name: address, width: 64}, initial: EMPTY_ADDR}
+- {name: 'MSHRFile.entry[0].set_index', sort: {name: int}, initial: -1}
+- {name: 'MSHRFile.entry[0].tag', sort: {name: int}, initial: -1}
+- {name: 'MSHRFile.entry[0].way_id', sort: {name: int}, initial: -1}
+- {name: 'MSHRFile.entry[0].primary_write_intent', sort: {name: bool}, initial: false}
+- {name: 'MSHRFile.entry[1].block_address', sort: {name: address, width: 64}, initial: EMPTY_ADDR}
+- {name: 'MSHRFile.entry[1].set_index', sort: {name: int}, initial: -1}
+- {name: 'MSHRFile.entry[1].tag', sort: {name: int}, initial: -1}
+- {name: 'MSHRFile.entry[1].way_id', sort: {name: int}, initial: -1}
+- {name: 'MSHRFile.entry[1].primary_write_intent', sort: {name: bool}, initial: false}
+slots: []
+transformations:
+- name: release_entry_0_on_finish
+  inputs: [{role: finish, type: MSHR.MemFinish}]
+  outputs: []
+  when: {node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+  state_requirements:
+  - {state: 'MSHRFile.entry[0].block_address', at: finish, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+  state_updates:
+  - {state: 'MSHRFile.entry[0].block_address', at: finish, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+  - {state: 'MSHRFile.entry[0].set_index', at: finish, value: {node: literal, sort: {name: int}, value: -1}}
+  - {state: 'MSHRFile.entry[0].tag', at: finish, value: {node: literal, sort: {name: int}, value: -1}}
+  - {state: 'MSHRFile.entry[0].way_id', at: finish, value: {node: literal, sort: {name: int}, value: -1}}
+  - {state: 'MSHRFile.entry[0].primary_write_intent', at: finish, value: {node: literal, sort: {name: bool}, value: false}}
+  tags: [source:mshrs.scala:149-154, entry-lifetime]
+- name: release_entry_1_on_finish
+  inputs: [{role: finish, type: MSHR.MemFinish}]
+  outputs: []
+  when: {node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+  state_requirements:
+  - {state: 'MSHRFile.entry[1].block_address', at: finish, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+  state_updates:
+  - {state: 'MSHRFile.entry[1].block_address', at: finish, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+  - {state: 'MSHRFile.entry[1].set_index', at: finish, value: {node: literal, sort: {name: int}, value: -1}}
+  - {state: 'MSHRFile.entry[1].tag', at: finish, value: {node: literal, sort: {name: int}, value: -1}}
+  - {state: 'MSHRFile.entry[1].way_id', at: finish, value: {node: literal, sort: {name: int}, value: -1}}
+  - {state: 'MSHRFile.entry[1].primary_write_intent', at: finish, value: {node: literal, sort: {name: bool}, value: false}}
+  tags: [source:mshrs.scala:149-154, entry-lifetime]
+constraints: []
+repeat:
+- over: mshr_admissions
+  as: req
+  include:
+    slots:
+    - {id: 'permit_empty_h0_${req.repeat_index}', type: MSHRFile.PrimaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 0, allocation_case: empty-head-0}}
+    - {id: 'permit_empty_h1_${req.repeat_index}', type: MSHRFile.PrimaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 1, allocation_case: empty-head-1}}
+    - {id: 'permit_only_0_free_${req.repeat_index}', type: MSHRFile.PrimaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 0, allocation_case: only-0-free}}
+    - {id: 'permit_only_1_free_${req.repeat_index}', type: MSHRFile.PrimaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 1, allocation_case: only-1-free}}
+    - {id: 'secondary_permit_0_nn_${req.repeat_index}', type: MSHRFile.SecondaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 0, readiness_case: no-intent-after-no-intent}}
+    - {id: 'secondary_permit_0_nw_${req.repeat_index}', type: MSHRFile.SecondaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 0, readiness_case: no-intent-after-write-intent}}
+    - {id: 'secondary_permit_0_ww_${req.repeat_index}', type: MSHRFile.SecondaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 0, readiness_case: write-intent-after-write-intent}}
+    - {id: 'secondary_permit_1_nn_${req.repeat_index}', type: MSHRFile.SecondaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 1, readiness_case: no-intent-after-no-intent}}
+    - {id: 'secondary_permit_1_nw_${req.repeat_index}', type: MSHRFile.SecondaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 1, readiness_case: no-intent-after-write-intent}}
+    - {id: 'secondary_permit_1_ww_${req.repeat_index}', type: MSHRFile.SecondaryPermit, required: false, fields: {op_id: '${req.op_id}', mshr_id: 1, readiness_case: write-intent-after-write-intent}}
+    - &primary0_slot
+      id: 'allocated_primary_0_${req.repeat_index}'
+      type: DCache.MSHRRequest
+      required: false
+      fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', value: '${req.value}', mem_kind: '${req.mem_kind}', mshr_id: 0, tag_match: '${req.cache_tag_match}', old_line_dirty: '${req.old_line_dirty}', needs_acquire: '${req.needs_acquire}', grant_has_data: false, secondary: false, requires_second_acquire: false, is_hit_again: false, is_probe: '${req.is_probe}', sdq_id: '${req.sdq_id}'}
+    - id: 'allocated_primary_1_${req.repeat_index}'
+      type: DCache.MSHRRequest
+      required: false
+      fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', value: '${req.value}', mem_kind: '${req.mem_kind}', mshr_id: 1, tag_match: '${req.cache_tag_match}', old_line_dirty: '${req.old_line_dirty}', needs_acquire: '${req.needs_acquire}', grant_has_data: false, secondary: false, requires_second_acquire: false, is_hit_again: false, is_probe: '${req.is_probe}', sdq_id: '${req.sdq_id}'}
+    - id: 'allocated_secondary_0_${req.repeat_index}'
+      type: DCache.MSHRRequest
+      required: false
+      fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', value: '${req.value}', mem_kind: '${req.mem_kind}', mshr_id: 0, tag_match: '${req.cache_tag_match}', old_line_dirty: '${req.old_line_dirty}', needs_acquire: '${req.needs_acquire}', grant_has_data: false, secondary: true, requires_second_acquire: false, is_hit_again: false, is_probe: '${req.is_probe}', sdq_id: '${req.sdq_id}'}
+    - id: 'allocated_secondary_1_${req.repeat_index}'
+      type: DCache.MSHRRequest
+      required: false
+      fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', value: '${req.value}', mem_kind: '${req.mem_kind}', mshr_id: 1, tag_match: '${req.cache_tag_match}', old_line_dirty: '${req.old_line_dirty}', needs_acquire: '${req.needs_acquire}', grant_has_data: false, secondary: true, requires_second_acquire: false, is_hit_again: false, is_probe: '${req.is_probe}', sdq_id: '${req.sdq_id}'}
+    - {id: 'blocked_index_0_${req.repeat_index}', type: MSHRFile.RequestBlocked, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', reason: index-conflict-0}}
+    - {id: 'blocked_index_1_${req.repeat_index}', type: MSHRFile.RequestBlocked, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', reason: index-conflict-1}}
+    - {id: 'blocked_busy_${req.repeat_index}', type: MSHRFile.RequestBlocked, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', reason: all-busy}}
+    - {id: 'blocked_secondary_0_${req.repeat_index}', type: MSHRFile.RequestBlocked, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', reason: second-acquire-0}}
+    - {id: 'blocked_secondary_1_${req.repeat_index}', type: MSHRFile.RequestBlocked, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', reason: second-acquire-1}}
+    - {id: 'blocked_probe_0_${req.repeat_index}', type: MSHRFile.RequestBlocked, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', reason: probe-0}}
+    - {id: 'blocked_probe_1_${req.repeat_index}', type: MSHRFile.RequestBlocked, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', reason: probe-1}}
+    transformations:
+    - name: 'primary_permit_0_requires_ready_${req.repeat_index}'
+      inputs: [{role: permit, type: MSHRFile.PrimaryPermit}]
+      outputs: [{role: ready, type: MSHRFile.PrimaryReady}]
+      when: {node: nary, op: and, operands: [{node: literal, sort: {name: bool}, value: '${mshr_entry_ready_integrated}'}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}}
+      tags: [entry-readiness, source:mshrs.scala:234-240, source:mshrs.scala:614-678]
+    - name: 'primary_permit_1_requires_ready_${req.repeat_index}'
+      inputs: [{role: permit, type: MSHRFile.PrimaryPermit}]
+      outputs: [{role: ready, type: MSHRFile.PrimaryReady}]
+      when: {node: nary, op: and, operands: [{node: literal, sort: {name: bool}, value: '${mshr_entry_ready_integrated}'}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}}
+      tags: [entry-readiness, source:mshrs.scala:234-240, source:mshrs.scala:614-678]
+    - name: 'secondary_permit_0_requires_ready_${req.repeat_index}'
+      inputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      outputs: [{role: ready, type: MSHRFile.SecondaryReady}]
+      when: {node: nary, op: and, operands: [{node: literal, sort: {name: bool}, value: '${mshr_entry_ready_integrated}'}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}}
+      - {node: event_field, event_id: ready, field: rpq_ready, sort: {name: bool}}
+      tags: [entry-readiness, source:mshrs.scala:120-135, source:mshrs.scala:619-660]
+    - name: 'secondary_permit_1_requires_ready_${req.repeat_index}'
+      inputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      outputs: [{role: ready, type: MSHRFile.SecondaryReady}]
+      when: {node: nary, op: and, operands: [{node: literal, sort: {name: bool}, value: '${mshr_entry_ready_integrated}'}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}}
+      - {node: event_field, event_id: ready, field: rpq_ready, sort: {name: bool}}
+      tags: [entry-readiness, source:mshrs.scala:120-135, source:mshrs.scala:619-660]
+    - &empty_h0
+      name: 'select_empty_head_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.PrimaryPermit}]
+      when: &req_match {node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: allocation_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: empty-head-0}}]}
+      ensure: &same_cycle
+      - {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: permit, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: MSHRFile.head, at: admission, op: eq, value: {node: literal, sort: {name: int}, value: 0}}
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      state_mode: guard
+      exact: true
+      tags: [primary, round-robin, source:mshrs.scala:598-678]
+    - name: 'select_empty_head_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.PrimaryPermit}]
+      when: *req_match
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: allocation_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: empty-head-1}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: MSHRFile.head, at: admission, op: eq, value: {node: literal, sort: {name: int}, value: 1}}
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      state_mode: guard
+      exact: true
+      tags: [primary, round-robin, source:mshrs.scala:598-678]
+    - name: 'select_only_0_free_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.PrimaryPermit}]
+      when: *req_match
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: allocation_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: only-0-free}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[1].set_index', at: admission, op: ne, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      state_mode: guard
+      exact: true
+      tags: [primary, round-robin, source:mshrs.scala:598-678]
+    - name: 'select_only_1_free_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.PrimaryPermit}]
+      when: *req_match
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: allocation_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: only-1-free}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[0].set_index', at: admission, op: ne, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      state_mode: guard
+      exact: true
+      tags: [primary, round-robin, source:mshrs.scala:598-678]
+    - &secondary_0_nn
+      name: 'select_secondary_0_no_intent_after_no_intent_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      when: &load_request {node: nary, op: and, operands: [*req_match, {node: unary, op: not, operand: {node: event_field, event_id: admission, field: is_probe, sort: {name: bool}}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: readiness_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: no-intent-after-no-intent}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[0].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [secondary, command-coverage, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'select_secondary_0_no_intent_after_write_intent_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      when: *load_request
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: readiness_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: no-intent-after-write-intent}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[0].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [secondary, command-coverage, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'select_secondary_0_write_intent_after_write_intent_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      when: &write_intent_request {node: nary, op: and, operands: [*req_match, {node: unary, op: not, operand: {node: event_field, event_id: admission, field: is_probe, sort: {name: bool}}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: readiness_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: write-intent-after-write-intent}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[0].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [secondary, command-coverage, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'select_secondary_1_no_intent_after_no_intent_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      when: *load_request
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: readiness_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: no-intent-after-no-intent}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[1].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [secondary, command-coverage, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'select_secondary_1_no_intent_after_write_intent_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      when: *load_request
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: readiness_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: no-intent-after-write-intent}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[1].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [secondary, command-coverage, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'select_secondary_1_write_intent_after_write_intent_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: permit, type: MSHRFile.SecondaryPermit}]
+      when: *write_intent_request
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: readiness_case, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: write-intent-after-write-intent}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[1].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [secondary, command-coverage, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'commit_primary_allocation_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: permit, type: MSHRFile.PrimaryPermit}]
+      outputs: []
+      when: {node: nary, op: and, operands: [*req_match, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      state_updates:
+      - {state: 'MSHRFile.entry[0].block_address', at: permit, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[0].set_index', at: permit, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      - {state: 'MSHRFile.entry[0].tag', at: permit, value: {node: event_field, event_id: admission, field: tag, sort: {name: int}}}
+      - {state: 'MSHRFile.entry[0].way_id', at: permit, value: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}}
+      - {state: 'MSHRFile.entry[0].primary_write_intent', at: permit, value: {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}}
+      - {state: MSHRFile.head, at: permit, value: {node: literal, sort: {name: int}, value: 1}}
+      tags: [primary, entry-lifetime, source:mshrs.scala:614-678, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'commit_primary_allocation_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: permit, type: MSHRFile.PrimaryPermit}]
+      outputs: []
+      when: {node: nary, op: and, operands: [*req_match, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      state_updates:
+      - {state: 'MSHRFile.entry[1].block_address', at: permit, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[1].set_index', at: permit, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      - {state: 'MSHRFile.entry[1].tag', at: permit, value: {node: event_field, event_id: admission, field: tag, sort: {name: int}}}
+      - {state: 'MSHRFile.entry[1].way_id', at: permit, value: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}}
+      - {state: 'MSHRFile.entry[1].primary_write_intent', at: permit, value: {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}}
+      - {state: MSHRFile.head, at: permit, value: {node: literal, sort: {name: int}, value: 0}}
+      tags: [primary, entry-lifetime, source:mshrs.scala:614-678, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'materialize_primary_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: permit, type: MSHRFile.PrimaryPermit}]
+      outputs: [{role: request, type: DCache.MSHRRequest}]
+      when: {node: nary, op: and, operands: [*req_match, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: unary, op: not, operand: {node: event_field, event_id: request, field: secondary, sort: {name: bool}}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}]
+      exact: true
+    - name: 'materialize_primary_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: permit, type: MSHRFile.PrimaryPermit}]
+      outputs: [{role: request, type: DCache.MSHRRequest}]
+      when: {node: nary, op: and, operands: [*req_match, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: unary, op: not, operand: {node: event_field, event_id: request, field: secondary, sort: {name: bool}}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}]
+      exact: true
+    - name: 'materialize_secondary_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: permit, type: MSHRFile.SecondaryPermit}]
+      outputs: [{role: request, type: DCache.MSHRRequest}]
+      when: {node: nary, op: and, operands: [*req_match, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: event_field, event_id: request, field: secondary, sort: {name: bool}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}]
+      exact: true
+    - name: 'materialize_secondary_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: permit, type: MSHRFile.SecondaryPermit}]
+      outputs: [{role: request, type: DCache.MSHRRequest}]
+      when: {node: nary, op: and, operands: [*req_match, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: permit, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: event_field, event_id: request, field: secondary, sort: {name: bool}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}]
+      exact: true
+    - name: 'block_index_conflict_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: blocked, type: MSHRFile.RequestBlocked}]
+      when: *req_match
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: index-conflict-0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: ne, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[0].set_index', at: admission, op: eq, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      state_mode: guard
+      exact: true
+      tags: [not-ready, idx-match-tag-miss, source:mshrs.scala:571-578, source:mshrs.scala:726-730]
+    - name: 'block_index_conflict_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: blocked, type: MSHRFile.RequestBlocked}]
+      when: *req_match
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: index-conflict-1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: ne, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[1].set_index', at: admission, op: eq, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      state_mode: guard
+      exact: true
+      tags: [not-ready, idx-match-tag-miss, source:mshrs.scala:571-578, source:mshrs.scala:726-730]
+    - name: 'block_all_busy_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: blocked, type: MSHRFile.RequestBlocked}]
+      when: *req_match
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: all-busy}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: ne, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+      - {state: 'MSHRFile.entry[0].set_index', at: admission, op: ne, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      - {state: 'MSHRFile.entry[1].set_index', at: admission, op: ne, value: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}}
+      state_mode: guard
+      exact: true
+      tags: [not-ready, all-mshrs-in-use, source:mshrs.scala:598-678, source:mshrs.scala:726-730]
+    - name: 'block_second_acquire_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: blocked, type: MSHRFile.RequestBlocked}]
+      when: *write_intent_request
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: second-acquire-0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[0].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [not-ready, secondary, second-acquire, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'block_second_acquire_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: blocked, type: MSHRFile.RequestBlocked}]
+      when: *write_intent_request
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: second-acquire-1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHRFile.entry[1].primary_write_intent', at: admission, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [not-ready, secondary, second-acquire, source:mshrs.scala:120-126, source:Metadata.scala:98-110, source:Consts.scala:80-86]
+    - name: 'block_probe_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: blocked, type: MSHRFile.RequestBlocked}]
+      when: {node: nary, op: and, operands: [*req_match, {node: event_field, event_id: admission, field: is_probe, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: probe-0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHRFile.entry[0].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      state_mode: guard
+      exact: true
+      tags: [not-ready, secondary, probe, source:mshrs.scala:120-126]
+    - name: 'block_probe_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: blocked, type: MSHRFile.RequestBlocked}]
+      when: {node: nary, op: and, operands: [*req_match, {node: event_field, event_id: admission, field: is_probe, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: probe-1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHRFile.entry[1].block_address', at: admission, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      state_mode: guard
+      exact: true
+      tags: [not-ready, secondary, probe, source:mshrs.scala:120-126]

@@ -27,11 +27,16 @@ ports:
   direction: input
   event_type: Core.Exception
   required_connection: false
-- name: grant_data
+- name: mem_acquire
   direction: output
+  event_type: MSHR.AcquireBlock
+  required_connection: false
+  enabled: ${mshr_tilelink_ports_enabled}
+- name: grant_data
+  direction: ${mshr_grant_port_direction}
   event_type: MSHR.GrantData
 - name: grant_no_data
-  direction: output
+  direction: ${mshr_grant_port_direction}
   event_type: MSHR.GrantNoData
   required_connection: false
 - name: response
@@ -391,6 +396,9 @@ repeat:
         node: nary
         op: and
         operands:
+        - node: literal
+          sort: *id002
+          value: ${mshr_internal_grant_generation}
         - node: binary
           op: eq
           left:
@@ -490,7 +498,7 @@ repeat:
           event_id: grant
           field: source_op_id
           sort: *id003
-      exact: true
+      exact: ${mshr_internal_grant_generation}
       output_when:
         node: binary
         op: eq
@@ -516,6 +524,9 @@ repeat:
         node: nary
         op: and
         operands:
+        - node: literal
+          sort: *id002
+          value: ${mshr_internal_grant_generation}
         - node: binary
           op: eq
           left:
@@ -619,7 +630,7 @@ repeat:
           node: literal
           sort: *id002
           value: false
-      exact: true
+      exact: ${mshr_internal_grant_generation}
       output_when:
         node: binary
         op: eq

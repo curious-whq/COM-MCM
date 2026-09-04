@@ -1,0 +1,127 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-lsu-scheduler-to-dcache-source-v021
+horizon: 24
+metadata:
+  version: 0.21.0
+  status: source-derived-integration
+  purpose: Close LSU can-fire arbitration through the selected request mux into the generalized BOOM v4 DCache pipeline.
+  encapsulation: strict
+modules:
+- {name: boom_v4_lsu_port_scheduler, path: ../model/lsu/port_scheduler_v021.yaml}
+- {name: boom_v4_lsu_dcache_issue, path: ../model/lsu/dcache_issue_v021.yaml}
+- {name: boom_dcache_v4, path: ../model/l1/generic_v021.yaml}
+connections:
+- name: scheduler_grant_to_issue_mux
+  source: {module: boom_v4_lsu_port_scheduler, port: schedule_grant}
+  target: {module: boom_v4_lsu_dcache_issue, port: schedule_grant}
+  mode: shared_event
+- name: selected_request_to_dcache
+  source: {module: boom_v4_lsu_dcache_issue, port: dcache_req_valid}
+  target: {module: boom_dcache_v4, port: lsu_req_valid}
+  mode: shared_event
+roles:
+- name: arbitration_frames
+  event_type: LSU.ArbitrationFrame
+  cardinality: many
+  min_matches: 1
+  exports:
+    frame_id: fields.frame_id
+    hart: fields.hart
+    hardware_cycle: fields.hardware_cycle
+    port: fields.port
+    lsu_width: fields.lsu_width
+    can_sfence: fields.can_sfence
+    can_store_commit: fields.can_store_commit
+    stq_almost_full: fields.stq_almost_full
+    can_load_agen: fields.can_load_agen
+    can_store_agen: fields.can_store_agen
+    can_release: fields.can_release
+    can_hella_incoming: fields.can_hella_incoming
+    can_hella_wakeup: fields.can_hella_wakeup
+    can_store_retry: fields.can_store_retry
+    can_load_retry: fields.can_load_retry
+    can_load_wakeup: fields.can_load_wakeup
+    sfence_op_id: fields.sfence_op_id
+    store_commit_op_id: fields.store_commit_op_id
+    load_agen_op_id: fields.load_agen_op_id
+    store_agen_op_id: fields.store_agen_op_id
+    release_op_id: fields.release_op_id
+    hella_incoming_op_id: fields.hella_incoming_op_id
+    hella_wakeup_op_id: fields.hella_wakeup_op_id
+    store_retry_op_id: fields.store_retry_op_id
+    load_retry_op_id: fields.load_retry_op_id
+    load_wakeup_op_id: fields.load_wakeup_op_id
+- name: configs
+  event_type: DCache.ConfigInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.config_id
+  exports: {config_id: fields.config_id, lsu_width: fields.lsu_width, num_banks: fields.num_banks, single_ported: fields.single_ported, n_sets: fields.n_sets, n_ways: fields.n_ways, n_mshrs: fields.n_mshrs}
+- name: sets
+  event_type: DCache.SetStateInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.set_index
+  exports:
+    set_id: fields.set_id
+    set_index: fields.set_index
+    replacement_way: fields.replacement_way
+    way0_tag: fields.way0_tag
+    way0_permission: fields.way0_permission
+    way0_value: fields.way0_value
+    way1_tag: fields.way1_tag
+    way1_permission: fields.way1_permission
+    way1_value: fields.way1_value
+    way2_tag: fields.way2_tag
+    way2_permission: fields.way2_permission
+    way2_value: fields.way2_value
+    way3_tag: fields.way3_tag
+    way3_permission: fields.way3_permission
+    way3_value: fields.way3_value
+- name: requests
+  event_type: LSU.DCacheIssueIntent
+  cardinality: many
+  min_matches: 1
+  exports:
+    frame_id: fields.frame_id
+    request_kind: fields.request_kind
+    op_id: fields.op_id
+    source_cycle: cycle
+    ldq_idx: fields.ldq_idx
+    stq_idx: fields.stq_idx
+    queue_kind: fields.queue_kind
+    queue_idx: fields.queue_idx
+    address: fields.address
+    block_address: fields.block_address
+    set_index: fields.set_index
+    tag: fields.tag
+    bank: fields.bank
+    port: fields.port
+    mem_kind: fields.mem_kind
+    value: fields.value
+- name: probes
+  event_type: DCache.ProbeReceive
+  cardinality: many
+  min_matches: 0
+  exports: {source_op_id: fields.source_op_id, address: fields.address, set_index: fields.set_index, tag: fields.tag, probe_param: fields.probe_param}
+- name: meta_writes
+  event_type: MSHR.MetaWrite
+  cardinality: many
+  min_matches: 0
+  exports: {mshr_id: fields.mshr_id, address: fields.address, set_index: fields.set_index, tag: fields.tag, way_id: fields.way_id, permission: fields.permission}
+- name: refill_writes
+  event_type: MSHR.RefillWrite
+  cardinality: many
+  min_matches: 0
+  exports: {mshr_id: fields.mshr_id, address: fields.address, set_index: fields.set_index, way_id: fields.way_id, value: fields.value}
+- name: store_misses
+  event_type: LSU.DCacheIssueIntent
+  where: {fields.mem_kind: store}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, address: fields.address, stq_idx: fields.stq_idx, set_index: fields.set_index, tag: fields.tag, write_value: fields.value}
+  derived:
+    hart: {kind: constant, value: 0}
+    line_id: {kind: constant, value: line0}
+    way_id: {kind: constant, value: 0}
+constraints: []

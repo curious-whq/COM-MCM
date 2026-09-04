@@ -1,0 +1,10 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata:
+  case: source-derived-mshr-secondary-command-matrix
+  description: A write-intent primary admits both non-write-intent and write-intent same-block secondaries.
+events:
+- {id: admission_a, type: DCache.MSHRAdmissionRequest, occurs: true, cycle: 1, fields: {op_id: A, queue_kind: stq, queue_idx: 0, address: x0, block_address: block_x, set_index: 0, tag: 1, way_id: 0, value: 1, mem_kind: store, cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: 0}}
+- {id: admission_b, type: DCache.MSHRAdmissionRequest, occurs: true, cycle: 2, fields: {op_id: B, queue_kind: ldq, queue_idx: 0, address: x8, block_address: block_x, set_index: 0, tag: 1, way_id: 0, value: 0, mem_kind: load, cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: 0}}
+- {id: admission_c, type: DCache.MSHRAdmissionRequest, occurs: true, cycle: 3, fields: {op_id: C, queue_kind: ldq, queue_idx: 1, address: x16, block_address: block_x, set_index: 0, tag: 1, way_id: 0, value: 2, mem_kind: amo, cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: 1}}
+constraints: []

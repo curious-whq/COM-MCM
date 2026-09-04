@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata: {case: v021-generic-l1-two-set-routing}
+events:
+- id: config
+  type: DCache.ConfigInit
+  occurs: true
+  cycle: 0
+  fields: {config_id: small, lsu_width: 1, num_banks: 1, single_ported: false, n_sets: 64, n_ways: 4, n_mshrs: 2}
+- id: set0
+  type: DCache.SetStateInit
+  occurs: true
+  cycle: 0
+  fields: {set_id: set0, set_index: 0, replacement_way: 0, way0_tag: 7, way0_permission: branch, way0_value: 42, way1_tag: -1, way1_permission: nothing, way1_value: 0, way2_tag: -1, way2_permission: nothing, way2_value: 0, way3_tag: -1, way3_permission: nothing, way3_value: 0}
+- id: set1
+  type: DCache.SetStateInit
+  occurs: true
+  cycle: 0
+  fields: {set_id: set1, set_index: 1, replacement_way: 0, way0_tag: 9, way0_permission: branch, way0_value: 77, way1_tag: -1, way1_permission: nothing, way1_value: 0, way2_tag: -1, way2_permission: nothing, way2_value: 0, way3_tag: -1, way3_permission: nothing, way3_value: 0}
+- id: load_req0
+  type: LSU.DCacheReqValid
+  occurs: true
+  cycle: 1
+  fields: {op_id: L0, ldq_idx: 0, stq_idx: 0, queue_kind: ldq, queue_idx: 0, address: x0, block_address: block_x, set_index: 0, tag: 7, bank: 0, port: 0, mem_kind: load, value: 0}
+- id: load_req1
+  type: LSU.DCacheReqValid
+  occurs: true
+  cycle: 2
+  fields: {op_id: L1, ldq_idx: 1, stq_idx: 0, queue_kind: ldq, queue_idx: 1, address: y0, block_address: block_y, set_index: 1, tag: 9, bank: 1, port: 0, mem_kind: load, value: 0}
+constraints: []

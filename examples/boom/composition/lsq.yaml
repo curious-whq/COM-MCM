@@ -31,6 +31,8 @@ roles:
     byte_mask: fields.byte_mask
     cycle: cycle
     ldq_idx: annotations.microarch.ldq_idx
+  derived:
+    dispatch_event_type: {kind: constant, value: Arch.Load}
 - name: local_stores
   event_type: Arch.Store
   where:
@@ -47,6 +49,8 @@ roles:
     cycle: cycle
     stq_idx: annotations.microarch.stq_idx
     is_amo: annotations.microarch.is_amo
+  derived:
+    dispatch_event_type: {kind: constant, value: Arch.Store}
 - name: fences
   event_type: Arch.Fence
   where:
@@ -59,4 +63,6 @@ roles:
     program_index: fields.program_index
     cycle: cycle
     stq_idx: annotations.microarch.stq_idx
+  derived:
+    dispatch_event_type: {kind: constant, value: Arch.Fence}
 constraints: []

@@ -222,7 +222,7 @@ def _build_parser() -> argparse.ArgumentParser:
     search.add_argument(
         "--rvwmo",
         action="store_true",
-        help="use the RVWMO architectural layer (required in v0.20)",
+        help="use the RVWMO architectural layer (required)",
     )
     search.add_argument(
         "--backend",
@@ -274,7 +274,7 @@ def _search_spec_path(profile: str, explicit: str | None) -> Path:
         raise UMCMError(
             f"unknown search profile {profile!r}; pass --spec or a search-spec path"
         )
-    relative = Path("examples/boom/search/v020.yaml")
+    relative = Path("examples/boom/search/v021.yaml")
     choices = (Path.cwd() / relative, Path(__file__).resolve().parents[2] / relative)
     for choice in choices:
         if choice.is_file():
@@ -446,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "search":
             if not args.rvwmo:
-                raise UMCMError("v0.20 search requires --rvwmo")
+                raise UMCMError("BOOM hierarchical search requires --rvwmo")
             spec_path = _search_spec_path(args.profile, args.spec)
             search_spec = HierarchicalSearchSpec.load(spec_path)
             report = run_hierarchical_search(

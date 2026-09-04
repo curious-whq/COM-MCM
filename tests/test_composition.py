@@ -73,6 +73,24 @@ def test_module_and_composition_roundtrip(tmp_path: Path) -> None:
     assert loaded.to_dict() == composition.to_dict()
 
 
+def test_disabled_template_port_is_removed_from_runtime_interface() -> None:
+    module = ModuleSpec.from_dict(
+        {
+            "schema_version": "umcm.module.v0.15.0",
+            "name": "conditional-port",
+            "ports": [
+                {
+                    "name": "hidden_for_this_composition",
+                    "direction": "output",
+                    "event_type": "Arch.Load",
+                    "enabled": False,
+                }
+            ],
+        }
+    )
+    assert module.ports == []
+
+
 def test_buggy_modular_composition_matches_monolithic_witness() -> None:
     catalog = EventCatalog.load(EXAMPLE / "event_types.yaml")
     trace = Trace.load(EXAMPLE / "stage6_trace.yaml")

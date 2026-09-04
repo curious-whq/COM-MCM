@@ -1,0 +1,55 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-mshr-file-entry-frontend-source-v021
+horizon: 24
+metadata:
+  version: 0.21.0
+  purpose: Source-derived BoomMSHRFile allocation composed with two fixed BOOM v4 MSHR entry frontends and bounded RPQ/SDQ lifetime.
+  encapsulation: strict
+  status: executable-bounded-entry-readiness
+  source:
+  - src/main/scala/v4/lsu/mshrs.scala:120-163,202-240
+  - src/main/scala/v4/lsu/mshrs.scala:535-560,571-678,726-741
+parameters:
+  mshr_entry_ready_integrated: true
+modules:
+- {name: boom_mshr_file_allocator_v021, path: ../model/mshr/file_allocator_v021.yaml}
+- {name: boom_mshr_entry_frontend_v021, path: ../model/mshr/entry_frontend_v021.yaml}
+connections:
+- name: entry_primary_ready_to_allocator
+  source: {module: boom_mshr_entry_frontend_v021, port: primary_ready}
+  target: {module: boom_mshr_file_allocator_v021, port: primary_ready}
+  mode: shared_event
+- name: entry_secondary_ready_to_allocator
+  source: {module: boom_mshr_entry_frontend_v021, port: secondary_ready}
+  target: {module: boom_mshr_file_allocator_v021, port: secondary_ready}
+  mode: shared_event
+- name: allocated_request_to_entry
+  source: {module: boom_mshr_file_allocator_v021, port: request}
+  target: {module: boom_mshr_entry_frontend_v021, port: request}
+  mode: shared_event
+roles:
+- name: mshr_admissions
+  event_type: DCache.MSHRAdmissionRequest
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    queue_kind: fields.queue_kind
+    queue_idx: fields.queue_idx
+    address: fields.address
+    block_address: fields.block_address
+    set_index: fields.set_index
+    tag: fields.tag
+    way_id: fields.way_id
+    value: fields.value
+    mem_kind: fields.mem_kind
+    cache_tag_match: fields.cache_tag_match
+    old_line_dirty: fields.old_line_dirty
+    needs_acquire: fields.needs_acquire
+    is_probe: fields.is_probe
+  derived:
+    sdq_id:
+      kind: queue_index
+      start: 0
+      capacity: 17
+constraints: []

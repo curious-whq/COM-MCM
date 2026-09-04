@@ -31,7 +31,7 @@ def test_stage1_source_pin_and_catalog_load() -> None:
         "dfd3edcf42b772e2a21178579b93bafc956f99b8"
     )
     # The Stage 1 baseline remains loadable as later stages extend the catalog.
-    assert len(catalog.event_types) == 138
+    assert len(catalog.event_types) == 149
     assert catalog.resolve("Arch.Load").visibility is Visibility.ARCHITECTURAL
     assert catalog.resolve("TL.A").visibility is Visibility.PUBLIC
     assert catalog.resolve("CHI.RXSNP").visibility is Visibility.PUBLIC

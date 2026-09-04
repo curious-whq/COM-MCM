@@ -1,0 +1,248 @@
+schema_version: umcm.module.v0.15.0
+name: boom_mshr_entry_frontend_v021
+metadata:
+  version: 0.21.0
+  component: BOOM v4 fixed MSHR entry acceptance, RPQ and SDQ readiness
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/mshrs.scala
+    sha256: 7e70d1a095f9543ecb20c2983e925205ef473376fe7e6112173d7e8079069fcf
+    lines: [120, 163, 202, 240, 550, 560, 598, 678, 726, 741]
+  configuration: Small/Medium BOOM nMSHRs=2, nRPQ=16, nSDQ=17
+  bounded_abstractions:
+  - The v0.21 blind bound has at most four memory operations, so RPQ and SDQ capacity cannot exhaust; their per-request lifetime is still explicit.
+  - REFILL_REQ and DRAIN_RPQ are retained as entry phases; all source phases forbidden to secondary acceptance are represented by INVALID or FINISHING.
+  - Prefetch requests are excluded by the existing v0.21 memory-operation domain.
+  hierarchy: Entry phase and RPQ/SDQ valid bits are private; PrimaryReady, SecondaryReady and accept events are the MSHRFile-entry interfaces.
+ports:
+- {name: admission, direction: input, event_type: DCache.MSHRAdmissionRequest, required_connection: false}
+- {name: request, direction: input, event_type: DCache.MSHRRequest, required_connection: false}
+- {name: primary_ready, direction: output, event_type: MSHRFile.PrimaryReady, required_connection: false}
+- {name: secondary_ready, direction: output, event_type: MSHRFile.SecondaryReady, required_connection: false}
+- {name: primary_accept, direction: output, event_type: MSHR.PrimaryAccept, required_connection: false}
+- {name: secondary_accept, direction: output, event_type: MSHR.SecondaryMissAccept, required_connection: false}
+- {name: meta_write, direction: input, event_type: MSHR.MetaWrite, required_connection: false}
+- {name: finish, direction: input, event_type: MSHR.MemFinish, required_connection: false}
+- {name: replay, direction: input, event_type: MSHR.Replay, required_connection: false}
+- {name: response, direction: input, event_type: MSHR.ResponseDequeue, required_connection: false}
+internal_events:
+- MSHR.RPQInsert
+- MSHR.SDQAllocate
+- MSHR.SDQFree
+state_variables:
+- {name: 'MSHREntry[0].phase', sort: {name: string}, initial: INVALID}
+- {name: 'MSHREntry[0].block_address', sort: {name: address, width: 64}, initial: EMPTY_ADDR}
+- {name: 'MSHREntry[1].phase', sort: {name: string}, initial: INVALID}
+- {name: 'MSHREntry[1].block_address', sort: {name: address, width: 64}, initial: EMPTY_ADDR}
+slots: []
+transformations:
+- name: entry_0_finishing_after_meta_write
+  inputs: [{role: write, type: MSHR.MetaWrite}]
+  outputs: []
+  when: {node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+  state_requirements: [{state: 'MSHREntry[0].phase', at: write, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}]
+  state_updates: [{state: 'MSHREntry[0].phase', at: write, value: {node: literal, sort: {name: string}, value: FINISHING}}]
+  tags: [source:mshrs.scala:346-365, secondary-not-ready]
+- name: entry_1_finishing_after_meta_write
+  inputs: [{role: write, type: MSHR.MetaWrite}]
+  outputs: []
+  when: {node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+  state_requirements: [{state: 'MSHREntry[1].phase', at: write, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}]
+  state_updates: [{state: 'MSHREntry[1].phase', at: write, value: {node: literal, sort: {name: string}, value: FINISHING}}]
+  tags: [source:mshrs.scala:346-365, secondary-not-ready]
+- name: entry_0_invalid_after_finish
+  inputs: [{role: finish, type: MSHR.MemFinish}]
+  outputs: []
+  when: {node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+  state_requirements: [{state: 'MSHREntry[0].phase', at: finish, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}]
+  state_updates:
+  - {state: 'MSHREntry[0].phase', at: finish, value: {node: literal, sort: {name: string}, value: INVALID}}
+  - {state: 'MSHREntry[0].block_address', at: finish, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+  tags: [source:mshrs.scala:361-365]
+- name: entry_1_invalid_after_finish
+  inputs: [{role: finish, type: MSHR.MemFinish}]
+  outputs: []
+  when: {node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+  state_requirements: [{state: 'MSHREntry[1].phase', at: finish, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}]
+  state_updates:
+  - {state: 'MSHREntry[1].phase', at: finish, value: {node: literal, sort: {name: string}, value: INVALID}}
+  - {state: 'MSHREntry[1].block_address', at: finish, value: {node: literal, sort: {name: address, width: 64}, value: EMPTY_ADDR}}
+  tags: [source:mshrs.scala:361-365]
+constraints: []
+
+repeat:
+- over: mshr_admissions
+  as: req
+  include:
+    state_variables:
+    - {name: 'MSHREntry.req[${req.op_id}].rpq_valid', sort: {name: bool}, initial: false}
+    - {name: 'MSHREntry.req[${req.op_id}].sdq_valid', sort: {name: bool}, initial: false}
+    slots:
+    - {id: 'entry_primary_ready_0_${req.repeat_index}', type: MSHRFile.PrimaryReady, required: false, fields: {op_id: '${req.op_id}', mshr_id: 0, phase: INVALID}}
+    - {id: 'entry_primary_ready_1_${req.repeat_index}', type: MSHRFile.PrimaryReady, required: false, fields: {op_id: '${req.op_id}', mshr_id: 1, phase: INVALID}}
+    - {id: 'entry_secondary_ready_0_${req.repeat_index}', type: MSHRFile.SecondaryReady, required: false, fields: {op_id: '${req.op_id}', mshr_id: 0, phase: ACTIVE, rpq_ready: true}}
+    - {id: 'entry_secondary_ready_1_${req.repeat_index}', type: MSHRFile.SecondaryReady, required: false, fields: {op_id: '${req.op_id}', mshr_id: 1, phase: ACTIVE, rpq_ready: true}}
+    - {id: 'entry_primary_accept_0_${req.repeat_index}', type: MSHR.PrimaryAccept, required: false, fields: {mshr_id: 0, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}', needs_acquire: '${req.needs_acquire}', old_line_dirty: '${req.old_line_dirty}', grant_has_data: false}}
+    - {id: 'entry_primary_accept_1_${req.repeat_index}', type: MSHR.PrimaryAccept, required: false, fields: {mshr_id: 1, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}', needs_acquire: '${req.needs_acquire}', old_line_dirty: '${req.old_line_dirty}', grant_has_data: false}}
+    - {id: 'entry_secondary_accept_0_${req.repeat_index}', type: MSHR.SecondaryMissAccept, required: false, fields: {mshr_id: 0, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}'}}
+    - {id: 'entry_secondary_accept_1_${req.repeat_index}', type: MSHR.SecondaryMissAccept, required: false, fields: {mshr_id: 1, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}'}}
+    - {id: 'entry_rpq_primary_0_${req.repeat_index}', type: MSHR.RPQInsert, required: false, fields: {mshr_id: 0, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}', admission: primary}}
+    - {id: 'entry_rpq_primary_1_${req.repeat_index}', type: MSHR.RPQInsert, required: false, fields: {mshr_id: 1, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}', admission: primary}}
+    - {id: 'entry_rpq_secondary_0_${req.repeat_index}', type: MSHR.RPQInsert, required: false, fields: {mshr_id: 0, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}', admission: secondary}}
+    - {id: 'entry_rpq_secondary_1_${req.repeat_index}', type: MSHR.RPQInsert, required: false, fields: {mshr_id: 1, op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', mem_kind: '${req.mem_kind}', admission: secondary}}
+    - {id: 'entry_sdq_alloc_${req.repeat_index}', type: MSHR.SDQAllocate, required: false, fields: {op_id: '${req.op_id}', sdq_id: '${req.sdq_id}', value: '${req.value}'}}
+    - {id: 'entry_sdq_free_${req.repeat_index}', type: MSHR.SDQFree, required: false, fields: {op_id: '${req.op_id}', sdq_id: '${req.sdq_id}'}}
+    transformations:
+    - name: 'primary_ready_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: ready, type: MSHRFile.PrimaryReady}]
+      when: &admission_match {node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &same_cycle [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'MSHREntry[0].phase', at: ready, op: eq, value: {node: literal, sort: {name: string}, value: INVALID}}]
+      state_mode: guard
+      exact: true
+      tags: [source:mshrs.scala:234-240, primary-ready]
+    - name: 'primary_ready_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: ready, type: MSHRFile.PrimaryReady}]
+      when: *admission_match
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *same_cycle
+      state_requirements: [{state: 'MSHREntry[1].phase', at: ready, op: eq, value: {node: literal, sort: {name: string}, value: INVALID}}]
+      state_mode: guard
+      exact: true
+      tags: [source:mshrs.scala:234-240, primary-ready]
+    - name: 'secondary_ready_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: ready, type: MSHRFile.SecondaryReady}]
+      when: {node: nary, op: and, operands: [*admission_match, {node: unary, op: not, operand: {node: event_field, event_id: admission, field: is_probe, sort: {name: bool}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHREntry[0].phase', at: ready, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}
+      - {state: 'MSHREntry[0].phase', at: ready, op: ne, value: {node: literal, sort: {name: string}, value: FINISHING}}
+      - {state: 'MSHREntry[0].block_address', at: ready, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      state_mode: guard
+      exact: true
+      tags: [source:mshrs.scala:120-133, source:mshrs.scala:162-163, secondary-ready, bounded-rpq-ready]
+    - name: 'secondary_ready_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      outputs: [{role: ready, type: MSHRFile.SecondaryReady}]
+      when: {node: nary, op: and, operands: [*admission_match, {node: unary, op: not, operand: {node: event_field, event_id: admission, field: is_probe, sort: {name: bool}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *same_cycle
+      state_requirements:
+      - {state: 'MSHREntry[1].phase', at: ready, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}
+      - {state: 'MSHREntry[1].phase', at: ready, op: ne, value: {node: literal, sort: {name: string}, value: FINISHING}}
+      - {state: 'MSHREntry[1].block_address', at: ready, op: eq, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      state_mode: guard
+      exact: true
+      tags: [source:mshrs.scala:120-133, source:mshrs.scala:162-163, secondary-ready, bounded-rpq-ready]
+    - name: 'primary_accept_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: request, type: DCache.MSHRRequest}]
+      outputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      when: &primary_request_0 {node: nary, op: and, operands: [*admission_match, {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: unary, op: not, operand: {node: event_field, event_id: request, field: secondary, sort: {name: bool}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'MSHREntry[0].phase', at: request, op: eq, value: {node: literal, sort: {name: string}, value: INVALID}}]
+      state_updates:
+      - {state: 'MSHREntry[0].phase', at: accept, value: {node: ite, condition: {node: event_field, event_id: request, field: needs_acquire, sort: {name: bool}}, then: {node: literal, sort: {name: string}, value: REFILL_REQ}, else: {node: literal, sort: {name: string}, value: DRAIN_RPQ}}}
+      - {state: 'MSHREntry[0].block_address', at: accept, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHREntry.req[${req.op_id}].rpq_valid', at: accept, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [source:mshrs.scala:209-240, primary-accept]
+    - name: 'primary_accept_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: request, type: DCache.MSHRRequest}]
+      outputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      when: {node: nary, op: and, operands: [*admission_match, {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: unary, op: not, operand: {node: event_field, event_id: request, field: secondary, sort: {name: bool}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'MSHREntry[1].phase', at: request, op: eq, value: {node: literal, sort: {name: string}, value: INVALID}}]
+      state_updates:
+      - {state: 'MSHREntry[1].phase', at: accept, value: {node: ite, condition: {node: event_field, event_id: request, field: needs_acquire, sort: {name: bool}}, then: {node: literal, sort: {name: string}, value: REFILL_REQ}, else: {node: literal, sort: {name: string}, value: DRAIN_RPQ}}}
+      - {state: 'MSHREntry[1].block_address', at: accept, value: {node: event_field, event_id: admission, field: block_address, sort: {name: address, width: 64}}}
+      - {state: 'MSHREntry.req[${req.op_id}].rpq_valid', at: accept, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [source:mshrs.scala:209-240, primary-accept]
+    - name: 'secondary_accept_0_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: request, type: DCache.MSHRRequest}, {role: ready, type: MSHRFile.SecondaryReady}]
+      outputs: [{role: accept, type: MSHR.SecondaryMissAccept}]
+      when: {node: nary, op: and, operands: [*admission_match, {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: event_field, event_id: request, field: secondary, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHREntry[0].phase', at: request, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}
+      - {state: 'MSHREntry[0].phase', at: request, op: ne, value: {node: literal, sort: {name: string}, value: FINISHING}}
+      state_updates: [{state: 'MSHREntry.req[${req.op_id}].rpq_valid', at: accept, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [source:mshrs.scala:120-135, secondary-accept]
+    - name: 'secondary_accept_1_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: request, type: DCache.MSHRRequest}, {role: ready, type: MSHRFile.SecondaryReady}]
+      outputs: [{role: accept, type: MSHR.SecondaryMissAccept}]
+      when: {node: nary, op: and, operands: [*admission_match, {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: event_field, event_id: request, field: secondary, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'MSHREntry[1].phase', at: request, op: ne, value: {node: literal, sort: {name: string}, value: INVALID}}
+      - {state: 'MSHREntry[1].phase', at: request, op: ne, value: {node: literal, sort: {name: string}, value: FINISHING}}
+      state_updates: [{state: 'MSHREntry.req[${req.op_id}].rpq_valid', at: accept, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [source:mshrs.scala:120-135, secondary-accept]
+    - name: 'primary_to_rpq_0_${req.repeat_index}'
+      inputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      outputs: [{role: insert, type: MSHR.RPQInsert}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: insert, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: admission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: primary}}]}
+      ensure: &accept_insert_same_cycle [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: insert, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:mshrs.scala:128-135, rpq]
+    - name: 'primary_to_rpq_1_${req.repeat_index}'
+      inputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      outputs: [{role: insert, type: MSHR.RPQInsert}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: insert, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: admission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: primary}}]}
+      ensure: *accept_insert_same_cycle
+      exact: true
+      tags: [source:mshrs.scala:128-135, rpq]
+    - name: 'secondary_to_rpq_0_${req.repeat_index}'
+      inputs: [{role: accept, type: MSHR.SecondaryMissAccept}]
+      outputs: [{role: insert, type: MSHR.RPQInsert}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: insert, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: admission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: secondary}}]}
+      ensure: *accept_insert_same_cycle
+      exact: true
+      tags: [source:mshrs.scala:128-135, rpq]
+    - name: 'secondary_to_rpq_1_${req.repeat_index}'
+      inputs: [{role: accept, type: MSHR.SecondaryMissAccept}]
+      outputs: [{role: insert, type: MSHR.RPQInsert}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: insert, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: insert, field: admission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: secondary}}]}
+      ensure: *accept_insert_same_cycle
+      exact: true
+      tags: [source:mshrs.scala:128-135, rpq]
+    - name: 'write_allocates_sdq_${req.repeat_index}'
+      inputs: [{role: request, type: DCache.MSHRRequest}]
+      outputs: [{role: alloc, type: MSHR.SDQAllocate}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: alloc, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: alloc, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'MSHREntry.req[${req.op_id}].sdq_valid', at: request, op: eq, value: {node: literal, sort: {name: bool}, value: false}}]
+      state_updates: [{state: 'MSHREntry.req[${req.op_id}].sdq_valid', at: alloc, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [source:mshrs.scala:550-560, bounded-sdq]
+    - name: 'replay_frees_request_state_${req.repeat_index}'
+      inputs: [{role: replay, type: MSHR.Replay}]
+      outputs: []
+      when: {node: binary, op: eq, left: {node: event_field, event_id: replay, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      state_updates:
+      - {state: 'MSHREntry.req[${req.op_id}].rpq_valid', at: replay, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'MSHREntry.req[${req.op_id}].sdq_valid', at: replay, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [source:mshrs.scala:734-741]
+    - name: 'response_frees_rpq_${req.repeat_index}'
+      inputs: [{role: response, type: MSHR.ResponseDequeue}]
+      outputs: []
+      when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      state_updates: [{state: 'MSHREntry.req[${req.op_id}].rpq_valid', at: response, value: {node: literal, sort: {name: bool}, value: false}}]
+      tags: [source:mshrs.scala:266-300, source:mshrs.scala:720-724]

@@ -93,11 +93,13 @@ def compose_modules(
             f"composition {composition.name!r} declares trace roles; provide "
             "the partial trace used for finite instantiation"
         )
-    resolved_roles = (
-        resolve_trace_roles(trace, composition.roles)
-        if composition.roles
-        else {}
-    )
+    resolved_roles = dict(composition.parameters)
+    if composition.roles:
+        resolved_roles = resolve_trace_roles(
+            trace,
+            composition.roles,
+            initial_context=resolved_roles,
+        )
 
     loaded: list[LoadedModule] = []
     modules: dict[str, ModuleSpec] = {}

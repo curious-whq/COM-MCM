@@ -8,7 +8,7 @@ from umcm.composition.parameterization import (
     render_template,
     resolve_trace_roles,
 )
-from umcm.errors import CompositionError
+from umcm.errors import CompositionError, SchemaError
 from umcm.graph.checker import MemoryModelStatus, check_trace_memory_model
 from umcm.graph.model import GraphModelSpec
 from umcm.ir.event import EventCatalog
@@ -48,6 +48,155 @@ def test_trace_role_binding_preserves_typed_values() -> None:
     assert rendered["field"] == 13
     assert isinstance(rendered["field"], int)
     assert rendered["state"] == "LSU.ldq[13].valid"
+
+
+def test_queue_indices_are_derived_from_dispatch_order_not_annotations() -> None:
+    trace = Trace.load(EXAMPLE / "stage10_parameterized_trace.yaml")
+    # Deliberately ignore the trace's historical microarch annotations.  BOOM
+    # allocates successive LDQ entries from ldq_tail at dispatch; under the
+    # bounded empty-queue reset used here that is the per-hart load ordinal.
+    roles = [
+        TraceRoleSpec(
+            name="loads",
+            event_type="Arch.Load",
+            cardinality="many",
+            exports={"op_id": "fields.op_id", "hart": "fields.hart"},
+            derived={
+                "ldq_idx": {
+                    "kind": "queue_index",
+                    "group_by": "fields.hart",
+                    "start": 0,
+                    "capacity": 16,
+                }
+            },
+        )
+    ]
+    context = resolve_trace_roles(trace, roles)
+    assert [item["op_id"] for item in context["loads"]] == [
+        "LoadAlpha",
+        "LoadBeta",
+    ]
+    assert [item["ldq_idx"] for item in context["loads"]] == [0, 1]
+
+
+def test_switch_derived_export_selects_literal_or_event_field() -> None:
+    trace = Trace.load(EXAMPLE / "stage10_parameterized_trace.yaml")
+    roles = [
+        TraceRoleSpec(
+            name="memory",
+            event_type=("Arch.Load", "Arch.Store"),
+            cardinality="many",
+            exports={"op_id": "fields.op_id"},
+            derived={
+                "queue_kind": {
+                    "kind": "switch",
+                    "path": "event_type",
+                    "cases": {
+                        "Arch.Load": {"value": "ldq"},
+                        "Arch.Store": {"value": "stq"},
+                    },
+                },
+                "payload": {
+                    "kind": "switch",
+                    "path": "event_type",
+                    "cases": {
+                        "Arch.Load": {"path": "fields.address"},
+                        "Arch.Store": {"path": "fields.address"},
+                    },
+                },
+            },
+        )
+    ]
+    context = resolve_trace_roles(trace, roles)
+    assert [item["queue_kind"] for item in context["memory"]] == [
+        "ldq",
+        "ldq",
+        "stq",
+    ]
+    assert [item["payload"] for item in context["memory"]] == [
+        "data0",
+        "data0",
+        "data0",
+    ]
+
+
+def test_collection_role_can_expand_a_finite_attempt_bound() -> None:
+    trace = Trace.load(EXAMPLE / "stage10_parameterized_trace.yaml")
+    roles = [
+        TraceRoleSpec(
+            name="load_attempts",
+            event_type="Arch.Load",
+            cardinality="many",
+            copies=2,
+            exports={"op_id": "fields.op_id", "frame_id": "fields.op_id"},
+            copy_exports={"frame_id": "${copy.frame_id}.${copy.copy_index}"},
+            derived={
+                "ldq_idx": {
+                    "kind": "queue_index",
+                    "group_by": "fields.hart",
+                    "start": 0,
+                    "capacity": 16,
+                }
+            },
+        )
+    ]
+    attempts = resolve_trace_roles(trace, roles)["load_attempts"]
+    assert [(item["op_id"], item["ldq_idx"], item["copy_index"], item["frame_id"]) for item in attempts] == [
+        ("LoadAlpha", 0, 0, "LoadAlpha.0"),
+        ("LoadAlpha", 0, 1, "LoadAlpha.1"),
+        ("LoadBeta", 1, 0, "LoadBeta.0"),
+        ("LoadBeta", 1, 1, "LoadBeta.1"),
+    ]
+
+
+def test_role_copies_requires_collection_cardinality() -> None:
+    with pytest.raises(SchemaError, match="copies requires cardinality=many"):
+        TraceRoleSpec(name="bad", event_type="Arch.Load", copies=2)
+
+
+def test_composition_static_parameters_can_instantiate_finite_resources(
+    tmp_path: Path,
+) -> None:
+    catalog = EventCatalog.load(EXAMPLE / "event_types.yaml")
+    trace = Trace.load(EXAMPLE / "stage10_parameterized_trace.yaml")
+    module_path = tmp_path / "resources.yaml"
+    module_path.write_text(
+        """
+schema_version: umcm.module.v0.15.0
+name: resources
+ports: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: mshr_resources
+  as: resource
+  include:
+    state_variables:
+    - name: MSHR[${resource.mshr_id}].valid
+      sort: {name: bool}
+      initial: false
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    composition = CompositionSpec.from_dict(
+        {
+            "schema_version": "umcm.composition.v0.15.0",
+            "name": "static-resource-domain",
+            "parameters": {
+                "mshr_resources": [{"mshr_id": 0}, {"mshr_id": 1}]
+            },
+            "modules": [{"name": "resources", "path": str(module_path)}],
+            "connections": [],
+        }
+    )
+    composed = compose_modules(catalog, composition, trace)
+    assert {state.name for state in composed.completion.state_variables} == {
+        "MSHR[0].valid",
+        "MSHR[1].valid",
+    }
 
 
 def test_parameterized_composition_requires_instantiation_trace() -> None:

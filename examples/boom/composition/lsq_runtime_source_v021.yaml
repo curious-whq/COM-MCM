@@ -1,0 +1,21 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-v4-lsq-runtime-source-v021
+horizon: 24
+metadata:
+  version: 0.21.0
+  purpose: Exercise the source-derived LDQ runtime without the legacy LSU-owned TLB hit/miss environment slots.
+  encapsulation: strict
+modules:
+- {name: boom_v4_lsq_runtime, path: ../model/lsu/lsq_runtime_v021.yaml}
+connections: []
+roles:
+- name: loads
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: load, fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 1
+  exports: {op_id: fields.op_id, hart: fields.hart, program_index: fields.program_index, address: fields.address, byte_mask: fields.byte_mask}
+  derived:
+    ldq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    port: {kind: constant, value: 0}
+constraints: []

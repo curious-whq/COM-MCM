@@ -263,3 +263,54 @@ The Stage 8 anchors contain 1,409 non-overlapping relevant Chisel lines: 1,053 f
 - On an S1 TLB miss, RTL writes an SQ address record whose `tlbMiss` bit makes it unusable. `Store.AddressReady` means usable physical address, so the replay record stays private.
 - VSQ owns allocation, ROB-age retirement, snapshots and recovery pointers—not physical address/data valid bits. PSQ pairing storage, youngest byte forwarding, unaligned splitting and drain are intentionally deferred to Stage 9; precommit-to-SBuffer visibility is Stage 10.
 - Vector stores, scalar unaligned S4, MMIO/NC, CBO, AMO and LR/SC remain in Stages 11, 12 and 16 as planned.
+
+## Stage 9 physical StoreQueue, forwarding, split and drain anchors
+
+| File | Lines | SHA-256 | Model consequence |
+|---|---:|---|---|
+| `src/main/scala/xiangshan/mem/lsqueue/NewStoreQueue.scala` | 2161 | `9860fb5e5dc3a9b4891d8ffc4d5332dd3339a8014256601dd3f07488e5ecd20c` | `34-178,180-246` define SQ pointers/entries and base helpers; `247-662` implements two-cycle byte forwarding and youngest selection; `664-807` buffers ordered SBuffer requests; `809-1389` normalizes/splits committed entries; `1392-1471` stores cross-page tails; `1473-1581,1584-2081` connect and update the physical queue. |
+| `src/main/scala/xiangshan/mem/lsqueue/LSQBundle.scala` | 331 | `2f6ba41196ef5e5f640ad58ddd3b93134f3004347adc584539f9edaa5ef3cd37` | `71-93,170-203,207-282` define store-address, forwarding, virtual/physical queue, and SBuffer-facing payloads. |
+
+The Stage 9 anchors contain 2,173 newly reviewed Chisel lines. Together with Stages 1-8, the executable source-range union is approximately 14,407 lines.
+
+### Implemented correspondence
+
+- Each scalar store opens a private physical entry. Independent `Store.AddressReady` and `Store.DataReady` writes set separate valid bits; only their all-valid join can cross the bounded precommit boundary. Redirect cancels an affected uncommitted entry and makes late payload writes infeasible.
+- An older same-word store with an overlapping byte mask becomes a private forwarding candidate. Candidates are folded in program order, so the final public response names only the youngest match; its mask is the exact store/load intersection. An address match without data reports `data_invalid`, while a disjoint mask reports a miss.
+- `aligned` and `within16` layouts emit one normalized `Store.Drain`. `cross16` emits low/high beats through the two modeled EnterSbuffer ports; `cross_page` additionally requires the matching `Store.UnalignedTailReady` value before either beat exists. The bounded tail role admits at most two distinct outstanding identities, matching `SQUnalignQueueSize = 2`.
+- Final drain credit is attached to the single beat or high split beat, and a younger drain selection requires every older modeled entry to have drained or been cancelled.
+- `composition/scalar_store_physical_queue.yaml` shares the Stage 8-derived address/data events with this PSQ and closes one store through physical commit and SBuffer handoff.
+
+### Bounded abstraction
+
+- µMCM address tokens do not expose byte-offset arithmetic. `Store.Layout` therefore carries the 16-byte-normalized low/high geometry at the StorePipeline→StoreQueue boundary; Stage 12 will derive that descriptor from scalar-unaligned/vector StoreUnit execution. Stage 9 validates and consumes the descriptor rather than inventing a private split decision in the input trace.
+- The forwarding priority tree is represented as an age-ordered state fold. Its private candidate cycles are solver serialization points, not additional RTL latency; address/data availability and the final selected value/mask remain exact.
+- `Core.MemoryCommit` is the finite proxy for the VSQ precommit/retired pointer crossing the entry. Four-wide commit and two-wide drain capacities are recorded, while exact same-cycle port packing is abstracted to causal order.
+- This slice covers cacheable scalar stores. SBuffer merge/visibility is Stage 10, MMIO/NC is Stage 11, scalar-unaligned descriptor production and vector flow are Stage 12, and CBO/atomics are Stage 16.
+
+## Stage 10 SBuffer merge, drain and L1D-acceptance anchors
+
+| File | Lines | SHA-256 | Model consequence |
+|---|---:|---|---|
+| `src/main/scala/xiangshan/mem/sbuffer/Sbuffer.scala` | 1028 | `56c6e5d5fb5395f2e6c988f6b9fb88b19eec999d5b5354dbea616cf9f526152d` | `32-188` define request/entry/data structures; `191-768` allocate, merge, select, timeout/flush, write and replay entries; `784-860` provide the audited SBuffer load-forwarding path. |
+| `src/main/scala/xiangshan/mem/Bundles.scala` | 454 | `653e51763b1a548d64c3fdc8f9aa1e8a1385987ad4703bef38a356e71ca7c53e` | `105-112,151-160` carry SBuffer emptiness, flush, replay and DCache write-port request/response state. |
+| `src/main/scala/xiangshan/mem/lsqueue/LSQBundle.scala` | 331 | `2f6ba41196ef5e5f640ad58ddd3b93134f3004347adc584539f9edaa5ef3cd37` | `181-184` define the committed SQ-to-SBuffer address, data, mask and vector metadata. |
+| `src/main/scala/xiangshan/mem/MemBlock.scala` | 1604 | `ad445bf2dd4601aff9f8f1d1624af050537e18ca4a1f8cc70d24c4201896cd52` | `896-910,1143-1164,1217` connect SBuffer forwarding, SQ enqueue, DCache write/replay and fence-flush emptiness. |
+| `src/main/scala/xiangshan/Parameters.scala` | 942 | `efe5471dcea75d4451a57532a65806b12bed68b66e95e69f905800010439f7c6` | `176-178,821-823` select 16 entries, threshold 9, two enqueue ports and one DCache write port. |
+
+The Stage 10 anchors contain 878 relevant Chisel lines. Of these, 19 overlap the Stage 5/9 connection and payload ranges, so this stage adds approximately 859 lines to an executable source-range union of approximately 15,266 lines.
+
+### Implemented correspondence
+
+- The first committed `Store.Drain` beat allocates a private entry and installs its 64-byte-aligned line data/mask. A second active-entry beat for the same line derives a private `SBuffer.Merge`; `masked_merge` gives every enabled byte to the later beat and `mask_union` preserves all written bytes.
+- Threshold, timeout, force-write, microarchitectural flush, and fence flush select an active entry for the single DCache write port. Selection changes it to inflight, preventing a later same-block entry from bypassing it.
+- A replay response retains the inflight entry and produces the same line/mask on attempt 1. A successful `L1.Response` derives private `SBuffer.WriteAccepted` and releases the entry; request identity, payload and retry epoch cannot change.
+- `Core.MemoryOrdered` for a modeled fence requires every older modeled SBuffer entry of that hart to have been accepted. `composition/scalar_store_sbuffer.yaml` closes Stage 8/9 address/data/commit state through PSQ drain and into the Stage 10 L1 request.
+
+### Bounded abstraction
+
+- `SBuffer.LineLayout` expands one finite physical-entry episode with one or two 16-byte contributors placed into a 64-byte line. Real entries may absorb more contributors before drain; arbitrary-depth merge chains are represented by composing additional bounded episodes rather than reproducing the full 16-entry array and PLRU implementation.
+- Drain counters, replacement arbitration and port handshakes are stutter-compressed into causal ordering. The selected trigger remains explicit as `threshold`, `timeout`, `force`, `uarch_flush`, or `fence`.
+- One DCache replay/resend epoch is expanded. Further replay preserves the same inflight invariant but is outside the current finite witness.
+- A successful Stage 10 response means the committed store was accepted by L1D, not that it is globally observable. L1 hit/miss/coherence and the ultimate memory-visible point belong to Stages 13-20.
+- The SBuffer load-forwarding RTL was audited, but combining it with SQ/MSHR/TLD sources is deferred to the Stage 12/13 load-data composition. Full fence completion also depends on SQ and MSHR emptiness and is finalized in Stage 16.

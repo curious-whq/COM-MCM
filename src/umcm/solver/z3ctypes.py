@@ -159,17 +159,8 @@ class _Codec:
             if x.function=='same_block':
                 # Current µMCM address tokens identify abstract cache-line locations.
                 return f'(= {args[0]} {args[1]})'
-            if x.function=='mask_overlap':
-                width = x.arguments[0].sort.width
-                if width is None:
-                    raise SolverError('mask_overlap requires fixed-width bitvectors')
-                return f'(not (= (bvand {args[0]} {args[1]}) (_ bv0 {width})))'
+            if x.function=='mask_overlap': return f'(not (= (bvand {args[0]} {args[1]}) (_ bv0 8)))'
             if x.function=='mask_covers': return f'(= (bvand {args[0]} {args[1]}) {args[1]})'
-            if x.function=='mask_intersection':
-                width = x.arguments[0].sort.width
-                if width is None or x.arguments[1].sort.width != width or x.return_sort.width != width:
-                    raise SolverError('mask_intersection requires equal-width bitvectors')
-                return f'(bvand {args[0]} {args[1]})'
             raise SolverError(f'unsupported SMT call {x.function}')
         raise SolverError(f'unsupported SMT expression {type(x).__name__}')
 
@@ -443,7 +434,7 @@ def _block_clause(codec:_Codec, assignment:dict[str,Any])->str:
     return f'(assert (not (and {" ".join(terms)})))'
 
 
-def solve_z3(problem:BoundedProblem, *, max_state_rejections:int=256)->Z3SolveResult:
+def solve_z3(problem:BoundedProblem, *, max_state_rejections:int=256, minimize_slots:bool=True)->Z3SolveResult:
     codec=_Codec(problem)
     pre=[]
     for v in codec.variables:
@@ -459,17 +450,17 @@ def solve_z3(problem:BoundedProblem, *, max_state_rejections:int=256)->Z3SolveRe
         for event_id in problem.slot_ids
         if f'slot::{event_id}::occurs' in codec.var_map
     ]
-    minimize_slots = ''
-    if slot_occurrence_names:
+    minimize_slots_objective = ''
+    if minimize_slots and slot_occurrence_names:
         terms = ' '.join(
             f'(ite {codec.q(name)} 1 0)' for name in slot_occurrence_names
         )
-        minimize_slots = f'(minimize (+ {terms}))'
+        minimize_slots_objective = f'(minimize (+ {terms}))'
     last_reason=''
     for iteration in range(max_state_rejections+1):
         base_parts = [*pre, *blocks]
-        if minimize_slots:
-            base_parts.append(minimize_slots)
+        if minimize_slots_objective:
+            base_parts.append(minimize_slots_objective)
         base = '\n'.join(base_parts)
         # Do not issue get-value after an UNSAT check: the low-level SMT-LIB
         # evaluator treats that as a command error rather than a benign response.

@@ -109,10 +109,11 @@ def test_cold_read_derives_directory_miss_outer_refill_and_trunk() -> None:
     outer_d = one(trace, "L2.OuterGrant", "L0")
     grant = one(trace, "TL.Grant", "L0")
     load = one(trace, "Coherence.LoadResult", "L0")
-    assert acquire.fields == {
+    assert {key: value for key, value in acquire.fields.items() if key != "source_id"} == {
         "txn_id": "L0", "hart": 0, "line_id": "x", "address": "x",
         "grow": "NtoB", "need_data": True,
     }
+    assert grant.fields["source_id"] == acquire.fields["source_id"]
     assert directory.fields["hit"] is False
     assert acquire.cycle < directory.cycle < outer_a.cycle < outer_d.cycle < grant.cycle
     assert grant.fields["cap"] == "T"

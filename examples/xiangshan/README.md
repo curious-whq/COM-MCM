@@ -2,7 +2,7 @@
 
 This directory contains the source-pinned XiangShan Kunminghu-v3 memory µMCM under construction.
 
-Current status: **stage 8 complete — aligned scalar store STA/STD and VirtualStoreQueue lifecycle executable**.
+Current status: **stage 10 complete — SBuffer byte merge, drain/replay, and L1D-acceptance visibility executable**.
 
 - `events.yaml` defines architectural, public hierarchy and reserved private event vocabulary.
 - `model/**/boundary.yaml` contains behavior-free module contracts.
@@ -34,6 +34,12 @@ Current status: **stage 8 complete — aligned scalar store STA/STD and VirtualS
 - `model/store/virtual_queue.yaml` implements the selected 128-entry VSQ's bounded allocation, in-order ROB retirement, and two-cycle redirect recovery boundary without stealing PSQ responsibilities from Stage 9.
 - `composition/scalar_store.yaml`, `composition/virtual_store_queue.yaml`, `composition/scalar_store_queue.yaml`, and `composition/store_translation.yaml` are the executable Stage 8 slices and integrations.
 - `coverage/stage8.yaml` covers all fourteen required store/VSQ paths; negative traces reject wrong address/data, premature writeback, out-of-order retirement, and post-redirect completion.
+- `model/store/physical_queue.yaml` implements PSQ address/data validity, all-valid commit, redirect reclamation, byte-mask forwarding with a youngest-match age fold, 16-byte normalization, cross-16-byte splitting, cross-page tail buffering, and ordered SBuffer handoff.
+- `composition/physical_store_queue.yaml` and `composition/scalar_store_physical_queue.yaml` are the standalone and Stage 8-integrated Stage 9 slices with generated interface inventories.
+- `coverage/stage9.yaml` covers all twelve required PSQ/forward/split/drain paths; negative traces reject a non-youngest forward source, uncommitted or early drain, cross-page drain without its tail address, post-redirect writes, and head bypass.
+- `model/store/sbuffer.yaml` implements committed-line allocation, byte-accurate same-entry merge, threshold/timeout/flush drain, one replay-and-resend epoch, same-block serialization, and release after L1D acceptance.
+- `composition/sbuffer.yaml` and `composition/scalar_store_sbuffer.yaml` are the standalone and Stage 8/9-integrated Stage 10 slices with generated interface inventories.
+- `coverage/stage10.yaml` covers all seven required SBuffer paths; negative traces reject a wrong merged payload, premature fence completion, same-block bypass, and an L1 request without a committed PSQ predecessor.
 - `SOURCE_MAP.md` pins source revisions, parameters, file hashes and line anchors.
 - `PLAN.md` defines the remaining implementation stages and their acceptance gates.
 
@@ -103,8 +109,20 @@ PYTHONPATH=src python3 -m umcm complete \
   --trace examples/xiangshan/traces/store_queue/in_order_retire.yaml \
   --composition examples/xiangshan/composition/virtual_store_queue.yaml \
   --backend z3 --output /tmp/xiangshan-stage8-vsq.yaml
+
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/xiangshan/events.yaml \
+  --trace examples/xiangshan/traces/physical_store_queue/forward_youngest.yaml \
+  --composition examples/xiangshan/composition/physical_store_queue.yaml \
+  --backend z3 --output /tmp/xiangshan-stage9-forward.yaml
+
+PYTHONPATH=src python3 -m umcm complete \
+  --schema examples/xiangshan/events.yaml \
+  --trace examples/xiangshan/traces/sbuffer/merged_store.yaml \
+  --composition examples/xiangshan/composition/sbuffer.yaml \
+  --backend z3 --output /tmp/xiangshan-stage10-merge.yaml
 ```
 
 The hardware S4 is not an ordinary aligned-load stage: it feeds an unaligned head back to S3 for head/tail concatenation. That path stays grouped with scalar-unaligned/vector semantics in Stage 12 rather than being approximated as an aligned S4 hop.
 
-Next: Stage 9, physical StoreQueue, byte forwarding, unaligned splitting, and drain selection.
+Next: Stage 11, ordered Uncache/MMIO handling.

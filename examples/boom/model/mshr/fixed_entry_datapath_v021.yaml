@@ -1,0 +1,419 @@
+schema_version: umcm.module.v0.15.0
+name: boom_mshr_fixed_entry_datapath_v021
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/mshrs.scala
+    sha256: 7e70d1a095f9543ecb20c2983e925205ef473376fe7e6112173d7e8079069fcf
+    lines: [128, 135, 209, 365, 682, 741]
+  additional_source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/dcache.scala
+    sha256: 82d5562b6d6220be5714716c6b935a001ed6fc54747b4fc925603cabbde9aac4
+    lines: [526, 544, 687, 691, 773, 779, 888, 938]
+  abstraction:
+  - Two fixed entry IDs match the Small/Medium BOOM nMSHRs=2 configuration.
+  - Refill beats are collapsed to one line value while preserving Acquire, GrantData, meta write, data refill, RPQ response and GrantAck order.
+  - Entry allocation/readiness and RPQ/SDQ lifetime are owned by boom_mshr_entry_frontend_v021; this child starts only from its public PrimaryAccept.
+  - Store replay retains the selected SDQ value and fixed way, but cache-line beats and byte masks are collapsed to one bounded line write.
+  hierarchy: TileLink and L1/LSU response messages are public interfaces; line-buffer progress is private.
+ports:
+- {name: primary_accept, direction: input, event_type: MSHR.PrimaryAccept, required_connection: false}
+- {name: mem_acquire, direction: output, event_type: MSHR.AcquireBlock, required_connection: false}
+- {name: tilelink_acquire, direction: output, event_type: TL.Acquire, required_connection: false}
+- {name: tilelink_grant, direction: input, event_type: TL.Grant, required_connection: false}
+- {name: grant_data, direction: output, event_type: MSHR.GrantData, required_connection: false}
+- {name: refill_write, direction: output, event_type: MSHR.RefillWrite, required_connection: false}
+- {name: meta_write, direction: output, event_type: MSHR.MetaWrite, required_connection: false}
+- {name: response, direction: output, event_type: MSHR.ResponseDequeue, required_connection: false}
+- {name: replay, direction: output, event_type: MSHR.Replay, required_connection: false}
+- {name: long_latency_response, direction: output, event_type: DCache.LongLatencyLoadResponse, required_connection: false}
+- {name: mem_finish, direction: output, event_type: MSHR.MemFinish, required_connection: false}
+- {name: tilelink_grant_ack, direction: output, event_type: TL.GrantAck, required_connection: false}
+internal_events: [MSHR.RefillComplete]
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: loads
+  as: load
+  include:
+    slots:
+    - {id: 'fixed_acquire_block_0_${load.repeat_index}', type: MSHR.AcquireBlock, required: false, fields: {mshr_id: 0, op_id: '${load.op_id}', address: '${load.address}'}}
+    - {id: 'fixed_acquire_block_1_${load.repeat_index}', type: MSHR.AcquireBlock, required: false, fields: {mshr_id: 1, op_id: '${load.op_id}', address: '${load.address}'}}
+    - {id: 'fixed_tl_acquire_0_${load.repeat_index}', type: TL.Acquire, required: false, fields: {txn_id: '${load.op_id}', source_id: 0, hart: '${load.hart}', line_id: '${load.line_id}', address: '${load.address}', grow: NtoB, need_data: true}}
+    - {id: 'fixed_tl_acquire_1_${load.repeat_index}', type: TL.Acquire, required: false, fields: {txn_id: '${load.op_id}', source_id: 1, hart: '${load.hart}', line_id: '${load.line_id}', address: '${load.address}', grow: NtoB, need_data: true}}
+    - &grant0 {id: 'fixed_grant_data_0_${load.repeat_index}', type: MSHR.GrantData, required: false, fields: {mshr_id: 0, op_id: '${load.op_id}', source_op_id: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::source', sort: {name: op_id}}}, address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::value', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_grant_data_1_${load.repeat_index}', type: MSHR.GrantData, required: false, fields: {mshr_id: 1, op_id: '${load.op_id}', source_op_id: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::source_1', sort: {name: op_id}}}, address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_refill_complete_0_${load.repeat_index}', type: MSHR.RefillComplete, required: false, fields: {mshr_id: 0, op_id: '${load.op_id}', source_op_id: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::refill_source', sort: {name: op_id}}}, address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::refill_value', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_refill_complete_1_${load.repeat_index}', type: MSHR.RefillComplete, required: false, fields: {mshr_id: 1, op_id: '${load.op_id}', source_op_id: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::refill_source_1', sort: {name: op_id}}}, address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::refill_value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_refill_write_0_${load.repeat_index}', type: MSHR.RefillWrite, required: false, fields: {mshr_id: 0, address: '${load.address}', set_index: '${load.set_index}', way_id: '${load.way_id}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::write_value', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_refill_write_1_${load.repeat_index}', type: MSHR.RefillWrite, required: false, fields: {mshr_id: 1, address: '${load.address}', set_index: '${load.set_index}', way_id: '${load.way_id}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::write_value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_meta_write_0_${load.repeat_index}', type: MSHR.MetaWrite, required: false, fields: {mshr_id: 0, address: '${load.address}', set_index: '${load.set_index}', tag: '${load.tag}', way_id: '${load.way_id}', permission: branch}}
+    - {id: 'fixed_meta_write_1_${load.repeat_index}', type: MSHR.MetaWrite, required: false, fields: {mshr_id: 1, address: '${load.address}', set_index: '${load.set_index}', tag: '${load.tag}', way_id: '${load.way_id}', permission: branch}}
+    - {id: 'fixed_response_0_${load.repeat_index}', type: MSHR.ResponseDequeue, required: false, fields: {mshr_id: 0, op_id: '${load.op_id}', queue_idx: '${load.ldq_idx}', address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::response_value', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_response_1_${load.repeat_index}', type: MSHR.ResponseDequeue, required: false, fields: {mshr_id: 1, op_id: '${load.op_id}', queue_idx: '${load.ldq_idx}', address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::response_value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_ll_response_0_${load.repeat_index}', type: DCache.LongLatencyLoadResponse, required: false, fields: {mshr_id: 0, op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::ll_value', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_ll_response_1_${load.repeat_index}', type: DCache.LongLatencyLoadResponse, required: false, fields: {mshr_id: 1, op_id: '${load.op_id}', ldq_idx: '${load.ldq_idx}', address: '${load.address}', value: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::ll_value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'fixed_finish_0_${load.repeat_index}', type: MSHR.MemFinish, required: false, fields: {mshr_id: 0, address: '${load.address}'}}
+    - {id: 'fixed_finish_1_${load.repeat_index}', type: MSHR.MemFinish, required: false, fields: {mshr_id: 1, address: '${load.address}'}}
+    - {id: 'fixed_grant_ack_0_${load.repeat_index}', type: TL.GrantAck, required: false, fields: {txn_id: '${load.op_id}', hart: '${load.hart}', sink_id: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::sink', sort: {name: int}}}}}
+    - {id: 'fixed_grant_ack_1_${load.repeat_index}', type: TL.GrantAck, required: false, fields: {txn_id: '${load.op_id}', hart: '${load.hart}', sink_id: {$expr: {node: symbol, name: 'fixed_mshr::${load.op_id}::sink_1', sort: {name: int}}}}}
+
+    transformations:
+    - &accept0_to_block
+      name: 'primary_accept_0_to_acquire_block_${load.repeat_index}'
+      inputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      outputs: [{role: block, type: MSHR.AcquireBlock}]
+      when: &accept0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: event_field, event_id: accept, field: needs_acquire, sort: {name: bool}}]}
+      output_when: &block0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: block, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: block, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &accept_before_block [{node: binary, op: lt, left: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: block, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:mshrs.scala:209-245]
+    - name: 'primary_accept_1_to_acquire_block_${load.repeat_index}'
+      inputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      outputs: [{role: block, type: MSHR.AcquireBlock}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: event_field, event_id: accept, field: needs_acquire, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: block, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: block, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *accept_before_block
+      exact: true
+      tags: [source:mshrs.scala:209-245]
+    - name: 'acquire_block_0_drives_tilelink_a_${load.repeat_index}'
+      inputs: [{role: block, type: MSHR.AcquireBlock}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *block0
+      output_when: &acquire0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &block_to_a [{node: binary, op: eq, left: {node: event_field, event_id: block, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:dcache.scala:818, tilelink-a]
+    - name: 'acquire_block_1_drives_tilelink_a_${load.repeat_index}'
+      inputs: [{role: block, type: MSHR.AcquireBlock}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: block, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: block, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *block_to_a
+      exact: true
+      tags: [source:dcache.scala:818, tilelink-a]
+    - &grant0_to_data
+      name: 'tilelink_d_to_entry_0_${load.repeat_index}'
+      inputs: [{role: grant, type: TL.Grant}]
+      outputs: [{role: data, type: MSHR.GrantData}]
+      when: &tlgrant0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}]}
+      output_when: &data0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &grant_data_fields
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      exact: true
+      tags: [source:dcache.scala:831-840, source:mshrs.scala:241-265]
+    - name: 'tilelink_d_to_entry_1_${load.repeat_index}'
+      inputs: [{role: grant, type: TL.Grant}]
+      outputs: [{role: data, type: MSHR.GrantData}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *grant_data_fields
+      exact: true
+      tags: [source:dcache.scala:831-840, source:mshrs.scala:241-265]
+    - &data0_to_refill
+      name: 'entry_0_completes_line_buffer_${load.repeat_index}'
+      inputs: [{role: data, type: MSHR.GrantData}]
+      outputs: [{role: complete, type: MSHR.RefillComplete}]
+      when: *data0
+      output_when: &complete0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &data_complete_fields
+      - {node: binary, op: lt, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: data, field: source_op_id, sort: {name: op_id}}}
+      exact: true
+      tags: [source:mshrs.scala:249-265, line-buffer]
+    - name: 'entry_1_completes_line_buffer_${load.repeat_index}'
+      inputs: [{role: data, type: MSHR.GrantData}]
+      outputs: [{role: complete, type: MSHR.RefillComplete}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *data_complete_fields
+      exact: true
+      tags: [source:mshrs.scala:249-265, line-buffer]
+    - &complete0_to_write
+      name: 'entry_0_refill_writes_data_${load.repeat_index}'
+      inputs: [{role: complete, type: MSHR.RefillComplete}]
+      outputs: [{role: write, type: MSHR.RefillWrite}]
+      when: *complete0
+      output_when: &write0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}]}
+      ensure: &complete_write_fields
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: write, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:mshrs.scala:316-345, refill-write]
+    - name: 'entry_1_refill_writes_data_${load.repeat_index}'
+      inputs: [{role: complete, type: MSHR.RefillComplete}]
+      outputs: [{role: write, type: MSHR.RefillWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}]}
+      ensure: *complete_write_fields
+      exact: true
+      tags: [source:mshrs.scala:316-345, refill-write]
+    - &write0_to_meta
+      name: 'entry_0_refill_writes_meta_${load.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: [{role: meta, type: MSHR.MetaWrite}]
+      when: *write0
+      output_when: &meta0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}]}
+      ensure: &write_before_meta [{node: binary, op: lt, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: meta, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:mshrs.scala:346-356, meta-write]
+    - name: 'entry_1_refill_writes_meta_${load.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: [{role: meta, type: MSHR.MetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}]}
+      ensure: *write_before_meta
+      exact: true
+      tags: [source:mshrs.scala:346-356, meta-write]
+    - &meta0_to_response
+      name: 'entry_0_drains_primary_rpq_${load.repeat_index}'
+      inputs: [{role: meta, type: MSHR.MetaWrite}, {role: data, type: MSHR.GrantData}]
+      outputs: [{role: response, type: MSHR.ResponseDequeue}]
+      when: {node: nary, op: and, operands: [*meta0, *data0]}
+      output_when: &response0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: response, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &response_fields
+      - {node: binary, op: lt, left: {node: event_field, event_id: meta, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:mshrs.scala:266-300, source:mshrs.scala:720-724, rpq]
+    - name: 'entry_1_drains_primary_rpq_${load.repeat_index}'
+      inputs: [{role: meta, type: MSHR.MetaWrite}, {role: data, type: MSHR.GrantData}]
+      outputs: [{role: response, type: MSHR.ResponseDequeue}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: response, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *response_fields
+      exact: true
+      tags: [source:mshrs.scala:266-300, source:mshrs.scala:720-724, rpq]
+    - &response0_to_ll
+      name: 'entry_0_response_reaches_long_latency_port_${load.repeat_index}'
+      inputs: [{role: response, type: MSHR.ResponseDequeue}]
+      outputs: [{role: long, type: DCache.LongLatencyLoadResponse}]
+      when: *response0
+      output_when: &long0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: long, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: long, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &ll_fields
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: long, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: long, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:dcache.scala:867-892, long-latency-response]
+    - name: 'entry_1_response_reaches_long_latency_port_${load.repeat_index}'
+      inputs: [{role: response, type: MSHR.ResponseDequeue}]
+      outputs: [{role: long, type: DCache.LongLatencyLoadResponse}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: response, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: long, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: long, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *ll_fields
+      exact: true
+      tags: [source:dcache.scala:867-892, long-latency-response]
+    - &response0_to_finish
+      name: 'entry_0_finishes_after_rpq_${load.repeat_index}'
+      inputs: [{role: response, type: MSHR.ResponseDequeue}]
+      outputs: [{role: finish, type: MSHR.MemFinish}]
+      when: *response0
+      output_when: &finish0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: finish, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}]}
+      ensure: &response_before_finish [{node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: finish, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:mshrs.scala:356-365, mem-finish]
+    - name: 'entry_1_finishes_after_rpq_${load.repeat_index}'
+      inputs: [{role: response, type: MSHR.ResponseDequeue}]
+      outputs: [{role: finish, type: MSHR.MemFinish}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: response, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: finish, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}]}
+      ensure: *response_before_finish
+      exact: true
+      tags: [source:mshrs.scala:356-365, mem-finish]
+    - name: 'entry_0_finish_drives_grantack_${load.repeat_index}'
+      inputs: [{role: finish, type: MSHR.MemFinish}, {role: grant, type: TL.Grant}]
+      outputs: [{role: ack, type: TL.GrantAck}]
+      when: {node: nary, op: and, operands: [*finish0, *tlgrant0]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      ensure: &ack_fields
+      - {node: binary, op: eq, left: {node: event_field, event_id: finish, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: sink_id, sort: {name: int}}, right: {node: event_field, event_id: ack, field: sink_id, sort: {name: int}}}
+      exact: false
+      tags: [source:dcache.scala:845, source:mshrs.scala:361-365, tilelink-e]
+    - name: 'entry_1_finish_drives_grantack_${load.repeat_index}'
+      inputs: [{role: finish, type: MSHR.MemFinish}, {role: grant, type: TL.Grant}]
+      outputs: [{role: ack, type: TL.GrantAck}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: finish, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${load.address}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+      ensure: *ack_fields
+      exact: false
+      tags: [source:dcache.scala:845, source:mshrs.scala:361-365, tilelink-e]
+
+- over: store_misses
+  as: store
+  include:
+    slots:
+    - {id: 'store_acquire_block_0_${store.repeat_index}', type: MSHR.AcquireBlock, required: false, fields: {mshr_id: 0, op_id: '${store.op_id}', address: '${store.address}'}}
+    - {id: 'store_acquire_block_1_${store.repeat_index}', type: MSHR.AcquireBlock, required: false, fields: {mshr_id: 1, op_id: '${store.op_id}', address: '${store.address}'}}
+    - {id: 'store_tl_acquire_0_${store.repeat_index}', type: TL.Acquire, required: false, fields: {txn_id: '${store.op_id}', source_id: 0, hart: '${store.hart}', line_id: '${store.line_id}', address: '${store.address}', grow: NtoT, need_data: true}}
+    - {id: 'store_tl_acquire_1_${store.repeat_index}', type: TL.Acquire, required: false, fields: {txn_id: '${store.op_id}', source_id: 1, hart: '${store.hart}', line_id: '${store.line_id}', address: '${store.address}', grow: NtoT, need_data: true}}
+    - {id: 'store_grant_data_0_${store.repeat_index}', type: MSHR.GrantData, required: false, fields: {mshr_id: 0, op_id: '${store.op_id}', source_op_id: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::source_0', sort: {name: op_id}}}, address: '${store.address}', value: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::grant_value_0', sort: {name: value, width: 64}}}}}
+    - {id: 'store_grant_data_1_${store.repeat_index}', type: MSHR.GrantData, required: false, fields: {mshr_id: 1, op_id: '${store.op_id}', source_op_id: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::source_1', sort: {name: op_id}}}, address: '${store.address}', value: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::grant_value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'store_refill_complete_0_${store.repeat_index}', type: MSHR.RefillComplete, required: false, fields: {mshr_id: 0, op_id: '${store.op_id}', source_op_id: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::refill_source_0', sort: {name: op_id}}}, address: '${store.address}', value: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::refill_value_0', sort: {name: value, width: 64}}}}}
+    - {id: 'store_refill_complete_1_${store.repeat_index}', type: MSHR.RefillComplete, required: false, fields: {mshr_id: 1, op_id: '${store.op_id}', source_op_id: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::refill_source_1', sort: {name: op_id}}}, address: '${store.address}', value: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::refill_value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'store_refill_write_0_${store.repeat_index}', type: MSHR.RefillWrite, required: false, fields: {mshr_id: 0, address: '${store.address}', set_index: '${store.set_index}', way_id: '${store.way_id}', value: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::line_value_0', sort: {name: value, width: 64}}}}}
+    - {id: 'store_refill_write_1_${store.repeat_index}', type: MSHR.RefillWrite, required: false, fields: {mshr_id: 1, address: '${store.address}', set_index: '${store.set_index}', way_id: '${store.way_id}', value: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::line_value_1', sort: {name: value, width: 64}}}}}
+    - {id: 'store_replay_0_${store.repeat_index}', type: MSHR.Replay, required: false, fields: {mshr_id: 0, op_id: '${store.op_id}', queue_kind: stq, queue_idx: '${store.stq_idx}', address: '${store.address}', value: '${store.write_value}'}}
+    - {id: 'store_replay_1_${store.repeat_index}', type: MSHR.Replay, required: false, fields: {mshr_id: 1, op_id: '${store.op_id}', queue_kind: stq, queue_idx: '${store.stq_idx}', address: '${store.address}', value: '${store.write_value}'}}
+    - {id: 'store_meta_write_0_${store.repeat_index}', type: MSHR.MetaWrite, required: false, fields: {mshr_id: 0, address: '${store.address}', set_index: '${store.set_index}', tag: '${store.tag}', way_id: '${store.way_id}', permission: dirty}}
+    - {id: 'store_meta_write_1_${store.repeat_index}', type: MSHR.MetaWrite, required: false, fields: {mshr_id: 1, address: '${store.address}', set_index: '${store.set_index}', tag: '${store.tag}', way_id: '${store.way_id}', permission: dirty}}
+    - {id: 'store_finish_0_${store.repeat_index}', type: MSHR.MemFinish, required: false, fields: {mshr_id: 0, address: '${store.address}'}}
+    - {id: 'store_finish_1_${store.repeat_index}', type: MSHR.MemFinish, required: false, fields: {mshr_id: 1, address: '${store.address}'}}
+    - {id: 'store_grant_ack_0_${store.repeat_index}', type: TL.GrantAck, required: false, fields: {txn_id: '${store.op_id}', hart: '${store.hart}', sink_id: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::sink_0', sort: {name: int}}}}}
+    - {id: 'store_grant_ack_1_${store.repeat_index}', type: TL.GrantAck, required: false, fields: {txn_id: '${store.op_id}', hart: '${store.hart}', sink_id: {$expr: {node: symbol, name: 'store_mshr::${store.op_id}::sink_1', sort: {name: int}}}}}
+    transformations:
+    - name: 'store_primary_0_to_acquire_block_${store.repeat_index}'
+      inputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      outputs: [{role: block, type: MSHR.AcquireBlock}]
+      when: &store_accept_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: event_field, event_id: accept, field: needs_acquire, sort: {name: bool}}]}
+      output_when: &store_block_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: block, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: block, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &store_accept_before_block [{node: binary, op: lt, left: {node: event_field, event_id: accept, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: block, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [store-miss, source:mshrs.scala:209-245]
+    - name: 'store_primary_1_to_acquire_block_${store.repeat_index}'
+      inputs: [{role: accept, type: MSHR.PrimaryAccept}]
+      outputs: [{role: block, type: MSHR.AcquireBlock}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: accept, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: accept, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: event_field, event_id: accept, field: needs_acquire, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: block, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: block, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *store_accept_before_block
+      exact: true
+      tags: [store-miss, source:mshrs.scala:209-245]
+    - name: 'store_acquire_block_0_to_tilelink_${store.repeat_index}'
+      inputs: [{role: block, type: MSHR.AcquireBlock}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *store_block_0
+      output_when: &store_acquire_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &store_block_same_a [{node: binary, op: eq, left: {node: event_field, event_id: block, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [NtoT, source:dcache.scala:818, source:mshrs.scala:241-245]
+    - name: 'store_acquire_block_1_to_tilelink_${store.repeat_index}'
+      inputs: [{role: block, type: MSHR.AcquireBlock}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: block, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: block, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *store_block_same_a
+      exact: true
+      tags: [NtoT, source:dcache.scala:818, source:mshrs.scala:241-245]
+    - name: 'store_tilelink_d_to_entry_0_${store.repeat_index}'
+      inputs: [{role: grant, type: TL.Grant}]
+      outputs: [{role: data, type: MSHR.GrantData}]
+      when: &store_grant_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}]}
+      output_when: &store_data_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &store_grant_fields [{node: binary, op: eq, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}]
+      exact: true
+      tags: [source:mshrs.scala:241-265]
+    - name: 'store_tilelink_d_to_entry_1_${store.repeat_index}'
+      inputs: [{role: grant, type: TL.Grant}]
+      outputs: [{role: data, type: MSHR.GrantData}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *store_grant_fields
+      exact: true
+      tags: [source:mshrs.scala:241-265]
+    - name: 'store_entry_0_completes_refill_${store.repeat_index}'
+      inputs: [{role: data, type: MSHR.GrantData}]
+      outputs: [{role: complete, type: MSHR.RefillComplete}]
+      when: *store_data_0
+      output_when: &store_complete_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &store_complete_fields [{node: binary, op: lt, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: data, field: source_op_id, sort: {name: op_id}}}]
+      exact: true
+      tags: [line-buffer, source:mshrs.scala:246-265]
+    - name: 'store_entry_1_completes_refill_${store.repeat_index}'
+      inputs: [{role: data, type: MSHR.GrantData}]
+      outputs: [{role: complete, type: MSHR.RefillComplete}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: data, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *store_complete_fields
+      exact: true
+      tags: [line-buffer, source:mshrs.scala:246-265]
+    - name: 'store_entry_0_refill_write_${store.repeat_index}'
+      inputs: [{role: complete, type: MSHR.RefillComplete}]
+      outputs: [{role: write, type: MSHR.RefillWrite}]
+      when: *store_complete_0
+      output_when: &store_refill_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      ensure: &store_refill_fields [{node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: write, field: cycle, sort: {name: int}}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [commit-line, source:mshrs.scala:316-336]
+    - name: 'store_entry_1_refill_write_${store.repeat_index}'
+      inputs: [{role: complete, type: MSHR.RefillComplete}]
+      outputs: [{role: write, type: MSHR.RefillWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      ensure: *store_refill_fields
+      exact: true
+      tags: [commit-line, source:mshrs.scala:316-336]
+    - name: 'store_entry_0_replays_rpq_${store.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: [{role: replay, type: MSHR.Replay}]
+      when: *store_refill_0
+      output_when: &store_replay_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: replay, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: replay, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &store_replay_fields [{node: binary, op: lt, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: replay, field: cycle, sort: {name: int}}}, {node: binary, op: eq, left: {node: event_field, event_id: replay, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: '${store.write_value}'}}]
+      exact: true
+      tags: [store-rpq-replay, sdq-data, source:mshrs.scala:338-347, source:mshrs.scala:732-741]
+    - name: 'store_entry_1_replays_rpq_${store.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: [{role: replay, type: MSHR.Replay}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: replay, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: replay, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *store_replay_fields
+      exact: true
+      tags: [store-rpq-replay, sdq-data, source:mshrs.scala:338-347, source:mshrs.scala:732-741]
+    - name: 'store_replay_0_updates_final_meta_${store.repeat_index}'
+      inputs: [{role: replay, type: MSHR.Replay}]
+      outputs: [{role: meta, type: MSHR.MetaWrite}]
+      when: *store_replay_0
+      output_when: &store_meta_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      ensure: &store_meta_after_replay [{node: binary, op: lt, left: {node: event_field, event_id: replay, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: meta, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [dirty-after-store-replay, source:mshrs.scala:342-356]
+    - name: 'store_replay_1_updates_final_meta_${store.repeat_index}'
+      inputs: [{role: replay, type: MSHR.Replay}]
+      outputs: [{role: meta, type: MSHR.MetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: replay, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: replay, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      ensure: *store_meta_after_replay
+      exact: true
+      tags: [dirty-after-store-replay, source:mshrs.scala:342-356]
+    - name: 'store_entry_0_finishes_${store.repeat_index}'
+      inputs: [{role: meta, type: MSHR.MetaWrite}]
+      outputs: [{role: finish, type: MSHR.MemFinish}]
+      when: *store_meta_0
+      output_when: &store_finish_0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: finish, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      ensure: &store_finish_after_meta [{node: binary, op: lt, left: {node: event_field, event_id: meta, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: finish, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [mem-finish, source:mshrs.scala:351-365]
+    - name: 'store_entry_1_finishes_${store.repeat_index}'
+      inputs: [{role: meta, type: MSHR.MetaWrite}]
+      outputs: [{role: finish, type: MSHR.MemFinish}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: finish, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}]}
+      ensure: *store_finish_after_meta
+      exact: true
+      tags: [mem-finish, source:mshrs.scala:351-365]
+    - name: 'store_finish_0_drives_grantack_${store.repeat_index}'
+      inputs: [{role: finish, type: MSHR.MemFinish}, {role: grant, type: TL.Grant}]
+      outputs: [{role: ack, type: TL.GrantAck}]
+      when: {node: nary, op: and, operands: [*store_finish_0, *store_grant_0]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: &store_ack_fields [{node: binary, op: eq, left: {node: event_field, event_id: finish, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: sink_id, sort: {name: int}}, right: {node: event_field, event_id: ack, field: sink_id, sort: {name: int}}}]
+      exact: false
+      tags: [tilelink-e, source:dcache.scala:845, source:mshrs.scala:361-365]
+    - name: 'store_finish_1_drives_grantack_${store.repeat_index}'
+      inputs: [{role: finish, type: MSHR.MemFinish}, {role: grant, type: TL.Grant}]
+      outputs: [{role: ack, type: TL.GrantAck}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: finish, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: '${store.address}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: *store_ack_fields
+      exact: false
+      tags: [tilelink-e, source:dcache.scala:845, source:mshrs.scala:361-365]

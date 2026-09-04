@@ -1,0 +1,9 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata: {case: source-derived-mshr-file-finish-reuse}
+events:
+- {id: admission_a, type: DCache.MSHRAdmissionRequest, occurs: true, cycle: 1, fields: {op_id: A, queue_kind: ldq, queue_idx: 0, address: x0, block_address: block_x, set_index: 0, tag: 1, way_id: 0, value: 0, mem_kind: load, cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: 0}}
+- {id: admission_b, type: DCache.MSHRAdmissionRequest, occurs: true, cycle: 2, fields: {op_id: B, queue_kind: ldq, queue_idx: 1, address: y0, block_address: block_y, set_index: 1, tag: 2, way_id: 1, value: 0, mem_kind: load, cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: 0}}
+- {id: finish_a, type: MSHR.MemFinish, occurs: true, cycle: 3, fields: {mshr_id: 0, address: x0}}
+- {id: admission_c, type: DCache.MSHRAdmissionRequest, occurs: true, cycle: 4, fields: {op_id: C, queue_kind: ldq, queue_idx: 2, address: z0, block_address: block_z, set_index: 2, tag: 3, way_id: 2, value: 0, mem_kind: load, cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: 0}}
+constraints: []

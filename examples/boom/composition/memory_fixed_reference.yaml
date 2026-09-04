@@ -6,6 +6,10 @@ metadata:
   purpose: generic fixed-reference LSQ + current L1/MSHR witness support
   encapsulation: strict
   hierarchy: ports-only-public-surface
+parameters:
+  mshr_tilelink_ports_enabled: false
+  mshr_grant_port_direction: output
+  mshr_internal_grant_generation: true
 modules:
 - name: lsu
   path: ../model/lsu/fixed_reference.yaml

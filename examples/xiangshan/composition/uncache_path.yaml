@@ -1,0 +1,91 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-uncache-path-v0.11
+horizon: 72
+metadata:
+  version: 0.11.0
+  stage: 11
+  purpose: Integrated LSU access classification, load/store uncached frontend, Uncache buffer, and memory boundary.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: uncache_frontend, path: ../model/special/uncache_frontend.yaml}
+- {name: uncache, path: ../model/special/uncache.yaml}
+connections:
+- {name: frontend_request_to_uncache, source: {module: uncache_frontend, port: uncache_request}, target: {module: uncache, port: request}, mode: shared_event}
+- {name: uncache_accept_to_frontend, source: {module: uncache, port: accept}, target: {module: uncache_frontend, port: uncache_accept}, mode: shared_event}
+- {name: uncache_response_to_frontend, source: {module: uncache, port: response}, target: {module: uncache_frontend, port: uncache_response}, mode: shared_event}
+roles:
+- name: issued_memory_ops
+  event_type: Core.MemoryIssue
+  where: {fields.vector: false}
+  cardinality: many
+  min_matches: 1
+  exports: &issued_op_exports
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+- name: accesses
+  event_type: LSU.AccessClass
+  cardinality: many
+  min_matches: 1
+  exports: &access_exports
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    lq_idx: fields.lq_idx
+    sq_idx: fields.sq_idx
+    mem_kind: fields.mem_kind
+    region: fields.region
+    vaddr: fields.vaddr
+    address: fields.address
+    value: fields.value
+    byte_mask: fields.byte_mask
+    word_mask: fields.word_mask
+    size: fields.size
+    cacheable: fields.cacheable
+    nc: fields.nc
+    mmio: fields.mmio
+    mem_back_type_mm: fields.mem_back_type_mm
+    aligned: fields.aligned
+- name: buffer_entries
+  event_type: Uncache.BufferLayout
+  cardinality: many
+  min_matches: 0
+  exports:
+    entry_id: fields.entry_id
+    entry_order: fields.entry_order
+    member_count: fields.member_count
+    outstanding_enabled: fields.outstanding_enabled
+    word_address: fields.word_address
+    bus_address: fields.bus_address
+    merged_size: fields.merged_size
+    first_txn_id: fields.first_txn_id
+    first_op_id: fields.first_op_id
+    first_hart: fields.first_hart
+    first_program_index: fields.first_program_index
+    first_rob_idx: fields.first_rob_idx
+    first_mem_kind: fields.first_mem_kind
+    first_region: fields.first_region
+    first_vaddr: fields.first_vaddr
+    first_address: fields.first_address
+    first_value: fields.first_value
+    first_mask: fields.first_mask
+    first_size: fields.first_size
+    first_mem_back_type_mm: fields.first_mem_back_type_mm
+    second_txn_id: fields.second_txn_id
+    second_op_id: fields.second_op_id
+    second_hart: fields.second_hart
+    second_program_index: fields.second_program_index
+    second_rob_idx: fields.second_rob_idx
+    second_mem_kind: fields.second_mem_kind
+    second_region: fields.second_region
+    second_vaddr: fields.second_vaddr
+    second_address: fields.second_address
+    second_value: fields.second_value
+    second_mask: fields.second_mask
+    second_size: fields.second_size
+    second_mem_back_type_mm: fields.second_mem_back_type_mm
+constraints: []

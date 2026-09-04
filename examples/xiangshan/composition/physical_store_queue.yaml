@@ -1,6 +1,6 @@
 schema_version: umcm.composition.v0.15.0
 name: xiangshan-physical-store-queue-v0.9
-horizon: 40
+horizon: 24
 metadata:
   version: 0.9.0
   stage: 9

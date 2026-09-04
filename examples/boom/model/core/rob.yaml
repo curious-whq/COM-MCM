@@ -1,8 +1,12 @@
 schema_version: umcm.module.v0.15.0
 name: rob_core
 metadata:
-  version: 0.17.0
-  source: bounded BOOM memory ROB/recovery abstraction
+  version: 0.21.0
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/exu/rob.scala
+    lines: [371, 429, 461, 551]
   scope: allocation, writeback, in-order commit, precise memory exception, squash, and branch recovery
   hierarchy: ROB entry state and bookkeeping events are private; commit/exception/squash/kill are public
 ports:
@@ -52,7 +56,8 @@ repeat:
         rob_idx: ${op.rob_idx}
         mem_kind: ${op.mem_kind}
         address: ${op.address}
-        value: ${op.value}
+        value:
+          $expr: {node: symbol, name: "rob::${op.op_id}::value", sort: {name: value, width: 64}}
         write_value: ${op.write_value}
         byte_mask: ${op.byte_mask}
         success:
@@ -116,6 +121,7 @@ repeat:
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}}
       - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: success, sort: {name: bool}}, right: {node: event_field, event_id: commit, field: success, sort: {name: bool}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: commit, field: value, sort: {name: value, width: 64}}}
       state_requirements:
       - {state: "ROB.entry[${op.op_id}].allocated", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
       - {state: "ROB.entry[${op.op_id}].completed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}

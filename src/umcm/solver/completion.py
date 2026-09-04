@@ -66,11 +66,14 @@ def complete_problem(
     *,
     backend: str = "auto",
     node_limit: int = 500_000,
+    minimize_slots: bool = True,
 ) -> CompletionResult:
     """Solve an already-instantiated problem.
 
-    Coverage queries use this entry point to add a reachability obligation to
-    the same bounded problem that implements normal trace completion.
+    Coverage and search queries use this entry point to add obligations to the
+    same bounded problem that implements normal trace completion.  Z3 callers
+    may disable slot minimization when they need the first feasible model and
+    separately enforce witness well-formedness.
     """
 
     normalized_backend = backend.lower()
@@ -82,7 +85,7 @@ def complete_problem(
         )
 
     solved = (
-        solve_z3(problem)
+        solve_z3(problem, minimize_slots=minimize_slots)
         if normalized_backend == "z3"
         else solve_finite(problem, node_limit=node_limit)
     )

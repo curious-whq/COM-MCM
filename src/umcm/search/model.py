@@ -1,4 +1,4 @@
-"""Serializable v0.20 two-level hierarchical-search specification."""
+"""Serializable v0.21 hierarchical-search specification."""
 
 from __future__ import annotations
 
@@ -10,9 +10,10 @@ from umcm.errors import SearchError, SerializationError
 from umcm.serialization import load_data
 
 
-SEARCH_SCHEMA_VERSION = "umcm.search.v0.20.0"
+SEARCH_SCHEMA_VERSION = "umcm.search.v0.21.0"
 _KINDS = {"load", "store"}
-_STAGE_KINDS = {"coherence_access", "interface_gap"}
+_GENERATION_KINDS = {"explicit", "bounded"}
+_STAGE_KINDS = {"coherence_access", "boom_end_to_end", "interface_gap"}
 
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:
@@ -217,13 +218,32 @@ class ArchitectureSearchSpec:
     events: ArchitectureEventMap
     init_writes: tuple[InitWriteSpec, ...]
     operations: tuple[OperationSlotSpec, ...]
+    generation: str = "explicit"
 
     def __post_init__(self) -> None:
         if self.target not in {"allowed", "forbidden"}:
             raise SearchError("architecture target must be allowed or forbidden")
+        if self.generation not in _GENERATION_KINDS:
+            raise SearchError(
+                f"unsupported architecture generation mode {self.generation!r}"
+            )
         ids = [item.id for item in (*self.init_writes, *self.operations)]
         if len(ids) != len(set(ids)):
             raise SearchError("architecture search operation ids must be unique")
+        if self.generation == "explicit" and (
+            not self.init_writes or not self.operations
+        ):
+            raise SearchError(
+                "explicit architecture search requires initial writes and "
+                "operation slots"
+            )
+        if self.generation == "bounded" and (
+            self.init_writes or self.operations
+        ):
+            raise SearchError(
+                "bounded architecture generation derives initial writes and "
+                "operations from bounds; do not provide fixed slots"
+            )
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ArchitectureSearchSpec":
@@ -241,21 +261,19 @@ class ArchitectureSearchSpec:
                 events=ArchitectureEventMap.from_dict(data["events"]),
                 init_writes=tuple(InitWriteSpec.from_dict(item) for item in raw_init),
                 operations=tuple(OperationSlotSpec.from_dict(item) for item in raw_ops),
+                generation=str(data.get("generation", "explicit")),
             )
         except KeyError as exc:
             raise SerializationError(
                 f"architecture search is missing {exc.args[0]!r}"
             ) from exc
-        if not result.init_writes or not result.operations:
-            raise SearchError(
-                "architecture search requires initial writes and operation slots"
-            )
         return result
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "model": self.model,
             "target": self.target,
+            "generation": self.generation,
             "events": self.events.to_dict(),
             "init_writes": [item.to_dict() for item in self.init_writes],
             "operations": [item.to_dict() for item in self.operations],
@@ -269,6 +287,7 @@ class RealizationStageSpec:
     required: bool = True
     catalog: str | None = None
     composition: str | None = None
+    core_composition: str | None = None
     input_event_types: tuple[str, ...] = ()
     event_types: Mapping[str, str] = field(default_factory=dict)
     cycle_start: int = 1
@@ -285,10 +304,14 @@ class RealizationStageSpec:
                 f"realization stage {self.name!r} has unsupported kind {self.kind!r}"
             )
         object.__setattr__(self, "event_types", dict(self.event_types))
-        if self.kind == "coherence_access":
+        if self.kind in {"coherence_access", "boom_end_to_end"}:
             if not self.catalog or not self.composition:
                 raise SearchError(
-                    f"coherence stage {self.name!r} requires catalog and composition"
+                    f"realization stage {self.name!r} requires catalog and composition"
+                )
+            if self.kind == "boom_end_to_end" and not self.core_composition:
+                raise SearchError(
+                    f"end-to-end stage {self.name!r} requires core_composition"
                 )
             required_names = {
                 "line_init", "access", "load_result", "store_result"
@@ -296,7 +319,7 @@ class RealizationStageSpec:
             missing = required_names - set(self.event_types)
             if missing:
                 raise SearchError(
-                    f"coherence stage {self.name!r} event_types missing: "
+                    f"realization stage {self.name!r} event_types missing: "
                     + ", ".join(sorted(missing))
                 )
             if self.cycle_start < 0 or self.cycle_stride <= 0:
@@ -324,6 +347,11 @@ class RealizationStageSpec:
                     None
                     if data.get("composition") is None
                     else str(data["composition"])
+                ),
+                core_composition=(
+                    None
+                    if data.get("core_composition") is None
+                    else str(data["core_composition"])
                 ),
                 input_event_types=_strings(
                     data.get("input_event_types", []),
@@ -354,11 +382,13 @@ class RealizationStageSpec:
             data["catalog"] = self.catalog
         if self.composition is not None:
             data["composition"] = self.composition
+        if self.core_composition is not None:
+            data["core_composition"] = self.core_composition
         if self.input_event_types:
             data["input_event_types"] = list(self.input_event_types)
         if self.event_types:
             data["event_types"] = dict(self.event_types)
-        if self.kind == "coherence_access":
+        if self.kind in {"coherence_access", "boom_end_to_end"}:
             data.update(
                 cycle_start=self.cycle_start,
                 cycle_stride=self.cycle_stride,
@@ -386,7 +416,10 @@ class HierarchicalSearchSpec:
         self.metadata = dict(self.metadata)
         if not self.name:
             raise SearchError("hierarchical search name must be non-empty")
-        if len(self.architecture.operations) > self.bounds.memory_ops:
+        if (
+            self.architecture.generation == "explicit"
+            and len(self.architecture.operations) > self.bounds.memory_ops
+        ):
             raise SearchError("operation slots exceed the memory_ops bound")
         declared_harts = {
             hart for slot in self.architecture.operations for hart in slot.harts

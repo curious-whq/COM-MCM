@@ -1,12 +1,13 @@
-schema_version: umcm.search_report.v0.20.0
-name: boom-rvwmo-hierarchical-search-v0.20
-status: partial
+schema_version: umcm.search_report.v0.21.0
+name: boom-rvwmo-blind-rediscovery-v0.21
+status: blocked
 end_to_end: false
 metadata:
-  version: 0.20.0
-  purpose: Two-level RVWMO skeleton and public-interface µMCM realization search.
-  acceptance_boundary: The coherence slice is executable; the detailed LSQ/L1/MSHR-to-v0.18
-    adapter remains an explicit blocker for v0.21 blind rediscovery.
+  version: 0.21.0
+  purpose: Architectural candidate generation retained while the source-complete BOOM
+    realization model is rebuilt.
+  input_contract: No program skeleton, expected outcome, TLB/cache/MSHR/probe path,
+    or queue identity is accepted.
   forbidden_inputs:
   - TLBMiss
   - L1Hit
@@ -14,11 +15,12 @@ metadata:
   - Probe
   - ldq_idx
   - mshr_idx
-  - expected_microarchitectural_path
+  - expected_result
+  status: blocked-until-source-complete-model
 architecture:
-  assignments_examined: 3
-  assignments_rejected: 0
-  estimated_assignments: 4
+  assignments_examined: 68
+  assignments_rejected: 97
+  estimated_assignments: 584
   exhausted: false
   skeleton:
     status: forbidden
@@ -29,78 +31,78 @@ architecture:
       address: x
       value: 0
       source_event_id: search_init_0_InitX
-    - id: R0
+    - id: L0
       kind: read
       address: x
       value: 1
       hart: 0
       program_index: 0
-      source_event_id: search_load_0_R0
-      commit_event_id: search_commit_0_R0
-    - id: R1
+      source_event_id: search_load_0_L0
+      commit_event_id: search_commit_0_L0
+    - id: L1
       kind: read
       address: x
       value: 0
       hart: 0
       program_index: 1
-      source_event_id: search_load_1_R1
-      commit_event_id: search_commit_1_R1
-    - id: W
+      source_event_id: search_load_1_L1
+      commit_event_id: search_commit_1_L1
+    - id: W0
       kind: write
       address: x
       value: 1
       hart: 1
       program_index: 0
-      source_event_id: search_store_2_W
+      source_event_id: search_store_2_W0
     relations:
       po:
-      - from: R0
-        to: R1
+      - from: L0
+        to: L1
       rf:
       - from: InitX
-        to: R1
-      - from: W
-        to: R0
+        to: L1
+      - from: W0
+        to: L0
       co:
       - from: InitX
-        to: W
+        to: W0
       fr:
-      - from: R1
-        to: W
+      - from: L1
+        to: W0
       ppo:
-      - from: R0
-        to: R1
+      - from: L0
+        to: L1
     obligations:
     - kind: initial_value
       op_id: InitX
       address: x
       value: 0
     - kind: read_from
-      read: R0
-      write: W
+      read: L0
+      write: W0
       address: x
       value: 1
     - kind: read_from
-      read: R1
+      read: L1
       write: InitX
       address: x
       value: 0
     - kind: write_value
-      op_id: W
+      op_id: W0
       address: x
       value: 1
     - kind: program_order
-      from: R0
-      to: R1
+      from: L0
+      to: L1
     - kind: coherence_order
       from: InitX
-      to: W
+      to: W0
     - kind: from_read
-      from: R1
-      to: W
+      from: L1
+      to: W0
     - kind: preserved_order
-      from: R0
-      to: R1
+      from: L0
+      to: L1
     violations:
     - axiom: rvwmo_global_memory_order
       status: violated
@@ -111,152 +113,31 @@ architecture:
       - co
       - fr
       cycle:
-      - from: R1
+      - from: L1
         relation: fr
-        to: W
-      - from: W
+        to: W0
+      - from: W0
         relation: rfe
-        to: R0
-      - from: R0
+        to: L0
+      - from: L0
         relation: ppo
-        to: R1
+        to: L1
 realization:
   stages:
-  - name: coherence_version_realization
-    kind: coherence_access
-    required: true
-    status: realizable
-    attempts: 1
-    reason: architectural value/version obligations were satisfied using only declared
-      public request/result events
-    schedule:
-    - R1
-    - W
-    - R0
-    public_observations:
-    - id: search_line_0_InitX
-      type: Coherence.LineInit
-      occurs: true
-      fields:
-        line_id: x
-        address: x
-        value: 0
-        version: 0
-        source_op_id: InitX
-      cycle: 0
-    - id: search_access_0_R1
-      type: Coherence.Access
-      occurs: true
-      fields:
-        op_id: R1
-        hart: 0
-        program_index: 1
-        line_id: x
-        address: x
-        mem_kind: load
-        write_value: 0
-        after_op_id: NONE
-      cycle: 1
-    - id: l1_load_result_0
-      type: Coherence.LoadResult
-      occurs: true
-      fields:
-        op_id: R1
-        hart: 0
-        line_id: x
-        address: x
-        value: 0
-        version: 0
-        source_op_id: InitX
-        path: refill
-      cycle: 8
-      annotations:
-        module_spec: boom_l1_coherence_client
-        module_visibility: public
-        interface_ports:
-        - load_result
-        completion_slot: true
-        required_slot: false
-        completed: true
-    - id: search_access_1_W
-      type: Coherence.Access
-      occurs: true
-      fields:
-        op_id: W
-        hart: 1
-        program_index: 0
-        line_id: x
-        address: x
-        mem_kind: store
-        write_value: 1
-        after_op_id: R1
-      cycle: 10
-    - id: l1_store_performed_1
-      type: Coherence.StorePerformed
-      occurs: true
-      fields:
-        op_id: W
-        hart: 1
-        line_id: x
-        address: x
-        value: 1
-        version: 1
-        source_op_id: W
-        path: refill
-      cycle: 17
-      annotations:
-        module_spec: boom_l1_coherence_client
-        module_visibility: public
-        interface_ports:
-        - store_performed
-        completion_slot: true
-        required_slot: false
-        completed: true
-    - id: search_access_2_R0
-      type: Coherence.Access
-      occurs: true
-      fields:
-        op_id: R0
-        hart: 0
-        program_index: 0
-        line_id: x
-        address: x
-        mem_kind: load
-        write_value: 0
-        after_op_id: W
-      cycle: 19
-    - id: l1_load_result_2
-      type: Coherence.LoadResult
-      occurs: true
-      fields:
-        op_id: R0
-        hart: 0
-        line_id: x
-        address: x
-        value: 1
-        version: 1
-        source_op_id: W
-        path: refill
-      cycle: 27
-      annotations:
-        module_spec: boom_l1_coherence_client
-        module_visibility: public
-        interface_ports:
-        - load_result
-        completion_slot: true
-        required_slot: false
-        completed: true
-    witness_path: examples/boom/search/witnesses/coherence_version_realization.yaml
-  - name: detailed_lsq_l1_mshr_join
+  - name: source_complete_boom_memory_model
     kind: interface_gap
     required: true
     status: blocked
     attempts: 0
-    reason: The v0.15 detailed memory composition still binds ldq_idx/mshr_id and
-      cache routing through Arch.Load annotations, and its MSHR memory-side vocabulary
-      is not yet connected to the v0.18 TileLink coherence ports. Supplying those
-      annotations would violate the blind-search input contract.
+    reason: The former executable stage used model/search/cacheable_path.yaml, a witness-oriented
+      summary rather than the detailed BOOM LSU/L1/MSHR state machines. That result
+      has been withdrawn. Detailed ordinary load and store hit/retry/cold-miss paths
+      now reach retirement and MSHR store replay. Store nack also reaches execute-queue
+      rewind, re-enqueue and a second exact scheduler/drain decision, but search remains
+      blocked until examples/boom/source/v021.yaml has no needs-rework behavior and
+      the complete two-hart composition passes its admission gate.
     missing_interfaces:
-    - public finite allocation choice for LDQ/MSHR identities
-    - DCache/MSHR Acquire-Grant adapter to TileLink A/D/E
-    - coherence result to detailed DCache response and ROB retirement
+    - second post-nack store request through DCache/L1 and its final outcome
+    - separate per-hart generalized L1 state with target-hart Probe routing
+    - dirty ProbeAckData bridge between detailed DCache writeback and InclusiveL2
+    - blind-search finite DCache reset-state generation and default-composition admission

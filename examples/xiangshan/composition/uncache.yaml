@@ -1,0 +1,52 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-uncache-buffer-v0.11
+horizon: 56
+metadata:
+  version: 0.11.0
+  stage: 11
+  purpose: Standalone Uncache entry allocation/merge, acceptance, bus issue, response, and outstanding-order slice.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: uncache, path: ../model/special/uncache.yaml}
+connections: []
+roles:
+- name: buffer_entries
+  event_type: Uncache.BufferLayout
+  cardinality: many
+  min_matches: 1
+  exports: &buffer_entry_exports
+    entry_id: fields.entry_id
+    entry_order: fields.entry_order
+    member_count: fields.member_count
+    outstanding_enabled: fields.outstanding_enabled
+    word_address: fields.word_address
+    bus_address: fields.bus_address
+    merged_size: fields.merged_size
+    first_txn_id: fields.first_txn_id
+    first_op_id: fields.first_op_id
+    first_hart: fields.first_hart
+    first_program_index: fields.first_program_index
+    first_rob_idx: fields.first_rob_idx
+    first_mem_kind: fields.first_mem_kind
+    first_region: fields.first_region
+    first_vaddr: fields.first_vaddr
+    first_address: fields.first_address
+    first_value: fields.first_value
+    first_mask: fields.first_mask
+    first_size: fields.first_size
+    first_mem_back_type_mm: fields.first_mem_back_type_mm
+    second_txn_id: fields.second_txn_id
+    second_op_id: fields.second_op_id
+    second_hart: fields.second_hart
+    second_program_index: fields.second_program_index
+    second_rob_idx: fields.second_rob_idx
+    second_mem_kind: fields.second_mem_kind
+    second_region: fields.second_region
+    second_vaddr: fields.second_vaddr
+    second_address: fields.second_address
+    second_value: fields.second_value
+    second_mask: fields.second_mask
+    second_size: fields.second_size
+    second_mem_back_type_mm: fields.second_mem_back_type_mm
+constraints: []

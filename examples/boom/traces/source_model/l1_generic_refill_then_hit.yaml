@@ -1,0 +1,32 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata:
+  case: v021-generic-l1-refill-and-meta-write
+  input_contract: MSHR public writes update L1 arrays; the later hit is derived by L1.
+events:
+- id: config
+  type: DCache.ConfigInit
+  occurs: true
+  cycle: 0
+  fields: {config_id: small, lsu_width: 1, num_banks: 1, single_ported: false, n_sets: 64, n_ways: 4, n_mshrs: 2}
+- id: set0
+  type: DCache.SetStateInit
+  occurs: true
+  cycle: 0
+  fields: {set_id: set0, set_index: 0, replacement_way: 2, way0_tag: -1, way0_permission: nothing, way0_value: 0, way1_tag: -1, way1_permission: nothing, way1_value: 0, way2_tag: -1, way2_permission: nothing, way2_value: 0, way3_tag: -1, way3_permission: nothing, way3_value: 0}
+- id: refill_data
+  type: MSHR.RefillWrite
+  occurs: true
+  cycle: 2
+  fields: {mshr_id: 0, address: x0, set_index: 0, way_id: 2, value: 88}
+- id: refill_meta
+  type: MSHR.MetaWrite
+  occurs: true
+  cycle: 3
+  fields: {mshr_id: 0, address: x0, set_index: 0, tag: 7, way_id: 2, permission: branch}
+- id: load_after_refill
+  type: LSU.DCacheReqValid
+  occurs: true
+  cycle: 5
+  fields: {op_id: L0, ldq_idx: 0, stq_idx: 0, queue_kind: ldq, queue_idx: 0, address: x0, block_address: block_x, set_index: 0, tag: 7, bank: 0, port: 0, mem_kind: load, value: 0}
+constraints: []

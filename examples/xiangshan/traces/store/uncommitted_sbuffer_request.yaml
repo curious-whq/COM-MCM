@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 10, case: uncommitted-sbuffer-request, expected: INFEASIBLE}
+events:
+- id: ghost_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: GHOST, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 65544, write_value: 42, size: 8, byte_mask: 255, sq_idx: 0, vector: false, tlb_instance: sttlb, vpn: 16, asid: 1, vmid: 0, translation_stage: s1}
+- id: ghost_layout
+  type: Store.Layout
+  occurs: true
+  cycle: 1
+  fields: {op_id: GHOST, sq_idx: 0, kind: aligned, cross_page: false, low_address: 8200, high_address: 8200, low_value: 42, high_value: 0, low_mask: 255, high_mask: 0}
+- id: ghost_line
+  type: SBuffer.LineLayout
+  occurs: true
+  cycle: 1
+  fields: {entry_id: EG, hart: 0, entry_order: 0, line_address: 8192, member_count: 1, first_op_id: GHOST, first_beat: 0, first_address: 8200, first_value: 42, first_drain_mask: 255, first_line_data: 774763251095801167872, first_line_mask: 65280, second_op_id: GHOST, second_beat: 0, second_address: 8200, second_value: 0, second_drain_mask: 0, second_line_data: 0, second_line_mask: 0, drain_reason: timeout}
+- id: ghost_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: GHOST, hart: 0, tlb_instance: sttlb, vaddr: 65544, vpn: 16, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 8200, hit_level: l1, replay: false, fault: false, cause: none}
+- id: illegal_request
+  type: L1.Request
+  occurs: true
+  cycle: 40
+  fields: {txn_id: EG, op_id: GHOST, hart: 0, request_kind: store, address: 8192, value: 42, byte_mask: 65280, line_data: 774763251095801167872, attempt: 0, size: 64}
+constraints: []

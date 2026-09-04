@@ -11,6 +11,67 @@ This directory contains the current BOOM memory µMCM. It is not a chronological
 
 Generated/completed traces and historical stage artifacts belong in `tests/regressions/boom/`. No new `stageXX` files should be added here.
 
+## v0.21 source-model rebuild
+
+`source/v021.yaml` pins the BOOM/Chipyard/Rocket-Chip/InclusiveCache source
+files and records the separate implementation status of each admitted behavior. The previous
+blind result used `model/search/cacheable_path.yaml`; that summary is not an
+acceptable substitute for the detailed LSU/L1/MSHR model.
+
+```bash
+umcm search boom --rvwmo --backend z3 \
+  --output examples/boom/search/BOOM_SEARCH_REPORT.yaml \
+  --witness-dir examples/boom/search/witnesses
+```
+
+The command currently returns a blocked realization stage. It will be enabled
+only after the post-nack second DCache/L1 attempt, separate per-hart generalized
+L1 state, dirty ProbeAckData integration, and the search reset-state adapter
+complete the default public-interface composition with no dynamic path hints
+in the input.
+
+Three source-derived checks are executable already:
+
+```bash
+PYTHONPATH=src python3 -m umcm complete \
+  --backend z3 \
+  --schema examples/boom/events.yaml \
+  --composition examples/boom/composition/lsq_source_v021.yaml \
+  --trace examples/boom/traces/source_model/lsq_internal_allocation.yaml
+
+PYTHONPATH=src python3 -m umcm complete \
+  --backend z3 \
+  --schema examples/boom/events.yaml \
+  --composition examples/boom/composition/mshr_allocator_source_v021.yaml \
+  --trace examples/boom/traces/source_model/mshr_internal_allocation.yaml
+
+PYTHONPATH=src python3 -m umcm complete \
+  --backend z3 \
+  --schema examples/boom/events.yaml \
+  --composition examples/boom/composition/mshr_tilelink_source_v021.yaml \
+  --trace examples/boom/traces/source_model/mshr_tilelink_primary.yaml
+```
+
+The first derives LDQ/STQ indices from dispatch order. The second derives MSHR
+IDs and primary/secondary selection from a fixed two-entry Small/Medium BOOM
+pool. The third derives a matching TileLink Acquire, L2 Grant, MSHR
+refill/response and GrantAck without a Grant in the input trace. These are
+rebuild checkpoints, not blind-search completion evidence.
+
+The integrated checkpoint now derives complete ordinary load and store paths
+from instruction through NBDTLB, LDQ/STQ and scheduler, generalized L1, ROB and
+architectural retirement. Hit and TLB retry work for both. A cold load returns
+InclusiveL2 refill data; a cold store is acknowledged on MSHR acceptance and
+later replays its SDQ value through the fixed-way DCache pipeline before dirty
+metadata and GrantAck. The clean TileLink B/C ProbeUnit bridge and BOOM's
+older-load/observed-younger source assertion are executable. Store nack already
+reaches execute-queue rewind/re-enqueue and a second exact scheduler/drain
+decision. The second DCache/L1 attempt, separate per-hart generalized L1 state,
+dirty ProbeAckData and reset-state generation remain explicit blockers before
+this composition can replace the default blind-search stage.
+
+See `../../BLIND_REDISCOVERY_V0.21.md` and `../../ITERATION_21_REPORT.md`.
+
 ## v0.18 coherence composition
 
 `composition/coherence_v018.yaml` connects the source-pinned BOOM L1 coherence client to the SiFive InclusiveCache selected by the corresponding Chipyard BOOM configuration. Inputs under `traces/coherence/` provide only line initialization plus high-level accesses/evictions; TileLink and directory outcomes are derived from private state.

@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 11, case: incompatible-merge, expected: INFEASIBLE}
+events:
+- id: bad0_request
+  type: Uncache.Request
+  occurs: true
+  cycle: 1
+  fields: {txn_id: BAD0.uncache, op_id: BAD0, hart: 0, program_index: 0, rob_idx: 0, lq_idx: 0, sq_idx: -1, mem_kind: load, region: mmio, vaddr: 16384, address: 2147483648, value: 0, byte_mask: 255, size: 8, nc: false, mem_back_type_mm: false}
+- id: bad1_request
+  type: Uncache.Request
+  occurs: true
+  cycle: 3
+  fields: {txn_id: BAD1.uncache, op_id: BAD1, hart: 0, program_index: 1, rob_idx: 1, lq_idx: 1, sq_idx: -1, mem_kind: load, region: nc, vaddr: 16392, address: 2147483656, value: 0, byte_mask: 255, size: 8, nc: true, mem_back_type_mm: false}
+- id: incompatible_layout
+  type: Uncache.BufferLayout
+  occurs: true
+  cycle: 0
+  fields: {entry_id: UB, entry_order: 0, member_count: 2, outstanding_enabled: false, word_address: 2147483648, bus_address: 2147483648, merged_size: 8, first_txn_id: BAD0.uncache, first_op_id: BAD0, first_hart: 0, first_program_index: 0, first_rob_idx: 0, first_mem_kind: load, first_region: mmio, first_vaddr: 16384, first_address: 2147483648, first_value: 0, first_mask: 255, first_size: 8, first_mem_back_type_mm: false, second_txn_id: BAD1.uncache, second_op_id: BAD1, second_hart: 0, second_program_index: 1, second_rob_idx: 1, second_mem_kind: load, second_region: nc, second_vaddr: 16392, second_address: 2147483656, second_value: 0, second_mask: 255, second_size: 8, second_mem_back_type_mm: false}
+constraints: []

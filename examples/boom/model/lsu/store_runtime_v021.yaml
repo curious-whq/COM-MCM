@@ -1,0 +1,282 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_store_runtime
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/lsu.scala
+    sha256: 405dffe86cca0d5632ee75f481b6a64202691e2e169e6a5961363d20ca33a40e
+    lines: [367, 435, 506, 570, 872, 1008, 1091, 1122, 1535, 1548, 1718, 1810]
+  purpose: Model the ordinary BOOM v4 STQ lifetime from dispatch through ROB readiness, post-commit DCache drain, store acknowledgement, and head clearing.
+  abstraction:
+  - Store data generation is a bounded one-cycle event carrying the decoded write value; BOOM accepts address and data independently into the STQ.
+  - The clr_bsy pipeline is represented by Core.MemoryComplete only after both physical address and store data are present. This is deliberately before ROB.Commit.
+  - The bounded trace permits one DCache nack and models execute-queue flush/head rewind, re-enqueue, and a second store-commit scheduler/drain attempt; the second DCache/L1 pipeline is deferred to the multi-attempt request extension.
+  hierarchy: STQ entries and lifecycle events are private. Translation, scheduler, DCache, recovery, and ROB events are the only public ports.
+
+ports:
+- {name: memory_instruction, direction: input, event_type: Core.MemoryInstruction, required_connection: false}
+- {name: translated_memory, direction: input, event_type: Core.TranslatedMemory, required_connection: false}
+- {name: schedule_grant, direction: input, event_type: LSU.ScheduleGrant, required_connection: false}
+- {name: dcache_req_fire, direction: input, event_type: LSU.DCacheReqFire, required_connection: false}
+- {name: dcache_request_nack, direction: input, event_type: DCache.RequestNack, required_connection: false}
+- {name: dcache_store_ack, direction: input, event_type: DCache.StoreAck, required_connection: false}
+- {name: squash_memory, direction: input, event_type: Core.SquashMemory, required_connection: false}
+- {name: rob_commit, direction: input, event_type: ROB.Commit, required_connection: false}
+- {name: store_drain_issue, direction: output, event_type: LSU.StoreDrainIssue, required_connection: false}
+- {name: store_rob_ready, direction: output, event_type: LSU.StoreROBReady, required_connection: false}
+
+internal_events:
+- LSU.STQAllocate
+- LSU.StoreAddressReady
+- LSU.StoreDataReady
+- LSU.StoreCommitted
+- LSU.StoreCleared
+- LSU.StoreExecuteQueueFlush
+- LSU.StoreReenqueue
+
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: stores
+  as: store
+  include:
+    state_variables:
+    - {name: 'LSQ.stq[${store.stq_idx}].valid', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].addr_valid', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].addr_is_virtual', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].address', sort: {name: address, width: 64}, initial: 0}
+    - {name: 'LSQ.stq[${store.stq_idx}].byte_mask', sort: {name: bv, width: 8}, initial: 0}
+    - {name: 'LSQ.stq[${store.stq_idx}].data_valid', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].data', sort: {name: value, width: 64}, initial: 0}
+    - {name: 'LSQ.stq[${store.stq_idx}].rob_ready', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].committed', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].can_execute', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].issued', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].succeeded', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].cleared', sort: {name: bool}, initial: false}
+    - {name: 'LSQ.stq[${store.stq_idx}].squashed', sort: {name: bool}, initial: false}
+
+    slots:
+    - {id: 'store_stq_allocate_${store.repeat_index}', type: LSU.STQAllocate, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}'}}
+    - {id: 'store_address_ready_${store.repeat_index}', type: LSU.StoreAddressReady, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}', address: '${store.address}', byte_mask: '${store.byte_mask}'}}
+    - {id: 'store_data_ready_${store.repeat_index}', type: LSU.StoreDataReady, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}', value: '${store.write_value}'}}
+    - {id: 'store_rob_ready_${store.repeat_index}', type: LSU.StoreROBReady, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}', address: '${store.address}', value: '${store.write_value}'}}
+    - {id: 'store_committed_${store.repeat_index}', type: LSU.StoreCommitted, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}'}}
+    - {id: 'store_drain_${store.repeat_index}', type: LSU.StoreDrainIssue, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}', address: '${store.address}', value: '${store.write_value}', frame_id: '${store.op_id}.0'}}
+    - {id: 'store_execute_queue_flush_${store.repeat_index}', type: LSU.StoreExecuteQueueFlush, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}'}}
+    - {id: 'store_reenqueue_${store.repeat_index}', type: LSU.StoreReenqueue, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}'}}
+    - {id: 'store_redrain_${store.repeat_index}', type: LSU.StoreDrainIssue, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}', address: '${store.address}', value: '${store.write_value}', frame_id: '${store.op_id}.1'}}
+    - {id: 'store_cleared_${store.repeat_index}', type: LSU.StoreCleared, required: false, fields: {op_id: '${store.op_id}', stq_idx: '${store.stq_idx}'}}
+
+    transformations:
+    - name: 'dispatch_allocates_stq_${store.repeat_index}'
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: allocate, type: LSU.STQAllocate}]
+      when: &instruction_for_store {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: &allocate_for_store {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'LSQ.stq[${store.stq_idx}].valid', at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}]
+      state_updates:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].addr_valid', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.stq[${store.stq_idx}].data_valid', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.stq[${store.stq_idx}].committed', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.stq[${store.stq_idx}].can_execute', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.stq[${store.stq_idx}].succeeded', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.stq[${store.stq_idx}].cleared', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.stq[${store.stq_idx}].squashed', at: allocate, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [source:lsu.scala:367-435, stq, dispatch]
+
+    - name: 'dgen_records_store_data_${store.repeat_index}'
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: data, type: LSU.StoreDataReady}]
+      when: *instruction_for_store
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: instruction, field: write_value, sort: {name: value, width: 64}}}
+      state_requirements: [{state: 'LSQ.stq[${store.stq_idx}].valid', at: data, op: eq, value: {node: literal, sort: {name: bool}, value: true}}]
+      state_updates:
+      - {state: 'LSQ.stq[${store.stq_idx}].data_valid', at: data, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].data', at: data, value: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:lsu.scala:1000-1008, stq, data]
+
+    - name: 'translation_records_store_address_${store.repeat_index}'
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: address, type: LSU.StoreAddressReady}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: address, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: address, field: address, sort: {name: address, width: 64}}}
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: address, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].squashed', at: address, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: 'LSQ.stq[${store.stq_idx}].addr_valid', at: address, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].addr_is_virtual', at: address, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'LSQ.stq[${store.stq_idx}].address', at: address, value: {node: event_field, event_id: address, field: address, sort: {name: address, width: 64}}}
+      - {state: 'LSQ.stq[${store.stq_idx}].byte_mask', at: address, value: {node: event_field, event_id: address, field: byte_mask, sort: {name: bv, width: 8}}}
+      exact: true
+      tags: [source:lsu.scala:960-986, stq, translation]
+
+    - name: 'ready_store_clears_rob_busy_${store.repeat_index}'
+      inputs: [{role: address, type: LSU.StoreAddressReady}, {role: data, type: LSU.StoreDataReady}]
+      outputs: [{role: complete, type: LSU.StoreROBReady}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: address, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}}
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: complete, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].addr_valid', at: complete, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].data_valid', at: complete, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].addr_is_virtual', at: complete, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates: [{state: 'LSQ.stq[${store.stq_idx}].rob_ready', at: complete, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [source:lsu.scala:1091-1122, stq, clr-busy]
+
+    - name: 'rob_commit_marks_store_executable_${store.repeat_index}'
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: committed, type: LSU.StoreCommitted}]
+      when: &commit_for_store {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: committed, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: committed, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: committed, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].rob_ready', at: committed, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: 'LSQ.stq[${store.stq_idx}].committed', at: committed, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].can_execute', at: committed, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [source:lsu.scala:1718-1750, stq, commit]
+
+    - name: 'selected_store_commit_is_drain_issue_${store.repeat_index}'
+      inputs: [{role: grant, type: LSU.ScheduleGrant}]
+      outputs: [{role: drain, type: LSU.StoreDrainIssue}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${store.op_id}.0'}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-commit-fast}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-commit-slow}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: drain, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: drain, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${store.op_id}.0'}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: drain, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: drain, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].can_execute', at: drain, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [source:lsu.scala:872-924, store-drain]
+
+    - name: 'accepted_store_request_marks_issued_${store.repeat_index}'
+      inputs: [{role: fire, type: LSU.DCacheReqFire}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: fire, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].committed', at: fire, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].can_execute', at: fire, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: 'LSQ.stq[${store.stq_idx}].issued', at: fire, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].succeeded', at: fire, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [source:lsu.scala:872-924, dcache-fire]
+
+    - name: 'store_nack_clears_issued_${store.repeat_index}'
+      inputs: [{role: nack, type: DCache.RequestNack}]
+      outputs: [{role: flush, type: LSU.StoreExecuteQueueFlush}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: nack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: flush, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: flush, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: nack, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'LSQ.stq[${store.stq_idx}].issued', at: nack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}]
+      state_updates: [{state: 'LSQ.stq[${store.stq_idx}].issued', at: nack, value: {node: literal, sort: {name: bool}, value: false}}]
+      exact: true
+      tags: [source:lsu.scala:1535-1548, store-nack]
+
+    - name: 'rewound_store_reenters_execute_queue_${store.repeat_index}'
+      inputs: [{role: flush, type: LSU.StoreExecuteQueueFlush}]
+      outputs: [{role: reenqueue, type: LSU.StoreReenqueue}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: flush, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: reenqueue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: flush, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: reenqueue, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: reenqueue, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].committed', at: reenqueue, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [source:lsu.scala:548-570, source:lsu.scala:1535-1548, stq-execute-queue]
+
+    - name: 'reselected_store_commit_is_second_drain_${store.repeat_index}'
+      inputs: [{role: reenqueue, type: LSU.StoreReenqueue}, {role: grant, type: LSU.ScheduleGrant}]
+      outputs: [{role: drain, type: LSU.StoreDrainIssue}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: reenqueue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${store.op_id}.1'}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-commit-fast}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-commit-slow}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: drain, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: drain, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${store.op_id}.1'}}]}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: reenqueue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: drain, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: drain, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].can_execute', at: drain, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [source:lsu.scala:548-570, source:lsu.scala:668-679, source:lsu.scala:1535-1548, store-redrain]
+
+    - name: 'store_ack_sets_succeeded_${store.repeat_index}'
+      inputs: [{role: ack, type: DCache.StoreAck}]
+      when: &ack_for_store {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].issued', at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates: [{state: 'LSQ.stq[${store.stq_idx}].succeeded', at: ack, value: {node: literal, sort: {name: bool}, value: true}}]
+      tags: [source:lsu.scala:1594-1600, store-ack]
+
+    - name: 'acked_committed_head_clears_${store.repeat_index}'
+      inputs: [{role: ack, type: DCache.StoreAck}]
+      outputs: [{role: clear, type: LSU.StoreCleared}]
+      when: *ack_for_store
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: clear, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: clear, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: clear, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].committed', at: clear, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].succeeded', at: clear, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: 'LSQ.stq[${store.stq_idx}].cleared', at: clear, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: clear, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [source:lsu.scala:1782-1810, stq-head-clear]
+
+    - name: 'recovery_squashes_uncommitted_store_${store.repeat_index}'
+      inputs: [{role: squash, type: Core.SquashMemory}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: squash, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      state_requirements: [{state: 'LSQ.stq[${store.stq_idx}].committed', at: squash, op: eq, value: {node: literal, sort: {name: bool}, value: false}}]
+      state_updates:
+      - {state: 'LSQ.stq[${store.stq_idx}].squashed', at: squash, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: 'LSQ.stq[${store.stq_idx}].valid', at: squash, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [source:lsu.scala:1680-1715, branch-recovery]

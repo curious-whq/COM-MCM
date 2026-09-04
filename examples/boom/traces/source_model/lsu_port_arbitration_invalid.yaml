@@ -1,0 +1,37 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata:
+  case: release-illegally-presented-to-non-last-port
+events:
+- id: invalid_release_frame
+  type: LSU.ArbitrationFrame
+  occurs: true
+  cycle: 0
+  fields:
+    frame_id: BAD0
+    hart: 0
+    hardware_cycle: 0
+    port: 0
+    lsu_width: 2
+    can_sfence: false
+    can_store_commit: false
+    stq_almost_full: false
+    can_load_agen: false
+    can_store_agen: false
+    can_release: true
+    can_hella_incoming: false
+    can_hella_wakeup: false
+    can_store_retry: false
+    can_load_retry: false
+    can_load_wakeup: false
+    sfence_op_id: NONE
+    store_commit_op_id: NONE
+    load_agen_op_id: NONE
+    store_agen_op_id: NONE
+    release_op_id: RELEASE_BAD
+    hella_incoming_op_id: NONE
+    hella_wakeup_op_id: NONE
+    store_retry_op_id: NONE
+    load_retry_op_id: NONE
+    load_wakeup_op_id: NONE
+constraints: []

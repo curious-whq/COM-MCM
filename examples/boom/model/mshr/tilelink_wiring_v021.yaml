@@ -1,0 +1,129 @@
+schema_version: umcm.module.v0.15.0
+name: boom_mshr_tilelink_wiring_v021
+metadata:
+  version: 0.21.0
+  component: BOOM v4 DCache/MSHR TileLink wiring
+  source_repository: https://github.com/riscv-boom/riscv-boom.git
+  source_commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+  source_files:
+  - src/main/scala/v4/lsu/dcache.scala:818-845
+  - src/main/scala/v4/lsu/mshrs.scala:241-265,361-365,717-718
+  semantics: pure public-port wiring; no cache-path outcome is selected here
+ports:
+- {name: mshr_acquire, direction: input, event_type: MSHR.AcquireBlock}
+- {name: tilelink_grant, direction: input, event_type: TL.Grant}
+- {name: mshr_finish, direction: input, event_type: MSHR.MemFinish}
+- {name: tilelink_acquire, direction: output, event_type: TL.Acquire}
+- {name: mshr_grant_data, direction: output, event_type: MSHR.GrantData}
+- {name: mshr_grant_no_data, direction: output, event_type: MSHR.GrantNoData}
+- {name: tilelink_grant_ack, direction: output, event_type: TL.GrantAck}
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: mshr_instances
+  as: inst
+  include:
+    slots:
+    - id: tl_a_from_mshr_${inst.repeat_index}
+      type: TL.Acquire
+      required: false
+      fields:
+        txn_id: ${inst.op_id}
+        source_id: ${inst.mshr_id}
+        hart: ${inst.hart}
+        line_id: ${inst.line_id}
+        address: ${inst.address}
+        grow: ${inst.grow}
+        need_data: ${inst.need_data}
+    - id: tl_e_from_mshr_${inst.repeat_index}
+      type: TL.GrantAck
+      required: false
+      fields:
+        txn_id: ${inst.op_id}
+        hart: ${inst.hart}
+        sink_id: {$expr: {node: symbol, name: "mshr_tl::${inst.op_id}::sink", sort: {name: int}}}
+    transformations:
+    - name: mshr_mem_acquire_drives_tilelink_a_${inst.repeat_index}
+      inputs: [{role: acquire, type: MSHR.AcquireBlock}]
+      outputs: [{role: a, type: TL.Acquire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: a, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: a, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: a, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: a, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: a, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+      exact: true
+      tags: [tilelink-a, pure-wiring, source:dcache.scala:818]
+    - name: tilelink_d_data_drives_mshr_grant_${inst.repeat_index}
+      inputs: [{role: d, type: TL.Grant}]
+      outputs: [{role: grant, type: MSHR.GrantData}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: d, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: d, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+        - {node: event_field, event_id: d, field: has_data, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: d, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: d, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: grant, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: d, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: d, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      exact: true
+      tags: [tilelink-d, pure-wiring, source:dcache.scala:831-840]
+    - name: tilelink_d_nodata_drives_mshr_grant_${inst.repeat_index}
+      inputs: [{role: d, type: TL.Grant}]
+      outputs: [{role: grant, type: MSHR.GrantNoData}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: d, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: d, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: d, field: has_data, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: d, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: d, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: grant, field: address, sort: {name: address, width: 64}}}
+      exact: true
+      tags: [tilelink-d, pure-wiring, source:dcache.scala:831-840]
+    - name: mshr_mem_finish_drives_tilelink_e_${inst.repeat_index}
+      inputs: [{role: finish, type: MSHR.MemFinish}, {role: d, type: TL.Grant}]
+      outputs: [{role: e, type: TL.GrantAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: finish, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: d, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: d, field: source_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${inst.mshr_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: e, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${inst.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: d, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: finish, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: finish, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: e, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: d, field: sink_id, sort: {name: int}}, right: {node: event_field, event_id: e, field: sink_id, sort: {name: int}}}
+      exact: true
+      tags: [tilelink-e, pure-wiring, source:dcache.scala:845, source:mshrs.scala:361-365]

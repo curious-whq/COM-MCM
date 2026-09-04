@@ -1,0 +1,651 @@
+schema_version: umcm.module.v0.15.0
+name: sbuffer
+metadata:
+  version: 0.10.0
+  stage: 10
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_sha256: 56c6e5d5fb5395f2e6c988f6b9fb88b19eec999d5b5354dbea616cf9f526152d
+  source_files:
+  - src/main/scala/xiangshan/mem/sbuffer/Sbuffer.scala:32-188,191-768,784-860
+  - src/main/scala/xiangshan/mem/Bundles.scala:105-112,151-160
+  - src/main/scala/xiangshan/mem/lsqueue/LSQBundle.scala:181-184
+  - src/main/scala/xiangshan/mem/MemBlock.scala:896-910,1143-1164,1217
+  - src/main/scala/xiangshan/Parameters.scala:176-178,821-823
+  parameters:
+    store_buffer_size: 16
+    store_buffer_threshold: 9
+    ensbuffer_width: 2
+    cache_line_bytes: 64
+    vector_length_bytes: 16
+    dcache_write_ports: 1
+    replay_delay_cycles: 16
+  scope: bounded one/two-beat cache-line allocation and merge, threshold/timeout/flush drain, one replay-and-resend attempt, same-block serialization, L1D acceptance, and the SBuffer portion of fence completion
+  hierarchy: entry tags, masks, data, active/inflight/timeout state, replacement choice, and response matching are private; committed Store.Drain, line geometry, L1 request/response, and fence ordering are public boundaries
+  abstractions:
+  - SBuffer.LineLayout finitely instantiates one physical entry episode with one or two committed drain beats; line data and masks are the deterministic 64-byte placement normally performed by SbufferData
+  - masked_merge implements byte-accurate last-writer-wins merging over 512-bit line data and a 64-bit byte mask
+  - threshold, force-write, timeout, virtual-tag mismatch, and explicit fence flush share the drain datapath; drain_reason preserves the trigger while cycle counters are stutter-compressed
+  - one DCache replay and timeout resend are modeled; a further replay retains the same inflight invariant but is outside this bounded witness
+  - L1.Response success is the Stage 10 visibility point (accepted by L1D), not global coherence visibility
+  - load forwarding was audited in Sbuffer.scala:784-860; its merge with SQ/MSHR/TLD sources remains on the Stage 12/13 load-data integration boundary
+ports:
+- {name: line_layout, direction: input, event_type: SBuffer.LineLayout, required_connection: false}
+- {name: store_drain, direction: input, event_type: Store.Drain, required_connection: false}
+- {name: fence_request, direction: input, event_type: Core.FenceRequest, required_connection: false}
+- {name: l1_request, direction: output, event_type: L1.Request, required_connection: false}
+- {name: l1_response, direction: input, event_type: L1.Response, required_connection: false}
+- {name: memory_ordered, direction: output, event_type: Core.MemoryOrdered, required_connection: false}
+- {name: prefetch_train, direction: output, event_type: Prefetch.Train, required_connection: false}
+internal_events:
+- SBuffer.Allocate
+- SBuffer.Merge
+- SBuffer.DrainSelect
+- SBuffer.WriteAccepted
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: sbuffer_entries
+  as: entry
+  include:
+    slots:
+    - id: sbuffer_allocate_${entry.repeat_index}
+      type: SBuffer.Allocate
+      required: false
+      fields:
+        entry_id: ${entry.entry_id}
+        op_id: ${entry.first_op_id}
+        hart: ${entry.hart}
+        line_address: ${entry.line_address}
+        line_data: ${entry.first_line_data}
+        byte_mask: ${entry.first_line_mask}
+    - id: sbuffer_merge_${entry.repeat_index}
+      type: SBuffer.Merge
+      required: false
+      fields:
+        entry_id: ${entry.entry_id}
+        op_id: ${entry.second_op_id}
+        hart: ${entry.hart}
+        line_address: ${entry.line_address}
+        line_data:
+          $expr:
+            node: call
+            function: masked_merge
+            arguments:
+            - {node: literal, sort: {name: bv, width: 512}, value: "${entry.first_line_data}"}
+            - {node: literal, sort: {name: bv, width: 512}, value: "${entry.second_line_data}"}
+            - {node: literal, sort: {name: bv, width: 64}, value: "${entry.second_line_mask}"}
+            - {node: literal, sort: {name: int}, value: 512}
+            sort: {name: bv, width: 512}
+        byte_mask:
+          $expr:
+            node: call
+            function: mask_union
+            arguments:
+            - {node: literal, sort: {name: bv, width: 64}, value: "${entry.first_line_mask}"}
+            - {node: literal, sort: {name: bv, width: 64}, value: "${entry.second_line_mask}"}
+            sort: {name: bv, width: 64}
+    - id: sbuffer_drain_select_${entry.repeat_index}
+      type: SBuffer.DrainSelect
+      required: false
+      fields:
+        entry_id: ${entry.entry_id}
+        op_id:
+          $expr: &final_op
+            node: ite
+            condition: {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+            then: {node: literal, sort: {name: op_id}, value: "${entry.second_op_id}"}
+            else: {node: literal, sort: {name: op_id}, value: "${entry.first_op_id}"}
+        hart: ${entry.hart}
+        line_address: ${entry.line_address}
+        reason: ${entry.drain_reason}
+    - id: sbuffer_l1_request_${entry.repeat_index}
+      type: L1.Request
+      required: false
+      fields: &initial_request_fields
+        txn_id: ${entry.entry_id}
+        op_id: {$expr: *final_op}
+        hart: ${entry.hart}
+        request_kind: store
+        address: ${entry.line_address}
+        value:
+          $expr: &final_value
+            node: ite
+            condition: {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+            then: {node: literal, sort: {name: value, width: 64}, value: "${entry.second_value}"}
+            else: {node: literal, sort: {name: value, width: 64}, value: "${entry.first_value}"}
+        byte_mask:
+          $expr: &final_mask
+            node: ite
+            condition: {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+            then:
+              node: call
+              function: mask_union
+              arguments:
+              - {node: literal, sort: {name: bv, width: 64}, value: "${entry.first_line_mask}"}
+              - {node: literal, sort: {name: bv, width: 64}, value: "${entry.second_line_mask}"}
+              sort: {name: bv, width: 64}
+            else: {node: literal, sort: {name: bv, width: 64}, value: "${entry.first_line_mask}"}
+        line_data:
+          $expr: &final_data
+            node: ite
+            condition: {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+            then:
+              node: call
+              function: masked_merge
+              arguments:
+              - {node: literal, sort: {name: bv, width: 512}, value: "${entry.first_line_data}"}
+              - {node: literal, sort: {name: bv, width: 512}, value: "${entry.second_line_data}"}
+              - {node: literal, sort: {name: bv, width: 64}, value: "${entry.second_line_mask}"}
+              - {node: literal, sort: {name: int}, value: 512}
+              sort: {name: bv, width: 512}
+            else: {node: literal, sort: {name: bv, width: 512}, value: "${entry.first_line_data}"}
+        attempt: 0
+        size: 64
+    - id: sbuffer_l1_result_${entry.repeat_index}
+      type: L1.Response
+      required: false
+      fields:
+        txn_id: ${entry.entry_id}
+        op_id: {$expr: *final_op}
+        response_kind:
+          $expr:
+            node: ite
+            condition: &initial_success {node: symbol, name: "sbuffer::${entry.entry_id}::initial_success", sort: {name: bool}}
+            then: {node: literal, sort: {name: string}, value: store_hit}
+            else: {node: literal, sort: {name: string}, value: replay}
+        success: {$expr: *initial_success}
+        denied: false
+        corrupt: false
+    - id: sbuffer_l1_retry_${entry.repeat_index}
+      type: L1.Request
+      required: false
+      fields:
+        <<: *initial_request_fields
+        txn_id: "${entry.entry_id}:retry"
+        attempt: 1
+    - id: sbuffer_l1_retry_result_${entry.repeat_index}
+      type: L1.Response
+      required: false
+      fields:
+        txn_id: "${entry.entry_id}:retry"
+        op_id: {$expr: *final_op}
+        response_kind: store_hit
+        success: true
+        denied: false
+        corrupt: false
+    - id: sbuffer_write_accepted_initial_${entry.repeat_index}
+      type: SBuffer.WriteAccepted
+      required: false
+      fields:
+        entry_id: ${entry.entry_id}
+        op_id: {$expr: *final_op}
+        hart: ${entry.hart}
+        txn_id: ${entry.entry_id}
+    - id: sbuffer_write_accepted_retry_${entry.repeat_index}
+      type: SBuffer.WriteAccepted
+      required: false
+      fields:
+        entry_id: ${entry.entry_id}
+        op_id: {$expr: *final_op}
+        hart: ${entry.hart}
+        txn_id: "${entry.entry_id}:retry"
+    state_variables:
+    - {name: "SBuffer[${entry.entry_id}].valid", sort: {name: bool}, initial: false}
+    - {name: "SBuffer[${entry.entry_id}].active", sort: {name: bool}, initial: false}
+    - {name: "SBuffer[${entry.entry_id}].inflight", sort: {name: bool}, initial: false}
+    - {name: "SBuffer[${entry.entry_id}].data", sort: {name: bv, width: 512}, initial: 0}
+    - {name: "SBuffer[${entry.entry_id}].mask", sort: {name: bv, width: 64}, initial: 0}
+    transformations:
+    - name: committed_first_beat_allocates_entry_${entry.repeat_index}
+      inputs: [{role: first, type: Store.Drain}]
+      outputs: [{role: allocation, type: SBuffer.Allocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: first, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.first_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: first, field: beat, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.first_beat}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: first, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: first, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${entry.first_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: first, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${entry.first_value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: first, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${entry.first_drain_mask}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocation, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: allocation, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: first, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      exact: true
+      tags: [sbuffer, allocate, committed-only, source:Sbuffer.scala:325-379,427-511]
+    - name: allocation_installs_active_line_${entry.repeat_index}
+      inputs: [{role: allocation, type: SBuffer.Allocate}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: allocation, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      state_requirements:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: allocation, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: allocation, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].active", at: allocation, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].data", at: allocation, value: {node: event_field, event_id: allocation, field: line_data, sort: {name: bv, width: 512}}}
+      - {state: "SBuffer[${entry.entry_id}].mask", at: allocation, value: {node: event_field, event_id: allocation, field: byte_mask, sort: {name: bv, width: 64}}}
+      tags: [sbuffer, state, allocate]
+    - name: second_same_line_beat_merges_active_entry_${entry.repeat_index}
+      inputs:
+      - {role: allocation, type: SBuffer.Allocate}
+      - {role: second, type: Store.Drain}
+      outputs: [{role: merge, type: SBuffer.Merge}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocation, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: second, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.second_op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: second, field: beat, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.second_beat}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: second, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: second, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${entry.second_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: second, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${entry.second_value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: second, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${entry.second_drain_mask}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: merge, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocation, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: merge, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: second, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: merge, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [sbuffer, merge, same-line, byte-mask, source:Sbuffer.scala:133-158,325-340,452-511]
+    - name: merge_updates_line_data_and_mask_${entry.repeat_index}
+      inputs: [{role: merge, type: SBuffer.Merge}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: merge, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      state_requirements:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: merge, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].active", at: merge, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: merge, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "SBuffer[${entry.entry_id}].data", at: merge, value: {node: event_field, event_id: merge, field: line_data, sort: {name: bv, width: 512}}}
+      - {state: "SBuffer[${entry.entry_id}].mask", at: merge, value: {node: event_field, event_id: merge, field: byte_mask, sort: {name: bv, width: 64}}}
+      tags: [sbuffer, state, merge]
+    - name: autonomous_single_entry_selects_drain_${entry.repeat_index}
+      inputs: [{role: final, type: SBuffer.Allocate}]
+      outputs: [{role: select, type: SBuffer.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: final, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - &autonomous_reason
+          node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: threshold}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: timeout}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: force}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: uarch_flush}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - &select_scope {node: binary, op: eq, left: {node: event_field, event_id: select, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 1}}
+        - *autonomous_reason
+      ensure:
+      - &final_before_select {node: binary, op: lt, left: {node: event_field, event_id: final, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [sbuffer, drain, threshold, timeout, source:Sbuffer.scala:287-299,537-590,632-652]
+    - name: autonomous_merged_entry_selects_drain_${entry.repeat_index}
+      inputs: [{role: final, type: SBuffer.Merge}]
+      outputs: [{role: select, type: SBuffer.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: final, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - *autonomous_reason
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - *select_scope
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+        - *autonomous_reason
+      ensure: [*final_before_select]
+      exact: true
+      tags: [sbuffer, merge, drain, source:Sbuffer.scala:537-590,632-652]
+    - name: fence_flush_selects_single_entry_${entry.repeat_index}
+      inputs:
+      - {role: final, type: SBuffer.Allocate}
+      - {role: fence, type: Core.FenceRequest}
+      outputs: [{role: select, type: SBuffer.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: fence}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: final, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fence, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.hart}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - *select_scope
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: fence}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: final, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fence, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: fence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [sbuffer, fence, drain-all, source:Sbuffer.scala:559-590]
+    - name: fence_flush_selects_merged_entry_${entry.repeat_index}
+      inputs:
+      - {role: final, type: SBuffer.Merge}
+      - {role: fence, type: Core.FenceRequest}
+      outputs: [{role: select, type: SBuffer.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: fence}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: final, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fence, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.hart}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - *select_scope
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${entry.drain_reason}"}, right: {node: literal, sort: {name: string}, value: fence}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: final, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fence, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: fence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [sbuffer, fence, merge, drain-all]
+    - name: drain_selection_marks_entry_inflight_${entry.repeat_index}
+      inputs: [{role: select, type: SBuffer.DrainSelect}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: select, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      state_requirements:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].active", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "SBuffer[${entry.entry_id}].active", at: select, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: select, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [sbuffer, active-to-inflight, source:Sbuffer.scala:612-682]
+    - name: selected_entry_issues_one_l1_store_${entry.repeat_index}
+      inputs: [{role: select, type: SBuffer.DrainSelect}]
+      outputs: [{role: request, type: L1.Request}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: select, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: request, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${entry.line_address}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: request, field: line_data, sort: {name: bv, width: 512}}, right: *final_data}
+      - {node: binary, op: eq, left: {node: event_field, event_id: request, field: byte_mask, sort: {name: bv, width: 64}}, right: *final_mask}
+      exact: true
+      tags: [sbuffer, l1-request, source:Sbuffer.scala:658-705]
+    - name: l1_returns_hit_or_replay_${entry.repeat_index}
+      inputs: [{role: request, type: L1.Request}]
+      outputs: [{role: result, type: L1.Response}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      - node: nary
+        op: or
+        operands:
+        - node: nary
+          op: and
+          operands:
+          - {node: event_field, event_id: result, field: success, sort: {name: bool}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: result, field: response_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_hit}}
+        - node: nary
+          op: and
+          operands:
+          - {node: unary, op: not, operand: {node: event_field, event_id: result, field: success, sort: {name: bool}}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: result, field: response_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: replay}}
+      exact: true
+      tags: [sbuffer, dcache-response, nondeterministic-hit-replay]
+    - name: replay_keeps_entry_and_resends_after_timeout_${entry.repeat_index}
+      inputs: [{role: result, type: L1.Response}]
+      outputs: [{role: retry, type: L1.Request}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: result, field: success, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: response_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: replay}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: retry, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}:retry"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: retry, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: retry, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: retry, field: line_data, sort: {name: bv, width: 512}}, right: *final_data}
+      - {node: binary, op: eq, left: {node: event_field, event_id: retry, field: byte_mask, sort: {name: bv, width: 64}}, right: *final_mask}
+      state_requirements:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: retry, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: retry, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [sbuffer, replay, timeout, resend, source:Sbuffer.scala:750-767]
+    - name: retry_is_eventually_accepted_${entry.repeat_index}
+      inputs: [{role: retry, type: L1.Request}]
+      outputs: [{role: result, type: L1.Response}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: retry, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}:retry"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}:retry"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: retry, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      - {node: event_field, event_id: result, field: success, sort: {name: bool}}
+      exact: true
+      tags: [sbuffer, retry, hit-response]
+    - name: initial_hit_marks_write_accepted_${entry.repeat_index}
+      inputs: [{role: result, type: L1.Response}]
+      outputs: [{role: accepted, type: SBuffer.WriteAccepted}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: event_field, event_id: result, field: success, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: accepted, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: accepted, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [sbuffer, accepted, source:Sbuffer.scala:718-748]
+    - name: retry_hit_marks_write_accepted_${entry.repeat_index}
+      inputs: [{role: result, type: L1.Response}]
+      outputs: [{role: accepted, type: SBuffer.WriteAccepted}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}:retry"}}
+        - {node: event_field, event_id: result, field: success, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: accepted, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}:retry"}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: accepted, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [sbuffer, retry, accepted]
+    - name: accepted_initial_write_releases_entry_${entry.repeat_index}
+      inputs: [{role: accepted, type: SBuffer.WriteAccepted}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: accepted, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      state_requirements:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: accepted, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: accepted, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: accepted, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: accepted, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [sbuffer, release, hit-response]
+    - name: accepted_retry_write_releases_entry_${entry.repeat_index}
+      inputs: [{role: accepted, type: SBuffer.WriteAccepted}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: accepted, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}:retry"}}
+      state_requirements:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: accepted, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: accepted, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: accepted, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "SBuffer[${entry.entry_id}].inflight", at: accepted, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [sbuffer, release, replay-response]
+    constraints:
+    - node: nary
+      op: or
+      operands:
+      - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 1}}
+      - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 2}}
+    - node: binary
+      op: implies
+      left: {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.member_count}"}, right: {node: literal, sort: {name: int}, value: 1}}
+      right:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: bv, width: 64}, value: "${entry.second_drain_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: bv, width: 64}, value: "${entry.second_line_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+    - node: unary
+      op: not
+      operand:
+        node: binary
+        op: and
+        left: {node: event_field, event_id: "sbuffer_write_accepted_initial_${entry.repeat_index}", field: occurs, sort: {name: bool}}
+        right: {node: event_field, event_id: "sbuffer_write_accepted_retry_${entry.repeat_index}", field: occurs, sort: {name: bool}}
+
+- over: fences
+  as: fence
+  include:
+    slots:
+    - id: sbuffer_memory_ordered_${fence.repeat_index}
+      type: Core.MemoryOrdered
+      required: false
+      fields:
+        op_id: ${fence.op_id}
+        hart: ${fence.hart}
+        fence_kind: ${fence.fence_kind}
+    transformations:
+    - name: fence_completes_after_sbuffer_quiesces_${fence.repeat_index}
+      inputs: [{role: fence, type: Core.FenceRequest}]
+      outputs: [{role: ordered, type: Core.MemoryOrdered}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fence, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${fence.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fence, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${fence.hart}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ordered, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${fence.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: fence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ordered, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [sbuffer, fence, ordered, source:MemBlock.scala:1152-1164,Fence.scala:58-88]
+
+repeat_product:
+- axes:
+  - {over: sbuffer_entries, as: entry}
+  - {over: fences, as: fence}
+  include:
+    transformations:
+    - name: ordered_observation_requires_entry_empty_${product.repeat_index}
+      inputs:
+      - {role: ordered, type: Core.MemoryOrdered}
+      - {role: allocation, type: SBuffer.Allocate}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ordered, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${fence.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.hart}"}, right: {node: literal, sort: {name: int}, value: "${fence.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocation, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: allocation, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${fence.cycle}"}}
+      state_requirements:
+      - {state: "SBuffer[${entry.entry_id}].valid", at: ordered, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [sbuffer, fence, no-early-ordered]
+    constraints:
+    - node: binary
+      op: implies
+      left:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${entry.hart}"}, right: {node: literal, sort: {name: int}, value: "${fence.hart}"}}
+        - {node: event_field, event_id: "sbuffer_allocate_${entry.repeat_index}", field: occurs, sort: {name: bool}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: "sbuffer_allocate_${entry.repeat_index}", field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${fence.cycle}"}}
+      right:
+        node: nary
+        op: or
+        operands:
+        - node: nary
+          op: and
+          operands:
+          - {node: event_field, event_id: "sbuffer_write_accepted_initial_${entry.repeat_index}", field: occurs, sort: {name: bool}}
+          - {node: binary, op: lt, left: {node: event_field, event_id: "sbuffer_write_accepted_initial_${entry.repeat_index}", field: cycle, sort: {name: int}}, right: {node: event_field, event_id: "sbuffer_memory_ordered_${fence.repeat_index}", field: cycle, sort: {name: int}}}
+        - node: nary
+          op: and
+          operands:
+          - {node: event_field, event_id: "sbuffer_write_accepted_retry_${entry.repeat_index}", field: occurs, sort: {name: bool}}
+          - {node: binary, op: lt, left: {node: event_field, event_id: "sbuffer_write_accepted_retry_${entry.repeat_index}", field: cycle, sort: {name: int}}, right: {node: event_field, event_id: "sbuffer_memory_ordered_${fence.repeat_index}", field: cycle, sort: {name: int}}}
+
+- axes:
+  - {over: sbuffer_entries, as: older}
+  - {over: sbuffer_entries, as: younger}
+  include:
+    transformations:
+    - name: same_block_inflight_blocks_younger_request_${product.repeat_index}
+      inputs:
+      - {role: request, type: L1.Request}
+      - {role: older_allocation, type: SBuffer.Allocate}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: older_allocation, field: entry_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.entry_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: address, width: 64}, value: "${older.line_address}"}, right: {node: literal, sort: {name: address, width: 64}, value: "${younger.line_address}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.entry_order}"}, right: {node: literal, sort: {name: int}, value: "${younger.entry_order}"}}
+      state_requirements:
+      - {state: "SBuffer[${older.entry_id}].valid", at: request, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [sbuffer, same-block, serialize, source:Sbuffer.scala:593-605,642-650,728-741]
+    constraints:
+    - node: binary
+      op: implies
+      left:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: address, width: 64}, value: "${older.line_address}"}, right: {node: literal, sort: {name: address, width: 64}, value: "${younger.line_address}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.entry_order}"}, right: {node: literal, sort: {name: int}, value: "${younger.entry_order}"}}
+        - {node: event_field, event_id: "sbuffer_l1_request_${younger.repeat_index}", field: occurs, sort: {name: bool}}
+      right:
+        node: nary
+        op: or
+        operands:
+        - node: nary
+          op: and
+          operands:
+          - {node: event_field, event_id: "sbuffer_write_accepted_initial_${older.repeat_index}", field: occurs, sort: {name: bool}}
+          - {node: binary, op: lt, left: {node: event_field, event_id: "sbuffer_write_accepted_initial_${older.repeat_index}", field: cycle, sort: {name: int}}, right: {node: event_field, event_id: "sbuffer_l1_request_${younger.repeat_index}", field: cycle, sort: {name: int}}}
+        - node: nary
+          op: and
+          operands:
+          - {node: event_field, event_id: "sbuffer_write_accepted_retry_${older.repeat_index}", field: occurs, sort: {name: bool}}
+          - {node: binary, op: lt, left: {node: event_field, event_id: "sbuffer_write_accepted_retry_${older.repeat_index}", field: cycle, sort: {name: int}}, right: {node: event_field, event_id: "sbuffer_l1_request_${younger.repeat_index}", field: cycle, sort: {name: int}}}
+    - node: binary
+      op: implies
+      left:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: ne, left: {node: literal, sort: {name: op_id}, value: "${older.entry_id}"}, right: {node: literal, sort: {name: op_id}, value: "${younger.entry_id}"}}
+        - {node: event_field, event_id: "sbuffer_l1_request_${older.repeat_index}", field: occurs, sort: {name: bool}}
+        - {node: event_field, event_id: "sbuffer_l1_request_${younger.repeat_index}", field: occurs, sort: {name: bool}}
+      right: {node: binary, op: ne, left: {node: event_field, event_id: "sbuffer_l1_request_${older.repeat_index}", field: cycle, sort: {name: int}}, right: {node: event_field, event_id: "sbuffer_l1_request_${younger.repeat_index}", field: cycle, sort: {name: int}}}

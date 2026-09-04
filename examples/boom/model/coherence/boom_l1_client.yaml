@@ -62,6 +62,7 @@ repeat:
       required: false
       fields:
         txn_id: ${access.op_id}
+        source_id: ${access.repeat_index}
         hart: ${access.hart}
         line_id: ${access.line_id}
         address: ${access.address}

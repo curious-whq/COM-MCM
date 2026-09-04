@@ -3,12 +3,12 @@ candidate_id: 0
 metadata:
   graph_model: rvwmo-v2.0-boom-projection-v0.17
   rf_assignment:
-    R0: W
-    R1: InitX
+    L0: W0
+    L1: InitX
   co_orders:
     x:
     - InitX
-    - W
+    - W0
   builtin_model: rvwmo
   gmo_order: []
 operations:
@@ -17,42 +17,42 @@ operations:
   address: x
   value: 0
   source_event_id: search_init_0_InitX
-- id: R0
+- id: L0
   kind: read
   address: x
   value: 1
   hart: 0
   program_index: 0
-  source_event_id: search_load_0_R0
-  commit_event_id: search_commit_0_R0
-- id: R1
+  source_event_id: search_load_0_L0
+  commit_event_id: search_commit_0_L0
+- id: L1
   kind: read
   address: x
   value: 0
   hart: 0
   program_index: 1
-  source_event_id: search_load_1_R1
-  commit_event_id: search_commit_1_R1
-- id: W
+  source_event_id: search_load_1_L1
+  commit_event_id: search_commit_1_L1
+- id: W0
   kind: write
   address: x
   value: 1
   hart: 1
   program_index: 0
-  source_event_id: search_store_2_W
+  source_event_id: search_store_2_W0
 relations:
 - name: co
   edges:
   - from: InitX
-    to: W
+    to: W0
 - name: fr
   edges:
-  - from: R1
-    to: W
+  - from: L1
+    to: W0
 - name: fre
   edges:
-  - from: R1
-    to: W
+  - from: L1
+    to: W0
 - name: fri
   edges: []
 - name: gmo
@@ -61,12 +61,12 @@ relations:
   edges: []
 - name: po
   edges:
-  - from: R0
-    to: R1
+  - from: L0
+    to: L1
 - name: ppo
   edges:
-  - from: R0
-    to: R1
+  - from: L0
+    to: L1
 - name: ppo_rule1
   edges: []
 - name: ppo_rule10
@@ -79,8 +79,8 @@ relations:
   edges: []
 - name: ppo_rule2
   edges:
-  - from: R0
-    to: R1
+  - from: L0
+    to: L1
 - name: ppo_rule3
   edges: []
 - name: ppo_rule4
@@ -98,14 +98,14 @@ relations:
 - name: rf
   edges:
   - from: InitX
-    to: R1
-  - from: W
-    to: R0
+    to: L1
+  - from: W0
+    to: L0
 - name: rfe
   edges:
   - from: InitX
-    to: R1
-  - from: W
-    to: R0
+    to: L1
+  - from: W0
+    to: L0
 - name: rfi
   edges: []

@@ -1,0 +1,50 @@
+schema_version: umcm.search.v0.21.0
+name: boom-rvwmo-blind-rediscovery-v0.21
+catalog: ../events.yaml
+metadata:
+  version: 0.21.0
+  purpose: Architectural candidate generation retained while the source-complete BOOM realization model is rebuilt.
+  input_contract: No program skeleton, expected outcome, TLB/cache/MSHR/probe path, or queue identity is accepted.
+  forbidden_inputs: [TLBMiss, L1Hit, MSHR, Probe, ldq_idx, mshr_idx, expected_result]
+  status: blocked-until-source-complete-model
+
+bounds:
+  harts: 2
+  memory_ops: 3
+  addresses: 1
+  values: 2
+  max_assignments: 10000
+  max_graph_candidates: 128
+
+architecture:
+  generation: bounded
+  model: ../axioms/rvwmo.yaml
+  target: forbidden
+  events:
+    init_write: Arch.InitWrite
+    load: Arch.Load
+    store: Arch.Store
+    commit_read: Arch.CommitLoad
+    defaults:
+      load: {byte_mask: 255}
+      store: {byte_mask: 255}
+
+realization:
+  stages:
+  - name: source_complete_boom_memory_model
+    kind: interface_gap
+    required: true
+    reason: >-
+      The former executable stage used model/search/cacheable_path.yaml, a
+      witness-oriented summary rather than the detailed BOOM LSU/L1/MSHR
+      state machines. That result has been withdrawn. Detailed ordinary load
+      and store hit/retry/cold-miss paths now reach retirement and MSHR store
+      replay. Store nack also reaches execute-queue rewind, re-enqueue and a
+      second exact scheduler/drain decision, but search remains blocked until
+      examples/boom/source/v021.yaml has no needs-rework behavior and the
+      complete two-hart composition passes its admission gate.
+    missing_interfaces:
+    - second post-nack store request through DCache/L1 and its final outcome
+    - separate per-hart generalized L1 state with target-hart Probe routing
+    - dirty ProbeAckData bridge between detailed DCache writeback and InclusiveL2
+    - blind-search finite DCache reset-state generation and default-composition admission

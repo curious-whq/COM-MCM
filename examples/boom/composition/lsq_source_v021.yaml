@@ -1,0 +1,93 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-lsq-source-v021
+horizon: 24
+metadata:
+  component: BOOM v4 LSU/LSQ
+  version: 0.21.0
+  status: source-derived-bounded-allocation
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/lsu.scala
+    lines: [340, 425]
+  reset_assumptions:
+  - LDQ and STQ are empty and their tails are zero before the bounded trace.
+  - architectural input events are in dispatch order within a hart.
+  - no earlier unmodeled dispatch or recovery changes a tail.
+  input_firewall: [annotations.microarch.ldq_idx, annotations.microarch.stq_idx]
+modules:
+- name: lsu
+  path: ../model/lsu/module.yaml
+connections: []
+roles:
+- name: init_write
+  event_type: Arch.InitWrite
+  min_matches: 0
+  cardinality: many
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+- name: loads
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: load}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    hart: fields.hart
+    program_index: fields.program_index
+    byte_mask: fields.byte_mask
+    cycle: cycle
+  derived:
+    ldq_idx:
+      kind: queue_index
+      group_by: fields.hart
+      start: 0
+      capacity: 16
+    dispatch_event_type:
+      kind: constant
+      value: Core.MemoryInstruction
+- name: local_stores
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    value: fields.value
+    hart: fields.hart
+    program_index: fields.program_index
+    byte_mask: fields.byte_mask
+    cycle: cycle
+  derived:
+    stq_idx:
+      kind: queue_index
+      group_by: fields.hart
+      start: 0
+      capacity: 16
+    is_amo:
+      kind: constant
+      value: false
+    dispatch_event_type:
+      kind: constant
+      value: Core.MemoryInstruction
+- name: fences
+  event_type: Arch.Fence
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    cycle: cycle
+  derived:
+    stq_idx:
+      kind: constant
+      value: 0
+    dispatch_event_type:
+      kind: constant
+      value: Arch.Fence
+constraints: []

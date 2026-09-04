@@ -1,11 +1,11 @@
 schema_version: umcm.events.v0.18.0
 metadata:
   model: xiangshan-kunminghu-v3-memory
-  version: 0.9.0
-  stage: 9
+  version: 0.11.0
+  stage: 11
   source_commit: 50cdcfc2c45d0631591310435835c0180c105489
   xscache_commit: dfd3edcf42b772e2a21178579b93bafc956f99b8
-  scope: Public hierarchy vocabulary plus executable core lifecycle, translation hierarchy, scalar load flow and queues, replay/prediction, scalar store flow, virtual/physical store queues, forwarding, split and drain through stage 9.
+  scope: Public hierarchy vocabulary plus executable core lifecycle, translation hierarchy, scalar load/store queues, SBuffer visibility, and ordered MMIO/NC routing through the Uncache buffer through stage 11.
 events:
 
 # Architectural input/projection vocabulary.  These names follow the reusable
@@ -472,6 +472,35 @@ events:
   - {name: sq_idx, sort: {name: int}, identity: true}
   - {name: address, sort: {name: address, width: 64}}
 
+# Bounded SBuffer cache-line geometry.  This is a public trace configuration,
+# like Store.Layout: it expands one or two committed 16-byte drain beats into
+# the 64-byte line payload consumed by SbufferData without exposing selection.
+- name: SBuffer.LineLayout
+  module: SBuffer
+  layer: store-buffer-configuration
+  visibility: public
+  fields:
+  - {name: entry_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: entry_order, sort: {name: int}, identity: true}
+  - {name: line_address, sort: {name: address, width: 64}}
+  - {name: member_count, sort: {name: int}}
+  - {name: first_op_id, sort: {name: op_id}}
+  - {name: first_beat, sort: {name: int}}
+  - {name: first_address, sort: {name: address, width: 64}}
+  - {name: first_value, sort: {name: value, width: 64}}
+  - {name: first_drain_mask, sort: {name: bv, width: 64}}
+  - {name: first_line_data, sort: {name: bv, width: 512}}
+  - {name: first_line_mask, sort: {name: bv, width: 64}}
+  - {name: second_op_id, sort: {name: op_id}}
+  - {name: second_beat, sort: {name: int}}
+  - {name: second_address, sort: {name: address, width: 64}}
+  - {name: second_value, sort: {name: value, width: 64}}
+  - {name: second_drain_mask, sort: {name: bv, width: 64}}
+  - {name: second_line_data, sort: {name: bv, width: 512}}
+  - {name: second_line_mask, sort: {name: bv, width: 64}}
+  - {name: drain_reason, sort: {name: string}}
+
 # Memory-dependence predictor boundary.
 - name: MDP.EntryConfig
   module: CoreControl
@@ -567,6 +596,8 @@ events:
   - {name: address, sort: {name: address, width: 64}}
   - {name: value, sort: {name: value, width: 64}, required: false}
   - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: line_data, sort: {name: bv, width: 512}, required: false}
+  - {name: attempt, sort: {name: int}, required: false}
   - {name: size, sort: {name: int}}
 - name: L1.Response
   module: L1D
@@ -602,12 +633,113 @@ events:
   module: UncacheInterface
   layer: uncache-interface
   visibility: public
-  fields: *request_fields
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: lq_idx, sort: {name: int}, required: false}
+  - {name: sq_idx, sort: {name: int}, required: false}
+  - {name: mem_kind, sort: {name: string}}
+  - {name: region, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 8}}
+  - {name: size, sort: {name: int}}
+  - {name: nc, sort: {name: bool}}
+  - {name: mem_back_type_mm, sort: {name: bool}}
+- name: Uncache.Accept
+  module: Uncache
+  layer: uncache-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: entry_id, sort: {name: string}}
+  - {name: mem_kind, sort: {name: string}}
+  - {name: region, sort: {name: string}}
 - name: Uncache.Response
   module: Uncache
   layer: uncache-interface
   visibility: public
-  fields: *response_fields
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: entry_id, sort: {name: string}}
+  - {name: mem_kind, sort: {name: string}}
+  - {name: region, sort: {name: string}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: success, sort: {name: bool}}
+  - {name: denied, sort: {name: bool}}
+  - {name: corrupt, sort: {name: bool}}
+
+# Public, post-translation LSU access classification and finite Uncache entry
+# geometry.  These configure address attributes and bounded merge membership;
+# arbitration and entry state remain private.
+- name: LSU.AccessClass
+  module: LoadStorePipeline
+  layer: uncache-routing
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: lq_idx, sort: {name: int}, required: false}
+  - {name: sq_idx, sort: {name: int}, required: false}
+  - {name: mem_kind, sort: {name: string}}
+  - {name: region, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+  - {name: word_mask, sort: {name: bv, width: 8}}
+  - {name: size, sort: {name: int}}
+  - {name: cacheable, sort: {name: bool}}
+  - {name: nc, sort: {name: bool}}
+  - {name: mmio, sort: {name: bool}}
+  - {name: mem_back_type_mm, sort: {name: bool}}
+  - {name: aligned, sort: {name: bool}}
+- name: Uncache.BufferLayout
+  module: Uncache
+  layer: uncache-configuration
+  visibility: public
+  fields:
+  - {name: entry_id, sort: {name: string}, identity: true}
+  - {name: entry_order, sort: {name: int}, identity: true}
+  - {name: member_count, sort: {name: int}}
+  - {name: outstanding_enabled, sort: {name: bool}}
+  - {name: word_address, sort: {name: address, width: 64}}
+  - {name: bus_address, sort: {name: address, width: 64}}
+  - {name: merged_size, sort: {name: int}}
+  - {name: first_txn_id, sort: {name: op_id}}
+  - {name: first_op_id, sort: {name: op_id}}
+  - {name: first_hart, sort: {name: int}}
+  - {name: first_program_index, sort: {name: int}}
+  - {name: first_rob_idx, sort: {name: int}}
+  - {name: first_mem_kind, sort: {name: string}}
+  - {name: first_region, sort: {name: string}}
+  - {name: first_vaddr, sort: {name: address, width: 64}}
+  - {name: first_address, sort: {name: address, width: 64}}
+  - {name: first_value, sort: {name: value, width: 64}}
+  - {name: first_mask, sort: {name: bv, width: 8}}
+  - {name: first_size, sort: {name: int}}
+  - {name: first_mem_back_type_mm, sort: {name: bool}}
+  - {name: second_txn_id, sort: {name: op_id}}
+  - {name: second_op_id, sort: {name: op_id}}
+  - {name: second_hart, sort: {name: int}}
+  - {name: second_program_index, sort: {name: int}}
+  - {name: second_rob_idx, sort: {name: int}}
+  - {name: second_mem_kind, sort: {name: string}}
+  - {name: second_region, sort: {name: string}}
+  - {name: second_vaddr, sort: {name: address, width: 64}}
+  - {name: second_address, sort: {name: address, width: 64}}
+  - {name: second_value, sort: {name: value, width: 64}}
+  - {name: second_mask, sort: {name: bv, width: 8}}
+  - {name: second_size, sort: {name: int}}
+  - {name: second_mem_back_type_mm, sort: {name: bool}}
 
 # L1-L2 TileLink channels.  Channel events remain public; channel arbitration
 # and cache pipeline decisions remain private to their owners.
@@ -731,6 +863,7 @@ events:
   - {name: address, sort: {name: address, width: 64}}
   - {name: value, sort: {name: value, width: 64}, required: false}
   - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: word_mask, sort: {name: bv, width: 8}, required: false}
   - {name: size, sort: {name: int}}
   - {name: source_op_id, sort: {name: op_id}, required: false}
   - {name: requester_id, sort: {name: int}, required: false}
@@ -776,10 +909,9 @@ events:
   - {name: address, sort: {name: address, width: 64}}
   - {name: target_level, sort: {name: string}}
 
-# Child-private vocabulary.  Stages 2 through 9 activate core lifecycle,
-# translation, scalar load/store pipelines, virtual queues, replay, and
-# memory-dependence predictor events while later-stage families remain
-# ownership reservations.
+# Child-private vocabulary.  Stages 2 through 11 activate core lifecycle,
+# translation, scalar load/store queues, SBuffer, and Uncache state while
+# later-stage families remain ownership reservations.
 - name: Core.DispatchAllocate
   module: CoreControl
   layer: control
@@ -800,6 +932,7 @@ events:
   - {name: value, sort: {name: value, width: 64}, required: false}
   - {name: size, sort: {name: int}, required: false}
   - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: word_mask, sort: {name: bv, width: 8}, required: false}
   - {name: success, sort: {name: bool}, required: false}
   - {name: vpn, sort: {name: int}, required: false}
   - {name: attempt, sort: {name: int}, required: false}
@@ -1123,17 +1256,87 @@ events:
   layer: store-drain
   visibility: internal
   fields: *private_op_fields
+- name: SBuffer.Allocate
+  module: SBuffer
+  layer: store-buffer
+  visibility: internal
+  fields: &sbuffer_entry_fields
+  - {name: entry_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: line_address, sort: {name: address, width: 64}}
+  - {name: line_data, sort: {name: bv, width: 512}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
 - name: SBuffer.Merge
   module: SBuffer
   layer: store-buffer
   visibility: internal
-  fields: *private_op_fields
+  fields: *sbuffer_entry_fields
 - name: SBuffer.DrainSelect
   module: SBuffer
   layer: store-buffer
   visibility: internal
-  fields: *private_op_fields
+  fields:
+  - {name: entry_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: line_address, sort: {name: address, width: 64}}
+  - {name: reason, sort: {name: string}}
+- name: SBuffer.WriteAccepted
+  module: SBuffer
+  layer: store-buffer
+  visibility: internal
+  fields:
+  - {name: entry_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: txn_id, sort: {name: op_id}}
 - name: Uncache.Arbitrate
+  module: Uncache
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.LoadQueueAllocate
+  module: LoadQueue
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.StoreQueueSelect
+  module: StoreQueue
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.FrontendAccept
+  module: LoadStoreQueue
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.FrontendWakeup
+  module: LoadStoreQueue
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.FrontendCancel
+  module: LoadStoreQueue
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.BufferAllocate
+  module: Uncache
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.BufferMerge
+  module: Uncache
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.BusIssue
+  module: Uncache
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.Return
   module: Uncache
   layer: uncache
   visibility: internal

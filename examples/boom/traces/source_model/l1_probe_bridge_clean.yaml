@@ -1,0 +1,8 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata: {case: boom-v4-clean-probe-bridge, input_contract: Public TileLink B and DCache ProbeUnit release interfaces only; receive and TileLink C response are derived.}
+events:
+- {id: store_access, type: Coherence.Access, occurs: true, cycle: 0, fields: {op_id: W0, hart: 1, program_index: 0, line_id: line0, address: x, mem_kind: store, write_value: 1, after_op_id: NONE}}
+- {id: tilelink_probe, type: TL.Probe, occurs: true, cycle: 2, fields: {txn_id: W0, requester_hart: 1, target_hart: 0, line_id: line0, address: x, cap: N}}
+- {id: probeunit_release, type: DCache.ProbeRelease, occurs: true, cycle: 5, fields: {source_op_id: W0, address: x, set_index: 0, tag: 7, way_id: 0, tag_match: true, had_data: false, probe_param: N}}
+constraints: []

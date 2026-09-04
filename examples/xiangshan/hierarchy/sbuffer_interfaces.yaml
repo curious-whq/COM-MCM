@@ -1,0 +1,78 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-sbuffer-v0.10
+policy: ports-only-public-surface
+modules:
+- module: sbuffer
+  ports:
+  - name: line_layout
+    direction: input
+    event_type: SBuffer.LineLayout
+    required_connection: false
+  - name: store_drain
+    direction: input
+    event_type: Store.Drain
+    required_connection: false
+  - name: fence_request
+    direction: input
+    event_type: Core.FenceRequest
+    required_connection: false
+  - name: l1_request
+    direction: output
+    event_type: L1.Request
+    required_connection: false
+  - name: l1_response
+    direction: input
+    event_type: L1.Response
+    required_connection: false
+  - name: memory_ordered
+    direction: output
+    event_type: Core.MemoryOrdered
+    required_connection: false
+  - name: prefetch_train
+    direction: output
+    event_type: Prefetch.Train
+    required_connection: false
+  public_event_types:
+  - Core.FenceRequest
+  - Core.MemoryOrdered
+  - L1.Request
+  - L1.Response
+  - Prefetch.Train
+  - SBuffer.LineLayout
+  - Store.Drain
+  private_slot_ids:
+  - sbuffer_allocate_0
+  - sbuffer_drain_select_0
+  - sbuffer_merge_0
+  - sbuffer_write_accepted_initial_0
+  - sbuffer_write_accepted_retry_0
+  private_event_types:
+  - SBuffer.Allocate
+  - SBuffer.DrainSelect
+  - SBuffer.Merge
+  - SBuffer.WriteAccepted
+  private_state_names:
+  - SBuffer[E0].active
+  - SBuffer[E0].data
+  - SBuffer[E0].inflight
+  - SBuffer[E0].mask
+  - SBuffer[E0].valid
+  private_transformation_names:
+  - accepted_initial_write_releases_entry_0
+  - accepted_retry_write_releases_entry_0
+  - allocation_installs_active_line_0
+  - autonomous_merged_entry_selects_drain_0
+  - autonomous_single_entry_selects_drain_0
+  - committed_first_beat_allocates_entry_0
+  - drain_selection_marks_entry_inflight_0
+  - fence_flush_selects_merged_entry_0
+  - fence_flush_selects_single_entry_0
+  - initial_hit_marks_write_accepted_0
+  - l1_returns_hit_or_replay_0
+  - merge_updates_line_data_and_mask_0
+  - replay_keeps_entry_and_resends_after_timeout_0
+  - retry_hit_marks_write_accepted_0
+  - retry_is_eventually_accepted_0
+  - same_block_inflight_blocks_younger_request_0
+  - second_same_line_beat_merges_active_entry_0
+  - selected_entry_issues_one_l1_store_0

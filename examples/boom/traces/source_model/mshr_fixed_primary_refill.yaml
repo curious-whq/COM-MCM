@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.15.0
+partial: true
+metadata: {case: source-derived-fixed-mshr-primary-refill}
+events:
+- id: instruction
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields: {op_id: L0, hart: 0, program_index: 0, rob_idx: 0, mem_kind: load, vaddr: x, address: x, vpn: 0, value: 9, write_value: 0, byte_mask: 255, cacheable: true, io_id: -1, reservation_id: NONE, uses_tlb: true, execution_class: ordinary}
+- id: primary_accept
+  type: MSHR.PrimaryAccept
+  occurs: true
+  cycle: 1
+  fields: {mshr_id: 0, op_id: L0, queue_kind: ldq, queue_idx: 0, address: x, mem_kind: load, needs_acquire: true, old_line_dirty: false, grant_has_data: false}
+- id: grant
+  type: TL.Grant
+  occurs: true
+  cycle: 8
+  fields: {txn_id: L0, source_id: 0, hart: 0, line_id: line0, address: x, cap: B, has_data: true, value: 9, version: 1, source_op_id: W, sink_id: 3}
+constraints: []

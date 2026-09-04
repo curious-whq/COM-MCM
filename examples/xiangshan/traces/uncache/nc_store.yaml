@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 11, case: nc-store, expected: FEASIBLE}
+events:
+- id: nc_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: NCS, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 36864, address: 36864, value: 42, write_value: 42, size: 8, byte_mask: 255, lq_idx: -1, sq_idx: 0, vector: false}
+- id: nc_store_class
+  type: LSU.AccessClass
+  occurs: true
+  cycle: 2
+  fields: {op_id: NCS, hart: 0, program_index: 0, rob_idx: 0, lq_idx: -1, sq_idx: 0, mem_kind: store, region: nc, vaddr: 36864, address: 36864, value: 42, byte_mask: 255, word_mask: 255, size: 8, cacheable: false, nc: true, mmio: false, mem_back_type_mm: true, aligned: true}
+- id: nc_store_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 12
+  fields: {op_id: NCS, hart: 0, rob_idx: 0, mem_kind: store}
+- id: nc_store_layout
+  type: Uncache.BufferLayout
+  occurs: true
+  cycle: 0
+  fields: {entry_id: UNS, entry_order: 0, member_count: 1, outstanding_enabled: false, word_address: 36864, bus_address: 36864, merged_size: 8, first_txn_id: NCS.uncache, first_op_id: NCS, first_hart: 0, first_program_index: 0, first_rob_idx: 0, first_mem_kind: store, first_region: nc, first_vaddr: 36864, first_address: 36864, first_value: 42, first_mask: 255, first_size: 8, first_mem_back_type_mm: true, second_txn_id: NONE.uncache, second_op_id: NONE, second_hart: 0, second_program_index: 0, second_rob_idx: 0, second_mem_kind: store, second_region: nc, second_vaddr: 0, second_address: 0, second_value: 0, second_mask: 0, second_size: 0, second_mem_back_type_mm: true}
+- id: nc_store_memory_response
+  type: Memory.Response
+  occurs: true
+  cycle: 30
+  fields: {txn_id: NCS.uncache, response_kind: uncache_grant, value: 0, success: true, denied: false, corrupt: false}
+constraints: []

@@ -1,0 +1,210 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-general-l1-mshr-inclusive-l2-source-v021
+horizon: 64
+metadata:
+  version: 0.21.0
+  status: source-derived-cold-miss-integration
+  purpose: Connect generalized BOOM L1 miss selection to internal two-entry MSHR allocation/readiness and the pinned SiFive InclusiveCache TileLink A/D/E path.
+  encapsulation: strict
+  input_firewall: [DCache.LoadMiss, DCache.MSHRAdmissionRequest, DCache.MSHRRequest, MSHR.PrimaryAccept, MSHR.AcquireBlock, TL.Acquire, TL.Grant, MSHR.RefillWrite, MSHR.ResponseDequeue]
+parameters:
+  mshr_entry_ready_integrated: true
+modules:
+- {name: boom_dcache_v4, path: ../model/l1/generic_v021.yaml}
+- {name: boom_mshr_file_allocator_v021, path: ../model/mshr/file_allocator_v021.yaml}
+- {name: boom_mshr_entry_frontend_v021, path: ../model/mshr/entry_frontend_v021.yaml}
+- {name: boom_mshr_fixed_entry_datapath_v021, path: ../model/mshr/fixed_entry_datapath_v021.yaml}
+- {name: sifive_inclusive_l2, path: ../model/coherence/inclusive_l2.yaml}
+connections:
+- name: l1_miss_to_allocator
+  source: {module: boom_dcache_v4, port: mshr_admission}
+  target: {module: boom_mshr_file_allocator_v021, port: admission}
+  mode: shared_event
+- name: l1_miss_to_entry_frontend
+  source: {module: boom_dcache_v4, port: mshr_admission}
+  target: {module: boom_mshr_entry_frontend_v021, port: admission}
+  mode: shared_event
+- name: entry_primary_ready_to_allocator
+  source: {module: boom_mshr_entry_frontend_v021, port: primary_ready}
+  target: {module: boom_mshr_file_allocator_v021, port: primary_ready}
+  mode: shared_event
+- name: entry_secondary_ready_to_allocator
+  source: {module: boom_mshr_entry_frontend_v021, port: secondary_ready}
+  target: {module: boom_mshr_file_allocator_v021, port: secondary_ready}
+  mode: shared_event
+- name: allocated_request_to_entry
+  source: {module: boom_mshr_file_allocator_v021, port: request}
+  target: {module: boom_mshr_entry_frontend_v021, port: request}
+  mode: shared_event
+- name: allocated_store_miss_ack_to_l1
+  source: {module: boom_mshr_file_allocator_v021, port: request}
+  target: {module: boom_dcache_v4, port: mshr_request}
+  mode: shared_event
+- name: primary_accept_to_entry_datapath
+  source: {module: boom_mshr_entry_frontend_v021, port: primary_accept}
+  target: {module: boom_mshr_fixed_entry_datapath_v021, port: primary_accept}
+  mode: shared_event
+- name: entry_acquire_to_l2
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: tilelink_acquire}
+  target: {module: sifive_inclusive_l2, port: acquire}
+  mode: shared_event
+- name: l2_grant_to_entry
+  source: {module: sifive_inclusive_l2, port: grant}
+  target: {module: boom_mshr_fixed_entry_datapath_v021, port: tilelink_grant}
+  mode: shared_event
+- name: entry_grantack_to_l2
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: tilelink_grant_ack}
+  target: {module: sifive_inclusive_l2, port: grant_ack}
+  mode: shared_event
+- name: entry_refill_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: refill_write}
+  target: {module: boom_dcache_v4, port: mshr_refill_write}
+  mode: shared_event
+- name: entry_meta_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: meta_write}
+  target: {module: boom_dcache_v4, port: mshr_meta_write}
+  mode: shared_event
+- name: entry_response_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: response}
+  target: {module: boom_dcache_v4, port: mshr_response}
+  mode: shared_event
+- name: entry_replay_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: replay}
+  target: {module: boom_dcache_v4, port: mshr_replay}
+  mode: shared_event
+- name: entry_replay_releases_rpq_sdq
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: replay}
+  target: {module: boom_mshr_entry_frontend_v021, port: replay}
+  mode: shared_event
+- name: blocked_request_to_l1_nack
+  source: {module: boom_mshr_file_allocator_v021, port: blocked}
+  target: {module: boom_dcache_v4, port: mshr_blocked}
+  mode: shared_event
+- name: finish_releases_allocator
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: mem_finish}
+  target: {module: boom_mshr_file_allocator_v021, port: finish}
+  mode: shared_event
+- name: finish_releases_entry
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: mem_finish}
+  target: {module: boom_mshr_entry_frontend_v021, port: finish}
+  mode: shared_event
+roles:
+- name: configs
+  event_type: DCache.ConfigInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.config_id
+  exports: {config_id: fields.config_id, lsu_width: fields.lsu_width, num_banks: fields.num_banks, single_ported: fields.single_ported, n_sets: fields.n_sets, n_ways: fields.n_ways, n_mshrs: fields.n_mshrs}
+- name: sets
+  event_type: DCache.SetStateInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.set_index
+  exports:
+    set_id: fields.set_id
+    set_index: fields.set_index
+    replacement_way: fields.replacement_way
+    way0_tag: fields.way0_tag
+    way0_permission: fields.way0_permission
+    way0_value: fields.way0_value
+    way1_tag: fields.way1_tag
+    way1_permission: fields.way1_permission
+    way1_value: fields.way1_value
+    way2_tag: fields.way2_tag
+    way2_permission: fields.way2_permission
+    way2_value: fields.way2_value
+    way3_tag: fields.way3_tag
+    way3_permission: fields.way3_permission
+    way3_value: fields.way3_value
+- name: requests
+  event_type: LSU.DCacheReqValid
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    source_cycle: cycle
+    ldq_idx: fields.ldq_idx
+    stq_idx: fields.stq_idx
+    queue_kind: fields.queue_kind
+    queue_idx: fields.queue_idx
+    address: fields.address
+    block_address: fields.block_address
+    set_index: fields.set_index
+    tag: fields.tag
+    bank: fields.bank
+    port: fields.port
+    mem_kind: fields.mem_kind
+    value: fields.value
+- name: mshr_admissions
+  event_type: LSU.DCacheReqValid
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    queue_kind: fields.queue_kind
+    queue_idx: fields.queue_idx
+    address: fields.address
+    block_address: fields.block_address
+    set_index: fields.set_index
+    tag: fields.tag
+    value: fields.value
+    mem_kind: fields.mem_kind
+  derived:
+    way_id: {kind: constant, value: 0}
+    cache_tag_match: {kind: constant, value: false}
+    old_line_dirty: {kind: constant, value: false}
+    needs_acquire: {kind: constant, value: true}
+    is_probe: {kind: constant, value: false}
+    sdq_id: {kind: queue_index, start: 0, capacity: 17}
+- name: loads
+  event_type: LSU.DCacheReqValid
+  where: {fields.mem_kind: load}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, address: fields.address, set_index: fields.set_index, tag: fields.tag, ldq_idx: fields.ldq_idx}
+  derived:
+    hart: {kind: constant, value: 0}
+    line_id: {kind: constant, value: line0}
+    way_id: {kind: constant, value: 0}
+- name: store_misses
+  event_type: LSU.DCacheReqValid
+  where: {fields.mem_kind: store}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, address: fields.address, stq_idx: fields.stq_idx, set_index: fields.set_index, tag: fields.tag, write_value: fields.value}
+  derived:
+    hart: {kind: constant, value: 0}
+    line_id: {kind: constant, value: line0}
+    way_id: {kind: constant, value: 0}
+- name: probes
+  event_type: DCache.ProbeReceive
+  cardinality: many
+  min_matches: 0
+  exports: {source_op_id: fields.source_op_id, address: fields.address, set_index: fields.set_index, tag: fields.tag, probe_param: fields.probe_param}
+- name: meta_writes
+  event_type: MSHR.MetaWrite
+  cardinality: many
+  min_matches: 0
+  exports: {mshr_id: fields.mshr_id, address: fields.address, set_index: fields.set_index, tag: fields.tag, way_id: fields.way_id, permission: fields.permission}
+- name: refill_writes
+  event_type: MSHR.RefillWrite
+  cardinality: many
+  min_matches: 0
+  exports: {mshr_id: fields.mshr_id, address: fields.address, set_index: fields.set_index, way_id: fields.way_id, value: fields.value}
+- name: lines
+  event_type: Coherence.LineInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.line_id
+  exports: {line_id: fields.line_id, address: fields.address, value: fields.value, version: fields.version, source_op_id: fields.source_op_id}
+- name: accesses
+  event_type: Coherence.Access
+  cardinality: many
+  min_matches: 1
+  exports: {op_id: fields.op_id, hart: fields.hart, program_index: fields.program_index, line_id: fields.line_id, address: fields.address, mem_kind: fields.mem_kind, write_value: fields.write_value, after_op_id: fields.after_op_id}
+- name: evictions
+  event_type: Coherence.Evict
+  cardinality: many
+  min_matches: 0
+  exports: {txn_id: fields.txn_id, hart: fields.hart, line_id: fields.line_id, address: fields.address, after_op_id: fields.after_op_id}
+constraints: []

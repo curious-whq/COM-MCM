@@ -199,6 +199,9 @@ events:
     sort:
       name: int
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
+  - {name: tag, sort: {name: int}, required: false}
+  - {name: way_id, sort: {name: int}, required: false}
   description: A non-nacked read hit selected by the DCache pipeline.
 - name: DCache.LoadNack
   module: DCache
@@ -256,6 +259,7 @@ events:
     sort:
       name: int
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
   description: A successful cache-side load response delivered to the LSU.
 - name: DCache.ProbeReceive
   module: DCache.ProbeUnit
@@ -272,6 +276,9 @@ events:
       name: address
       width: 64
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
+  - {name: tag, sort: {name: int}, required: false}
+  - {name: probe_param, sort: {name: string}, required: false}
   description: A coherence probe associated with an external store enters ProbeUnit.
 - name: DCache.ProbeRelease
   module: DCache.ProbeUnit
@@ -288,12 +295,22 @@ events:
       name: address
       width: 64
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
+  - {name: tag, sort: {name: int}, required: false}
+  - {name: way_id, sort: {name: int}, required: false}
+  - {name: tag_match, sort: {name: bool}, required: false}
+  - {name: had_data, sort: {name: bool}, required: false}
+  - {name: probe_param, sort: {name: string}, required: false}
   description: The ProbeUnit lsu_release event accepted by the LSU.
 - name: DCache.ReqReady
   module: DCache
   layer: lsu-dcache-interface
   visibility: public
   fields:
+  - name: op_id
+    sort:
+      name: op_id
+    required: false
   - name: port
     sort:
       name: int
@@ -338,7 +355,20 @@ events:
     sort:
       name: bv
       width: 6
-    required: true
+    required: false
+  - name: stq_idx
+    sort:
+      name: bv
+      width: 6
+    required: false
+  - name: queue_kind
+    sort:
+      name: string
+    required: false
+  - name: queue_idx
+    sort:
+      name: int
+    required: false
   - name: address
     sort:
       name: address
@@ -348,6 +378,12 @@ events:
     sort:
       name: int
     required: true
+  - {name: block_address, sort: {name: address, width: 64}, required: false}
+  - {name: set_index, sort: {name: int}, required: false}
+  - {name: tag, sort: {name: int}, required: false}
+  - {name: bank, sort: {name: int}, required: false}
+  - {name: mem_kind, sort: {name: string}, required: false}
+  - {name: value, sort: {name: value, width: 64}, required: false}
 - name: LSU.DCacheReqValid
   module: LSU
   layer: lsu-dcache-interface
@@ -362,7 +398,20 @@ events:
     sort:
       name: bv
       width: 6
-    required: true
+    required: false
+  - name: stq_idx
+    sort:
+      name: bv
+      width: 6
+    required: false
+  - name: queue_kind
+    sort:
+      name: string
+    required: false
+  - name: queue_idx
+    sort:
+      name: int
+    required: false
   - name: address
     sort:
       name: address
@@ -372,6 +421,103 @@ events:
     sort:
       name: int
     required: true
+  - {name: block_address, sort: {name: address, width: 64}, required: false}
+  - {name: set_index, sort: {name: int}, required: false}
+  - {name: tag, sort: {name: int}, required: false}
+  - {name: bank, sort: {name: int}, required: false}
+  - {name: mem_kind, sort: {name: string}, required: false}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+- name: LSU.ArbitrationFrame
+  module: LSU
+  layer: lsu-scheduler-interface
+  visibility: public
+  fields:
+  - {name: frame_id, sort: {name: string}, required: true, identity: true}
+  - {name: hart, sort: {name: int}, required: true}
+  - {name: hardware_cycle, sort: {name: int}, required: true}
+  - {name: port, sort: {name: int}, required: true, identity: true}
+  - {name: lsu_width, sort: {name: int}, required: true}
+  - {name: can_sfence, sort: {name: bool}, required: true}
+  - {name: can_store_commit, sort: {name: bool}, required: true}
+  - {name: stq_almost_full, sort: {name: bool}, required: true}
+  - {name: can_load_agen, sort: {name: bool}, required: true}
+  - {name: can_store_agen, sort: {name: bool}, required: true}
+  - {name: can_release, sort: {name: bool}, required: true}
+  - {name: can_hella_incoming, sort: {name: bool}, required: true}
+  - {name: can_hella_wakeup, sort: {name: bool}, required: true}
+  - {name: can_store_retry, sort: {name: bool}, required: true}
+  - {name: can_load_retry, sort: {name: bool}, required: true}
+  - {name: can_load_wakeup, sort: {name: bool}, required: true}
+  - {name: sfence_op_id, sort: {name: op_id}, required: true}
+  - {name: store_commit_op_id, sort: {name: op_id}, required: true}
+  - {name: load_agen_op_id, sort: {name: op_id}, required: true}
+  - {name: store_agen_op_id, sort: {name: op_id}, required: true}
+  - {name: release_op_id, sort: {name: op_id}, required: true}
+  - {name: hella_incoming_op_id, sort: {name: op_id}, required: true}
+  - {name: hella_wakeup_op_id, sort: {name: op_id}, required: true}
+  - {name: store_retry_op_id, sort: {name: op_id}, required: true}
+  - {name: load_retry_op_id, sort: {name: op_id}, required: true}
+  - {name: load_wakeup_op_id, sort: {name: op_id}, required: true}
+  description: One evaluation of BOOM v4 LSU can-fire wires for one execution port; it is produced from LSU-local queue and interface state.
+- name: LSU.ArbitrationDecision
+  module: LSU
+  layer: lsu-scheduler
+  visibility: internal
+  fields:
+  - {name: frame_id, sort: {name: string}, required: true, identity: true}
+  - {name: hardware_cycle, sort: {name: int}, required: true}
+  - {name: port, sort: {name: int}, required: true, identity: true}
+  - {name: will_sfence, sort: {name: bool}, required: true}
+  - {name: will_store_commit_fast, sort: {name: bool}, required: true}
+  - {name: will_load_agen_exec, sort: {name: bool}, required: true}
+  - {name: will_load_agen, sort: {name: bool}, required: true}
+  - {name: will_store_agen, sort: {name: bool}, required: true}
+  - {name: will_release, sort: {name: bool}, required: true}
+  - {name: will_hella_incoming, sort: {name: bool}, required: true}
+  - {name: will_hella_wakeup, sort: {name: bool}, required: true}
+  - {name: will_store_retry, sort: {name: bool}, required: true}
+  - {name: will_load_retry, sort: {name: bool}, required: true}
+  - {name: will_load_wakeup, sort: {name: bool}, required: true}
+  - {name: will_store_commit_slow, sort: {name: bool}, required: true}
+  - {name: tlb_used, sort: {name: bool}, required: true}
+  - {name: dcache_used, sort: {name: bool}, required: true}
+  - {name: lcam_used, sort: {name: bool}, required: true}
+  description: Exact combinational result of the source-ordered per-port lsu_sched calls.
+- name: LSU.ScheduleGrant
+  module: LSU
+  layer: lsu-scheduler-interface
+  visibility: public
+  fields:
+  - {name: frame_id, sort: {name: string}, required: true, identity: true}
+  - {name: hardware_cycle, sort: {name: int}, required: true}
+  - {name: port, sort: {name: int}, required: true, identity: true}
+  - {name: request_kind, sort: {name: string}, required: true}
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: uses_tlb, sort: {name: bool}, required: true}
+  - {name: uses_dcache, sort: {name: bool}, required: true}
+  - {name: uses_lcam, sort: {name: bool}, required: true}
+  description: A request class selected by the BOOM v4 LSU per-port scheduler.
+- name: LSU.DCacheIssueIntent
+  module: LSU
+  layer: lsu-scheduler-interface
+  visibility: public
+  fields:
+  - {name: frame_id, sort: {name: string}, required: true, identity: true}
+  - {name: request_kind, sort: {name: string}, required: true}
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: ldq_idx, sort: {name: bv, width: 6}, required: true}
+  - {name: stq_idx, sort: {name: bv, width: 6}, required: true}
+  - {name: queue_kind, sort: {name: string}, required: true}
+  - {name: queue_idx, sort: {name: int}, required: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: block_address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: bank, sort: {name: int}, required: true}
+  - {name: port, sort: {name: int}, required: true}
+  - {name: mem_kind, sort: {name: string}, required: true}
+  - {name: value, sort: {name: value, width: 64}, required: true}
+  description: LSU-local request payload presented to the DCache issue mux; only a matching DCache-consuming ScheduleGrant may expose it as DCacheReqValid.
 - name: LSU.LDLDConflict
   module: LSU
   layer: lsu
@@ -650,6 +796,7 @@ events:
     sort:
       name: int
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
   description: A non-nacked read miss is presented to the MSHR file.
 - name: MSHR.PrimaryMissAccept
   module: BoomMSHRFile
@@ -1063,6 +1210,7 @@ events:
       name: address
       width: 64
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
 - name: DCache.Ordered
   module: DCache
   layer: ordering-interface
@@ -1208,6 +1356,16 @@ events:
       width: 6
     required: true
     identity: true
+- name: LSU.StoreROBReady
+  module: LSU
+  layer: lsu-rob-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: stq_idx, sort: {name: bv, width: 6}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: value, sort: {name: value, width: 64}, required: true}
+  description: The ordinary store has physical address and data, so BOOM's delayed clr_bsy may mark its ROB entry complete before the STQ drains.
 - name: LSU.StoreDrainIssue
   module: LSU
   layer: lsu-dcache-interface
@@ -1234,6 +1392,23 @@ events:
       name: value
       width: 64
     required: true
+  - {name: frame_id, sort: {name: string}, required: false, identity: true}
+- name: LSU.StoreExecuteQueueFlush
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: stq_idx, sort: {name: bv, width: 6}, required: true, identity: true}
+  description: A DCache-nacked store rewinds the BOOM stq_execute_queue head.
+- name: LSU.StoreReenqueue
+  module: LSU
+  layer: lsu
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: stq_idx, sort: {name: bv, width: 6}, required: true, identity: true}
+  description: The rewound committed STQ entry is inserted into stq_execute_queue again.
 - name: LSU.StoreCleared
   module: LSU
   layer: lsu
@@ -1618,8 +1793,8 @@ events:
     boundary, after an MSHR entry has been selected or matched.
 - name: MSHR.SecondaryMissAccept
   module: MSHR
-  layer: mshr
-  visibility: internal
+  layer: mshr-file-entry-interface
+  visibility: public
   fields:
   - name: mshr_id
     sort:
@@ -1889,6 +2064,7 @@ events:
       name: address
       width: 64
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
 - name: MSHR.WritebackDone
   module: MSHR
   layer: mshr-writeback
@@ -1934,6 +2110,9 @@ events:
       name: address
       width: 64
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
+  - {name: way_id, sort: {name: int}, required: false}
+  - {name: value, sort: {name: value, width: 64}, required: false}
   description: The acquired line is written from the MSHR line buffer into the L1
     data array; beat enumeration is hidden by this summary event.
 - name: MSHR.MetaWrite
@@ -1951,6 +2130,10 @@ events:
       name: address
       width: 64
     required: true
+  - {name: set_index, sort: {name: int}, required: false}
+  - {name: tag, sort: {name: int}, required: false}
+  - {name: way_id, sort: {name: int}, required: false}
+  - {name: permission, sort: {name: string}, required: false}
 - name: MSHR.MemFinish
   module: MSHR
   layer: tilelink
@@ -2242,6 +2425,14 @@ events:
   - {name: byte_mask, sort: {name: bv, width: 8}, required: true}
   - {name: success, sort: {name: bool}, required: true}
   - {name: reservation_id, sort: {name: string}, required: false}
+- name: Core.CacheableCompletionSource
+  module: Core
+  layer: execution-rob
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: path, sort: {name: string}, required: true, identity: true}
+  - {name: value, sort: {name: value, width: 64}, required: true}
 - name: Core.MemoryFault
   module: TLB
   layer: tlb-rob-interface
@@ -2575,6 +2766,77 @@ events:
       name: bool
     required: true
   description: An idle MSHR entry accepts a new primary request selected by BoomMSHRFile.
+- name: DCache.MSHRAdmissionRequest
+  module: DCache
+  layer: l1-mshr-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: queue_kind, sort: {name: string}, required: true}
+  - {name: queue_idx, sort: {name: int}, required: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: block_address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: way_id, sort: {name: int}, required: true}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: mem_kind, sort: {name: string}, required: true}
+  - {name: cache_tag_match, sort: {name: bool}, required: true}
+  - {name: old_line_dirty, sort: {name: bool}, required: true}
+  - {name: needs_acquire, sort: {name: bool}, required: true}
+  - {name: is_probe, sort: {name: bool}, required: true}
+  - {name: sdq_id, sort: {name: int}, required: false}
+  description: A cacheable BoomDCache miss request before BoomMSHRFile chooses
+    a primary/secondary path or an MSHR source ID.  It deliberately contains no
+    mshr_id and no secondary-selection bit.
+- name: MSHRFile.PrimaryPermit
+  module: BoomMSHRFile
+  layer: mshr-file-allocation
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: mshr_id, sort: {name: int}, required: true, identity: true}
+  - {name: allocation_case, sort: {name: string}, required: true}
+  description: Internal result of the two-entry AgePriorityEncoder allocation.
+- name: MSHRFile.SecondaryPermit
+  module: BoomMSHRFile
+  layer: mshr-file-allocation
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: mshr_id, sort: {name: int}, required: true, identity: true}
+  - {name: readiness_case, sort: {name: string}, required: true}
+  description: Internal same-block match selecting an existing MSHR entry.
+- name: MSHRFile.PrimaryReady
+  module: MSHR
+  layer: mshr-file-entry-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: mshr_id, sort: {name: int}, required: true, identity: true}
+  - {name: phase, sort: {name: string}, required: true}
+  description: The selected fixed MSHR entry is in s_invalid and may accept a primary request.
+- name: MSHRFile.SecondaryReady
+  module: MSHR
+  layer: mshr-file-entry-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: mshr_id, sort: {name: int}, required: true, identity: true}
+  - {name: phase, sort: {name: string}, required: true}
+  - {name: rpq_ready, sort: {name: bool}, required: true}
+  description: The matching MSHR entry phase and bounded RPQ capacity allow a secondary request.
+- name: MSHRFile.RequestBlocked
+  module: BoomMSHRFile
+  layer: mshr-file-allocation
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: reason, sort: {name: string}, required: true}
+  description: BoomMSHRFile does not assert req.ready because all entries are
+    busy, the set conflicts with an active entry, or a matching entry cannot
+    accept the secondary request.
 - name: MSHR.RPQInsert
   module: MSHR
   layer: mshr-rpq
@@ -2621,6 +2883,10 @@ events:
   - {name: value, sort: {name: value, width: 64}, required: true}
   - {name: version, sort: {name: int}, required: true}
   - {name: source_op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: h0_perm, sort: {name: string}, required: false}
+  - {name: h1_perm, sort: {name: string}, required: false}
+  - {name: l2_state, sort: {name: string}, required: false}
+  - {name: owner, sort: {name: int}, required: false}
   description: Bounded backing-memory initialization; it contains no dynamic hit, probe, or grant choice.
 - name: Coherence.Access
   module: Core
@@ -2696,6 +2962,7 @@ events:
   visibility: public
   fields:
   - {name: txn_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: source_id, sort: {name: int}, required: true, identity: true}
   - {name: hart, sort: {name: int}, required: true}
   - {name: line_id, sort: {name: string}, required: true, identity: true}
   - {name: address, sort: {name: address, width: 64}, required: true}
@@ -2732,6 +2999,7 @@ events:
   visibility: public
   fields:
   - {name: txn_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: source_id, sort: {name: int}, required: true, identity: true}
   - {name: hart, sort: {name: int}, required: true}
   - {name: line_id, sort: {name: string}, required: true, identity: true}
   - {name: address, sort: {name: address, width: 64}, required: true}
@@ -2799,3 +3067,248 @@ events:
   - {name: value, sort: {name: value, width: 64}, required: true}
   - {name: version, sort: {name: int}, required: true}
   - {name: source_op_id, sort: {name: op_id}, required: true, identity: true}
+- name: DCache.SetStateInit
+  module: DCache
+  layer: configuration
+  visibility: public
+  fields:
+  - {name: set_id, sort: {name: string}, required: true, identity: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: replacement_way, sort: {name: int}, required: true}
+  - {name: way0_tag, sort: {name: int}, required: true}
+  - {name: way0_permission, sort: {name: string}, required: true}
+  - {name: way0_value, sort: {name: value, width: 64}, required: true}
+  - {name: way1_tag, sort: {name: int}, required: true}
+  - {name: way1_permission, sort: {name: string}, required: true}
+  - {name: way1_value, sort: {name: value, width: 64}, required: true}
+  - {name: way2_tag, sort: {name: int}, required: true}
+  - {name: way2_permission, sort: {name: string}, required: true}
+  - {name: way2_value, sort: {name: value, width: 64}, required: true}
+  - {name: way3_tag, sort: {name: int}, required: true}
+  - {name: way3_permission, sort: {name: string}, required: true}
+  - {name: way3_value, sort: {name: value, width: 64}, required: true}
+  description: Initial contents of one four-way Small/Medium BOOM v4 DCache set.
+    This configures private tag, ClientMetadata permission, data, and replacement state;
+    it does not state whether any dynamic request hits.
+- name: DCache.PipelineS1
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields: &dcache_pipeline_fields
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: queue_kind, sort: {name: string}, required: true}
+  - {name: queue_idx, sort: {name: int}, required: true}
+  - {name: ldq_idx, sort: {name: bv, width: 6}, required: false}
+  - {name: stq_idx, sort: {name: bv, width: 6}, required: false}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: block_address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: bank, sort: {name: int}, required: true}
+  - {name: port, sort: {name: int}, required: true}
+  - {name: mem_kind, sort: {name: string}, required: true}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  description: Registered BOOM DCache s1 request after the meta/data read arbiters.
+- name: DCache.PipelineS2
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields: *dcache_pipeline_fields
+  description: Registered BOOM DCache s2 request at tag, permission, and nack decision.
+- name: DCache.ReplayS1
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields: &dcache_replay_fields
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: mshr_id, sort: {name: int}, required: true, identity: true}
+  - {name: queue_kind, sort: {name: string}, required: true}
+  - {name: queue_idx, sort: {name: int}, required: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: way_id, sort: {name: int}, required: true}
+  - {name: value, sort: {name: value, width: 64}, required: true}
+  description: The fixed-way MSHR replay after it wins the DCache meta/data read arbiters and enters s1.
+- name: DCache.ReplayS2
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields: *dcache_replay_fields
+  description: The fixed-way MSHR replay in s2; BOOM asserts that this path always hits.
+- name: DCache.TagMatch
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: way_id, sort: {name: int}, required: true}
+  - {name: permission, sort: {name: string}, required: true}
+- name: DCache.TagMiss
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+- name: DCache.StoreHit
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: stq_idx, sort: {name: bv, width: 6}, required: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: way_id, sort: {name: int}, required: true}
+  - {name: value, sort: {name: value, width: 64}, required: true}
+- name: DCache.StoreAckCause
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: path, sort: {name: string}, required: true, identity: true}
+  description: >-
+    Internal union point for the two BOOM store-ack causes: an L1 hit or an
+    accepted MSHR request.
+- name: DCache.StoreWriteCause
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: path, sort: {name: string}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true, identity: true}
+  - {name: way_id, sort: {name: int}, required: true, identity: true}
+  - {name: value, sort: {name: value, width: 64}, required: true}
+  description: Internal union point for physical s3 writes caused by either an LSU hit or an MSHR replay.
+- name: DCache.StoreDataWrite
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: way_id, sort: {name: int}, required: true}
+  - {name: value, sort: {name: value, width: 64}, required: true}
+- name: DCache.NackCause
+  module: DCache
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: port, sort: {name: int}, required: true}
+  - {name: reason, sort: {name: string}, required: true}
+- name: DCache.RequestNack
+  module: DCache
+  layer: l1-lsu-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: queue_kind, sort: {name: string}, required: true}
+  - {name: queue_idx, sort: {name: int}, required: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: port, sort: {name: int}, required: true}
+  - {name: reason, sort: {name: string}, required: true}
+- name: DCache.DataBankConflict
+  module: DCache.DataArray
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: winner_op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: victim_op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: bank, sort: {name: int}, required: true}
+  - {name: victim_port, sort: {name: int}, required: true}
+- name: MSHRFile.BlockHit
+  module: BoomMSHRFile
+  layer: mshr-l1-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: reason, sort: {name: string}, required: true}
+  description: Source-derived abstraction of mshrs.io.block_hit or secondary_miss
+    suppressing an otherwise permission-valid s2 hit.
+- name: DCache.ProbeMetaRead
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: internal
+  fields: &dcache_probe_fields
+  - {name: source_op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: probe_param, sort: {name: string}, required: true}
+  - {name: way_id, sort: {name: int}, required: false}
+- name: DCache.ProbeMetaResp
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: internal
+  fields: *dcache_probe_fields
+- name: DCache.ProbeMSHRCheck
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: internal
+  fields: *dcache_probe_fields
+- name: DCache.ProbeRetry
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: source_op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: reason, sort: {name: string}, required: true}
+- name: DCache.ProbeWriteback
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: internal
+  fields: *dcache_probe_fields
+- name: DCache.ProbeAck
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: source_op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: way_id, sort: {name: int}, required: true}
+  - {name: tag_match, sort: {name: bool}, required: true}
+  - {name: had_data, sort: {name: bool}, required: true}
+  - {name: probe_param, sort: {name: string}, required: true}
+- name: DCache.ProbeMetaWrite
+  module: DCache.ProbeUnit
+  layer: l1
+  visibility: internal
+  fields:
+  - {name: source_op_id, sort: {name: op_id}, required: true, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: true}
+  - {name: set_index, sort: {name: int}, required: true}
+  - {name: tag, sort: {name: int}, required: true}
+  - {name: way_id, sort: {name: int}, required: true}
+  - {name: new_permission, sort: {name: string}, required: true}
+- name: DCache.ConfigInit
+  module: DCache
+  layer: configuration
+  visibility: public
+  fields:
+  - {name: config_id, sort: {name: string}, required: true, identity: true}
+  - {name: lsu_width, sort: {name: int}, required: true}
+  - {name: num_banks, sort: {name: int}, required: true}
+  - {name: single_ported, sort: {name: bool}, required: true}
+  - {name: n_sets, sort: {name: int}, required: true}
+  - {name: n_ways, sort: {name: int}, required: true}
+  - {name: n_mshrs, sort: {name: int}, required: true}
+  description: Static BOOM v4 DCache geometry and width used to select source configuration branches; this is finite reset/configuration input, not a dynamic cache outcome.

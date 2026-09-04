@@ -1,0 +1,135 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-physical-store-queue-v0.9
+policy: ports-only-public-surface
+modules:
+- module: physical_store_queue
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: memory_commit
+    direction: input
+    event_type: Core.MemoryCommit
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: address_ready
+    direction: input
+    event_type: Store.AddressReady
+    required_connection: false
+  - name: data_ready
+    direction: input
+    event_type: Store.DataReady
+    required_connection: false
+  - name: layout
+    direction: input
+    event_type: Store.Layout
+    required_connection: false
+  - name: unaligned_tail_ready
+    direction: input
+    event_type: Store.UnalignedTailReady
+    required_connection: false
+  - name: forward_query
+    direction: input
+    event_type: Store.ForwardQuery
+    required_connection: false
+  - name: forward_response
+    direction: output
+    event_type: Store.ForwardResponse
+    required_connection: false
+  - name: store_drain
+    direction: output
+    event_type: Store.Drain
+    required_connection: false
+  public_event_types:
+  - Core.MemoryCommit
+  - Core.MemoryIssue
+  - Core.Redirect
+  - Store.AddressReady
+  - Store.DataReady
+  - Store.Drain
+  - Store.ForwardQuery
+  - Store.ForwardResponse
+  - Store.Layout
+  - Store.UnalignedTailReady
+  private_slot_ids:
+  - forward_candidate_0
+  - forward_candidate_1
+  - psq_address_write_0
+  - psq_address_write_1
+  - psq_allocate_0
+  - psq_allocate_1
+  - psq_cancel_0
+  - psq_cancel_1
+  - psq_commit_0
+  - psq_commit_1
+  - psq_data_write_0
+  - psq_data_write_1
+  - psq_ready_0
+  - psq_ready_1
+  private_event_types:
+  - SQ.AddressWrite
+  - SQ.Commit
+  - SQ.DataWrite
+  - SQ.DrainSelect
+  - SQ.EntryReady
+  - SQ.ForwardSelect
+  - SQ.PhysicalAllocate
+  - SQ.PhysicalCancel
+  - SQ.UnalignedSplit
+  private_state_names:
+  - Forward[LY].data_valid
+  - Forward[LY].mask
+  - Forward[LY].source
+  - Forward[LY].valid
+  - Forward[LY].value
+  - PSQ[SO].address_valid
+  - PSQ[SO].committed
+  - PSQ[SO].data_valid
+  - PSQ[SO].live
+  - PSQ[SO].ordered_done
+  - PSQ[SO].ready
+  - PSQ[SY].address_valid
+  - PSQ[SY].committed
+  - PSQ[SY].data_valid
+  - PSQ[SY].live
+  - PSQ[SY].ordered_done
+  - PSQ[SY].ready
+  private_transformation_names:
+  - every_candidate_precedes_response_0
+  - every_candidate_precedes_response_1
+  - forward_query_requires_one_response_0
+  - forwarding_fold_keeps_youngest_match_0
+  - forwarding_fold_keeps_youngest_match_1
+  - forwarding_fold_keeps_youngest_match_2
+  - forwarding_fold_keeps_youngest_match_3
+  - independent_payloads_make_entry_ready_0
+  - independent_payloads_make_entry_ready_1
+  - no_address_candidate_returns_miss_0
+  - older_overlapping_address_becomes_candidate_0
+  - older_overlapping_address_becomes_candidate_1
+  - physical_cancel_reclaims_entry_0
+  - physical_cancel_reclaims_entry_1
+  - physical_commit_respects_store_age_0
+  - physical_commit_respects_store_age_1
+  - physical_commit_respects_store_age_2
+  - physical_commit_respects_store_age_3
+  - physical_drain_respects_store_age_0
+  - physical_drain_respects_store_age_1
+  - physical_drain_respects_store_age_2
+  - physical_drain_respects_store_age_3
+  - redirect_selects_uncommitted_physical_entry_0
+  - redirect_selects_uncommitted_physical_entry_1
+  - retired_all_valid_entry_commits_psq_0
+  - retired_all_valid_entry_commits_psq_1
+  - selected_address_without_data_replays_0
+  - selected_ready_candidate_returns_data_0
+  - std_writes_physical_data_0
+  - std_writes_physical_data_1
+  - store_issue_opens_physical_entry_0
+  - store_issue_opens_physical_entry_1
+  - usable_sta_writes_physical_address_0
+  - usable_sta_writes_physical_address_1

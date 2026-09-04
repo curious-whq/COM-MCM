@@ -1,0 +1,335 @@
+schema_version: umcm.source_ledger.v0.21.0
+name: boom-v4-memory-model-v021
+status: model-integration-in-progress
+
+# This ledger is the admission gate for the rebuilt v0.21 model.  A behavior
+# may enter the executable model only when it has a pinned repository, commit,
+# file digest and source range here.  "mapped" is not the same as
+# "implemented"; the latter is recorded separately so an incomplete model
+# cannot be presented as a completed blind-search result.
+repositories:
+  boom:
+    url: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+  chipyard:
+    url: https://github.com/ucb-bar/chipyard.git
+    commit: 4180463d52bc0a6b4c004530601ccdabebf0ab7d
+  rocket_chip:
+    url: https://github.com/chipsalliance/rocket-chip.git
+    commit: 114325b27cfe5312c86a8a325b187be9455a62af
+  inclusive_cache:
+    url: https://github.com/sifive/block-inclusivecache-sifive.git
+    commit: e3a3000cc1fd4cdf3a4e638e4d081b8aae94ebf0
+
+files:
+  boom_lsu:
+    repository: boom
+    path: src/main/scala/v4/lsu/lsu.scala
+    sha256: 405dffe86cca0d5632ee75f481b6a64202691e2e169e6a5961363d20ca33a40e
+  boom_dcache:
+    repository: boom
+    path: src/main/scala/v4/lsu/dcache.scala
+    sha256: 82d5562b6d6220be5714716c6b935a001ed6fc54747b4fc925603cabbde9aac4
+  boom_mshr:
+    repository: boom
+    path: src/main/scala/v4/lsu/mshrs.scala
+    sha256: 7e70d1a095f9543ecb20c2983e925205ef473376fe7e6112173d7e8079069fcf
+  boom_tlb:
+    repository: boom
+    path: src/main/scala/v4/lsu/tlb.scala
+    sha256: 7475aac154e066826a04394c7806af73b58dca7c6b5ed5c819c610096ca8e4a9
+  boom_rob:
+    repository: boom
+    path: src/main/scala/v4/exu/rob.scala
+    sha256: 0100b66fff4bf8f2c74cb18ad954cadb89113f6255c746c2884cf71ba8202c0c
+  boom_micro_op:
+    repository: boom
+    path: src/main/scala/v4/common/micro-op.scala
+    sha256: dfe505058c27dc8b0bd6d6e123f070777d2dda54789aa5c3460c59d1b1f2b896
+  boom_config_mixins:
+    repository: boom
+    path: src/main/scala/v4/common/config-mixins.scala
+    sha256: c7008af138fb70c0a71d02f503f45f44c67547f38cd3b9ba936960990749bcd9
+  rocket_client_metadata:
+    repository: rocket_chip
+    path: src/main/scala/tilelink/Metadata.scala
+    sha256: f4af5705af968b349a7e0e4781bc99d89828eaf48f87fa2ef11ecf8891f5eea2
+  rocket_memory_op_constants:
+    repository: rocket_chip
+    path: src/main/scala/rocket/Consts.scala
+    sha256: 0b94ea38533c7cdda63cb394a9debe0b4c84e6060f037222c87ab19e4659dfb3
+  l2_directory:
+    repository: inclusive_cache
+    path: design/craft/inclusivecache/src/Directory.scala
+    sha256: 086a5835dfe36267dfa58ac0b3667de1a1138827345b0dad298292cd047171bc
+  l2_parameters:
+    repository: inclusive_cache
+    path: design/craft/inclusivecache/src/Parameters.scala
+    sha256: ec41bc84b5b5088816ce9057ecebb4883428b8b99f84621059650e03bc0af9e5
+  l2_mshr:
+    repository: inclusive_cache
+    path: design/craft/inclusivecache/src/MSHR.scala
+    sha256: 056c318d0fc4a5bd4b179179454915dfe7c3d7b81a81466831ab86bbd608f655
+  l2_source_b:
+    repository: inclusive_cache
+    path: design/craft/inclusivecache/src/SourceB.scala
+    sha256: 3ede5cafad3fa58236b472c437a35b5a763866dbb078f52bb4475d4572fe548f
+  l2_sink_c:
+    repository: inclusive_cache
+    path: design/craft/inclusivecache/src/SinkC.scala
+    sha256: 6beed9bc63ccff79ceca09c4f0b508042a89dfdaf12edb865c841ebc446e7b8e
+  l2_sink_e:
+    repository: inclusive_cache
+    path: design/craft/inclusivecache/src/SinkE.scala
+    sha256: caf2ccd5ae0faae52d8ca2bc49efd3190e6d2656b8ba3fffc6cfa1167ca277a2
+  l2_source_d:
+    repository: inclusive_cache
+    path: design/craft/inclusivecache/src/SourceD.scala
+    sha256: bf864157fe3592fd98e2914a445e31d9213370920833f8291137261b86889801
+
+behaviors:
+  - id: lsu.queue-allocation
+    component: LSU
+    source: {file: boom_lsu, lines: [340, 425]}
+    implementation: examples/boom/composition/lsq_source_v021.yaml
+    status: executable-bounded
+    bounded_assumption: empty LDQ/STQ tails at zero and fewer operations than queue capacity
+  - id: lsu.translation-retry
+    component: LSU
+    source: {file: boom_lsu, lines: [506, 547]}
+    implementation: examples/boom/model/core/lsu_translation.yaml
+    status: executable-source-derived
+  - id: lsu.resource-arbitration
+    component: LSU
+    source: {file: boom_lsu, lines: [576, 703]}
+    implementation: examples/boom/model/lsu/port_scheduler_v021.yaml
+    status: executable-source-derived
+  - id: lsu.dcache-request-mux
+    component: LSU
+    source: {file: boom_lsu, lines: [872, 960]}
+    implementation: examples/boom/model/lsu/dcache_issue_v021.yaml
+    status: executable-source-derived
+  - id: lsu.tlb-request-and-result
+    component: LSU
+    source: {file: boom_lsu, lines: [705, 905]}
+    implementation: examples/boom/model/core/lsu_translation.yaml
+    status: executable-source-derived
+  - id: lsu.address-state-after-translation
+    component: LSU
+    source: {file: boom_lsu, lines: [960, 986]}
+    implementation: examples/boom/model/lsu/lsq_runtime_v021.yaml
+    status: executable-source-derived
+  - id: lsu.load-load-order-check
+    component: LSU
+    source: {file: boom_lsu, lines: [1240, 1330]}
+    implementation: examples/boom/model/lsu/lsq_runtime_v021.yaml
+    status: executable-source-derived
+  - id: lsu.dcache-nack-and-response
+    component: LSU
+    source: {file: boom_lsu, lines: [1535, 1600]}
+    implementation: examples/boom/model/lsu/lsq_runtime_v021.yaml
+    status: executable-source-derived
+  - id: lsu.ordinary-store-lifecycle
+    component: LSU
+    source:
+      - {file: boom_lsu, lines: [367, 435]}
+      - {file: boom_lsu, lines: [506, 570]}
+      - {file: boom_lsu, lines: [872, 924]}
+      - {file: boom_lsu, lines: [1091, 1122]}
+      - {file: boom_lsu, lines: [1535, 1548]}
+      - {file: boom_lsu, lines: [1594, 1600]}
+      - {file: boom_lsu, lines: [1718, 1810]}
+    implementation: examples/boom/model/lsu/store_runtime_v021.yaml
+    status: executable-bounded
+    bounded_assumption: at most one DCache nack and two drain attempts; execute-queue rewind, re-enqueue and the second exact scheduler decision are executable, while the second DCache/L1 request pipeline remains part of the default-composition blocker
+  - id: lsu.branch-kill-and-dequeue
+    component: LSU
+    source: {file: boom_lsu, lines: [1718, 1785]}
+    implementation: examples/boom/model/lsu/module.yaml
+    status: executable-bounded
+
+  - id: dcache.probe-fsm
+    component: L1D
+    source: {file: boom_dcache, lines: [145, 265]}
+    implementation: examples/boom/model/l1/generic_v021.yaml
+    status: executable-source-derived
+    bounded_assumption: line-granular ProbeUnit handshakes; arbitrary ready stalls are represented as stutter
+  - id: dcache.request-pipeline
+    component: L1D
+    source: {file: boom_dcache, lines: [612, 687]}
+    implementation: examples/boom/model/l1/generic_v021.yaml
+    status: executable-source-derived
+  - id: dcache.hit-miss-nack
+    component: L1D
+    source: {file: boom_dcache, lines: [683, 817]}
+    implementation: examples/boom/model/l1/generic_v021.yaml
+    status: executable-bounded
+    bounded_assumption: four-way, line-granular cache state; five source nack causes and MSHR readiness are public-interface inputs
+  - id: dcache.data-arrays-and-store-bypass
+    component: L1D
+    source:
+      - {file: boom_dcache, lines: [281, 398]}
+      - {file: boom_dcache, lines: [894, 938]}
+    implementation: examples/boom/model/l1/generic_v021.yaml
+    status: executable-bounded
+    bounded_assumption: ECC and byte lanes are collapsed to one value per modeled line; the s3/s4/s5 bypass is represented by early ghost-word availability plus the timed s3 physical write event
+  - id: dcache.tilelink-wiring
+    component: L1D
+    source: {file: boom_dcache, lines: [818, 865]}
+    implementation: examples/boom/model/mshr/tilelink_wiring_v021.yaml
+    status: executable-source-derived
+  - id: dcache.response-ports
+    component: L1D
+    source: {file: boom_dcache, lines: [867, 892]}
+    implementation: examples/boom/model/l1/generic_v021.yaml
+    status: executable-source-derived
+
+  - id: mshr.state-machine
+    component: MSHR
+    source: {file: boom_mshr, lines: [96, 285]}
+    implementation: examples/boom/model/mshr/module.yaml
+    status: executable-source-derived
+  - id: mshr.rpq-grantack-refill-hazards
+    component: MSHR
+    source: {file: boom_mshr, lines: [128, 148]}
+    implementation: examples/boom/model/mshr/module.yaml
+    status: executable-bounded
+  - id: mshr.store-sdq-rpq-replay
+    component: MSHR
+    source:
+      - {file: boom_mshr, lines: [128, 135]}
+      - {file: boom_mshr, lines: [241, 265]}
+      - {file: boom_mshr, lines: [316, 365]}
+      - {file: boom_mshr, lines: [732, 741]}
+      - {file: boom_dcache, lines: [526, 544]}
+      - {file: boom_dcache, lines: [687, 691]}
+      - {file: boom_dcache, lines: [773, 779]}
+      - {file: boom_dcache, lines: [888, 938]}
+    implementation: examples/boom/model/mshr/fixed_entry_datapath_v021.yaml
+    status: executable-bounded
+    bounded_assumption: line refill beats are collapsed to one value; the two-entry primary store path preserves MSHR-accept acknowledgement, SDQ value, fixed-way replay, dirty metadata and A/D/E ordering
+  - id: mshr.primary-secondary-allocation
+    component: MSHR
+    source:
+      - {file: boom_config_mixins, lines: [105, 135]}
+      - {file: boom_mshr, lines: [535, 540]}
+      - {file: boom_mshr, lines: [571, 678]}
+      - {file: boom_mshr, lines: [726, 730]}
+      - {file: rocket_client_metadata, lines: [98, 110]}
+      - {file: rocket_memory_op_constants, lines: [80, 86]}
+    implementation: examples/boom/model/mshr/file_allocator_v021.yaml
+    status: executable-bounded
+    bounded_assumption: Small/Medium BOOM two-entry MSHR configuration; request bit slicing is exposed as typed DCache boundary fields
+  - id: mshr.tilelink-ports
+    component: MSHR
+    source: {file: boom_mshr, lines: [682, 724]}
+    implementation: examples/boom/composition/mshr_tilelink_source_v021.yaml
+    status: executable-bounded
+    bounded_assumption: line-granular TileLink messages; refill beats are summarized
+
+  - id: tlb.lookup-permissions
+    component: NBDTLB
+    source: {file: boom_tlb, lines: [174, 319]}
+    implementation: examples/boom/model/core/tlb.yaml
+    status: executable-bounded
+  - id: tlb.ptw-refill-sfence
+    component: NBDTLB
+    source: {file: boom_tlb, lines: [321, 364]}
+    implementation: examples/boom/model/core/tlb.yaml
+    status: executable-source-derived
+
+  - id: rob.allocate-writeback
+    component: ROB
+    source: {file: boom_rob, lines: [371, 429]}
+    implementation: examples/boom/model/core/rob.yaml
+    status: executable-bounded
+  - id: rob.exception-and-inorder-commit
+    component: ROB
+    source: {file: boom_rob, lines: [432, 480]}
+    implementation: examples/boom/model/core/rob.yaml
+    status: executable-source-derived
+  - id: rob.oldest-exception
+    component: ROB
+    source: {file: boom_rob, lines: [657, 705]}
+    implementation: examples/boom/model/core/rob.yaml
+    status: executable-bounded
+  - id: rob.head-tail-recovery
+    component: ROB
+    source: {file: boom_rob, lines: [708, 802]}
+    implementation: examples/boom/model/core/rob.yaml
+    status: executable-bounded
+
+  - id: l2.directory-entry-and-lookup
+    component: InclusiveL2
+    source: {file: l2_directory, lines: [27, 139]}
+    implementation: examples/boom/model/coherence/inclusive_l2.yaml
+    status: executable-bounded
+  - id: l2.permission-states
+    component: InclusiveL2
+    source: {file: l2_parameters, lines: [255, 283]}
+    implementation: examples/boom/model/coherence/inclusive_l2.yaml
+    status: executable-source-derived
+  - id: l2.mshr-plan-and-transitions
+    component: InclusiveL2
+    source: {file: l2_mshr, lines: [99, 641]}
+    implementation: examples/boom/model/coherence/inclusive_l2.yaml
+    status: executable-bounded
+  - id: l2.b-c-d-e-channels
+    component: InclusiveL2
+    source:
+      - {file: l2_source_b, lines: [24, 80]}
+      - {file: l2_sink_c, lines: [24, 160]}
+      - {file: l2_source_d, lines: [47, 241]}
+      - {file: l2_sink_e, lines: [23, 46]}
+    implementation: examples/boom/model/coherence/inclusive_l2.yaml
+    status: executable-bounded
+
+  - id: integration.lsu-scheduler-to-l1
+    component: Integration
+    source:
+      - {file: boom_lsu, lines: [644, 703]}
+      - {file: boom_lsu, lines: [872, 960]}
+      - {file: boom_dcache, lines: [612, 817]}
+    implementation: examples/boom/composition/lsu_l1_source_v021.yaml
+    status: executable-bounded
+    bounded_assumption: targeted LSU-local can-fire and issue-payload frame; L1 hit/miss is state-derived
+  - id: integration.mshr-file-entry-readiness
+    component: Integration
+    source:
+      - {file: boom_mshr, lines: [96, 285]}
+      - {file: boom_mshr, lines: [535, 678]}
+      - {file: boom_mshr, lines: [726, 741]}
+    implementation: examples/boom/composition/mshr_entry_frontend_source_v021.yaml
+    status: executable-bounded
+    bounded_assumption: Small/Medium BOOM two-entry pool; at most four blind-search memory operations, below nRPQ=16 and nSDQ=17 capacity, with request lifetime represented explicitly
+  - id: integration.default-detailed-memory-composition
+    component: Integration
+    source:
+      - {file: boom_lsu, lines: [576, 960]}
+      - {file: boom_dcache, lines: [508, 892]}
+      - {file: boom_mshr, lines: [535, 730]}
+      - {file: l2_mshr, lines: [99, 641]}
+    implementation: examples/boom/composition/tlb_lsu_l1_source_v021.yaml
+    status: needs-rework
+    reason: ordinary loads and stores now run from instruction through NBDTLB, source scheduler, LDQ/STQ runtime and generalized L1; cold misses select an MSHR internally and traverse InclusiveL2, refill, load response or store SDQ/RPQ replay, ROB and retirement. A store nack now rewinds/re-enqueues the execute queue and reaches a second exact scheduler/drain decision, but the second DCache/L1 attempt, separate per-hart L1 instances, the full generated ProbeAckData bridge, and the search-engine reset-state adapter are not yet complete enough for default blind-search realization
+
+acceptance:
+  required_components: [LSU, L1D, MSHR, NBDTLB, ROB, InclusiveL2]
+  forbidden_default_module_prefixes:
+    - examples/boom/model/search/
+  forbidden_query_tokens:
+    - ldq_idx
+    - stq_idx
+    - mshr_id
+    - TLBMiss
+    - TLBHit
+    - L1Hit
+    - L1Miss
+    - Probe
+    - Grant
+    - Acquire
+    - expected_result
+  completion_rule: >-
+    v0.21 may be marked complete only when every behavior is executable,
+    no behavior remains missing or needs-rework, the default composition uses
+    no model/search module, and the public input contains no forbidden token.

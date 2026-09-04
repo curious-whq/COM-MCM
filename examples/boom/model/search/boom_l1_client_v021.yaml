@@ -1,0 +1,1005 @@
+schema_version: umcm.module.v0.15.0
+name: boom_l1_coherence_client_v021
+metadata:
+  version: 0.21.0
+  source: BOOM v4 non-blocking DCache TileLink client
+  source_commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+  chipyard_commit: 4180463d52bc0a6b4c004530601ccdabebf0ab7d
+  source_files:
+  - src/main/scala/v4/lsu/dcache.scala:24-212,818-860
+  - src/main/scala/v4/lsu/mshrs.scala:106-199,242-259,361-365,513-718
+  source_sha256:
+    dcache.scala: 82d5562b6d6220be5714716c6b935a001ed6fc54747b4fc925603cabbde9aac4
+    mshrs.scala: 7e70d1a095f9543ecb20c2983e925205ef473376fe7e6112173d7e8079069fcf
+  scope: Two-hart, line-granular L1 permission/data client for inner TileLink A/B/C/D/E transactions.
+  abstractions:
+  - Cache pipeline and arrays are summarized by per-hart line permission, value, version, source, and dirty state.
+  - Multi-beat messages are one atomic line event.
+  - Access and eviction are high-level root requests; hit/miss, Acquire grow, ProbeAckData, and GrantAck are derived.
+  hierarchy: Client line state and path selection are private; only declared root and TileLink/coherence events are public.
+ports:
+- {name: line_init, direction: input, event_type: Coherence.LineInit, required_connection: false}
+- {name: access, direction: input, event_type: Coherence.Access, required_connection: false}
+- {name: evict, direction: input, event_type: Coherence.Evict, required_connection: false}
+- {name: acquire, direction: output, event_type: TL.Acquire}
+- {name: probe, direction: input, event_type: TL.Probe}
+- {name: probe_ack, direction: output, event_type: TL.ProbeAck}
+- {name: grant, direction: input, event_type: TL.Grant}
+- {name: grant_ack, direction: output, event_type: TL.GrantAck}
+- {name: release, direction: output, event_type: TL.Release}
+- {name: release_ack, direction: input, event_type: TL.ReleaseAck}
+- {name: load_result, direction: output, event_type: Coherence.LoadResult, required_connection: false}
+- {name: store_performed, direction: output, event_type: Coherence.StorePerformed, required_connection: false}
+- {name: access_complete, direction: output, event_type: Coherence.AccessComplete, required_connection: false}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: lines
+  as: line
+  include:
+    state_variables:
+    - {name: "L1.h0.line[${line.line_id}].perm", sort: {name: string}, initial: "${line.h0_perm}"}
+    - {name: "L1.h0.line[${line.line_id}].dirty", sort: {name: bool}, initial: false}
+    - {name: "L1.h0.line[${line.line_id}].value", sort: {name: value, width: 64}, initial: "${line.value}"}
+    - {name: "L1.h0.line[${line.line_id}].version", sort: {name: int}, initial: "${line.version}"}
+    - {name: "L1.h0.line[${line.line_id}].source", sort: {name: op_id}, initial: "${line.source_op_id}"}
+    - {name: "L1.h1.line[${line.line_id}].perm", sort: {name: string}, initial: "${line.h1_perm}"}
+    - {name: "L1.h1.line[${line.line_id}].dirty", sort: {name: bool}, initial: false}
+    - {name: "L1.h1.line[${line.line_id}].value", sort: {name: value, width: 64}, initial: "${line.value}"}
+    - {name: "L1.h1.line[${line.line_id}].version", sort: {name: int}, initial: "${line.version}"}
+    - {name: "L1.h1.line[${line.line_id}].source", sort: {name: op_id}, initial: "${line.source_op_id}"}
+
+- over: accesses
+  as: access
+  include:
+    slots:
+    - id: l1_acquire_${access.repeat_index}
+      type: TL.Acquire
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        source_id: ${access.repeat_index}
+        hart: ${access.hart}
+        line_id: ${access.line_id}
+        address: ${access.address}
+        grow: {$expr: {node: symbol, name: "l1::${access.op_id}::grow", sort: {name: string}}}
+        need_data: {$expr: {node: symbol, name: "l1::${access.op_id}::need_data", sort: {name: bool}}}
+    - id: l1_load_result_${access.repeat_index}
+      type: Coherence.LoadResult
+      required: false
+      fields:
+        op_id: ${access.op_id}
+        hart: ${access.hart}
+        line_id: ${access.line_id}
+        address: ${access.address}
+        value: {$expr: {node: symbol, name: "l1::${access.op_id}::load_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l1::${access.op_id}::load_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l1::${access.op_id}::load_source", sort: {name: op_id}}}
+        path: {$expr: {node: symbol, name: "l1::${access.op_id}::load_path", sort: {name: string}}}
+    - id: l1_store_performed_${access.repeat_index}
+      type: Coherence.StorePerformed
+      required: false
+      fields:
+        op_id: ${access.op_id}
+        hart: ${access.hart}
+        line_id: ${access.line_id}
+        address: ${access.address}
+        value: ${access.write_value}
+        version: {$expr: {node: symbol, name: "l1::${access.op_id}::store_version", sort: {name: int}}}
+        source_op_id: ${access.op_id}
+        path: {$expr: {node: symbol, name: "l1::${access.op_id}::store_path", sort: {name: string}}}
+    - id: l1_access_complete_${access.repeat_index}
+      type: Coherence.AccessComplete
+      required: false
+      fields: {op_id: "${access.op_id}", hart: "${access.hart}", program_index: "${access.program_index}", mem_kind: "${access.mem_kind}"}
+    - id: l1_grant_ack_${access.repeat_index}
+      type: TL.GrantAck
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        hart: ${access.hart}
+        sink_id: {$expr: {node: symbol, name: "l1::${access.op_id}::sink", sort: {name: int}}}
+    - id: l1_probe_ack_${access.repeat_index}_h0
+      type: TL.ProbeAck
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        hart: 0
+        line_id: ${access.line_id}
+        address: ${access.address}
+        cap: {$expr: {node: symbol, name: "l1::${access.op_id}::h0::probe_cap", sort: {name: string}}}
+        has_data: {$expr: {node: symbol, name: "l1::${access.op_id}::h0::probe_data", sort: {name: bool}}}
+        value: {$expr: {node: symbol, name: "l1::${access.op_id}::h0::probe_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l1::${access.op_id}::h0::probe_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l1::${access.op_id}::h0::probe_source", sort: {name: op_id}}}
+    - id: l1_probe_ack_${access.repeat_index}_h1
+      type: TL.ProbeAck
+      required: false
+      fields:
+        txn_id: ${access.op_id}
+        hart: 1
+        line_id: ${access.line_id}
+        address: ${access.address}
+        cap: {$expr: {node: symbol, name: "l1::${access.op_id}::h1::probe_cap", sort: {name: string}}}
+        has_data: {$expr: {node: symbol, name: "l1::${access.op_id}::h1::probe_data", sort: {name: bool}}}
+        value: {$expr: {node: symbol, name: "l1::${access.op_id}::h1::probe_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l1::${access.op_id}::h1::probe_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l1::${access.op_id}::h1::probe_source", sort: {name: op_id}}}
+
+- over: evictions
+  as: eviction
+  include:
+    slots:
+    - id: l1_release_${eviction.repeat_index}
+      type: TL.Release
+      required: false
+      fields:
+        txn_id: ${eviction.txn_id}
+        hart: ${eviction.hart}
+        line_id: ${eviction.line_id}
+        address: ${eviction.address}
+        shrink: {$expr: {node: symbol, name: "l1::${eviction.txn_id}::shrink", sort: {name: string}}}
+        has_data: {$expr: {node: symbol, name: "l1::${eviction.txn_id}::release_data", sort: {name: bool}}}
+        value: {$expr: {node: symbol, name: "l1::${eviction.txn_id}::release_value", sort: {name: value, width: 64}}}
+        version: {$expr: {node: symbol, name: "l1::${eviction.txn_id}::release_version", sort: {name: int}}}
+        source_op_id: {$expr: {node: symbol, name: "l1::${eviction.txn_id}::release_source", sort: {name: op_id}}}
+
+repeat_product:
+- axes:
+  - {over: accesses, as: access}
+  - {over: lines, as: line}
+  include:
+    transformations:
+    - name: load_access_must_complete_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: result, type: Coherence.LoadResult}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      - node: nary
+        op: or
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: refill}}
+    - name: store_access_must_complete_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: store, type: Coherence.StorePerformed}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: store, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: store, field: cycle, sort: {name: int}}}
+      - node: nary
+        op: or
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: refill}}
+
+    - name: load_hit_h0_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: result, type: Coherence.LoadResult}]
+      when: &load_h0
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: access, op: ne, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L1.h0.line[${line.line_id}].value", at: result, op: eq, value: {node: event_field, event_id: result, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h0.line[${line.line_id}].version", at: result, op: eq, value: {node: event_field, event_id: result, field: version, sort: {name: int}}}
+      - {state: "L1.h0.line[${line.line_id}].source", at: result, op: eq, value: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: load_hit_h1_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: result, type: Coherence.LoadResult}]
+      when: &load_h1
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: access, op: ne, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L1.h1.line[${line.line_id}].value", at: result, op: eq, value: {node: event_field, event_id: result, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h1.line[${line.line_id}].version", at: result, op: eq, value: {node: event_field, event_id: result, field: version, sort: {name: int}}}
+      - {state: "L1.h1.line[${line.line_id}].source", at: result, op: eq, value: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+
+    - name: load_refill_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}, {role: grant, type: TL.Grant}]
+      outputs: [{role: result, type: Coherence.LoadResult}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}}
+        - {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: refill}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: version, sort: {name: int}}, right: {node: event_field, event_id: grant, field: version, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      exact: true
+
+    - name: store_hit_h0_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: store, type: Coherence.StorePerformed}]
+      when: &store_h0
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: access, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      state_mode: guard
+      exact: true
+    - name: store_hit_h1_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: store, type: Coherence.StorePerformed}]
+      when: &store_h1
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: access, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      state_mode: guard
+      exact: true
+    - name: store_refill_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}, {role: grant, type: TL.Grant}]
+      outputs: [{role: store, type: Coherence.StorePerformed}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: T}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: refill}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: store, field: cycle, sort: {name: int}}}
+      exact: true
+
+    - name: load_miss_acquire_h0_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *load_h0
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+      ensure:
+      - {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: acquire, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      state_mode: guard
+      exact: true
+    - name: load_miss_acquire_h1_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *load_h1
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+      ensure:
+      - {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: acquire, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      state_mode: guard
+      exact: true
+    - name: store_from_n_h0_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *store_h0
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoT}}
+      ensure:
+      - {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: acquire, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      state_mode: guard
+      exact: true
+    - name: store_from_b_h0_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *store_h0
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: BtoT}}
+      ensure:
+      - {node: unary, op: not, operand: {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: acquire, op: eq, value: {node: literal, sort: {name: string}, value: B}}
+      state_mode: guard
+      exact: true
+    - name: store_from_n_h1_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *store_h1
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoT}}
+      ensure:
+      - {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: acquire, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      state_mode: guard
+      exact: true
+    - name: store_from_b_h1_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when: *store_h1
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: BtoT}}
+      ensure:
+      - {node: unary, op: not, operand: {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: acquire, op: eq, value: {node: literal, sort: {name: string}, value: B}}
+      state_mode: guard
+      exact: true
+
+    - name: acquire_has_one_architectural_source_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: literal, sort: {name: bool}, value: false}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: event_field, event_id: access, field: hart, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: line_id, sort: {name: string}}, right: {node: event_field, event_id: access, field: line_id, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}
+      - node: nary
+        op: or
+        operands:
+        - node: nary
+          op: and
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoB}}
+          - {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}
+        - node: nary
+          op: and
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: NtoT}}
+          - {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}
+        - node: nary
+          op: and
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: grow, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: BtoT}}
+          - {node: unary, op: not, operand: {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}}
+      exact: false
+
+    - name: load_without_permission_must_acquire_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: event_field, event_id: access, field: hart, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: line_id, sort: {name: string}}, right: {node: event_field, event_id: access, field: line_id, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h${access.hart}.line[${line.line_id}].perm", at: access, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      state_mode: guard
+      tags: [l1, miss, acquire-obligation]
+
+    - name: load_acquire_requires_no_permission_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}, {role: acquire, type: TL.Acquire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      state_requirements:
+      - {state: "L1.h${access.hart}.line[${line.line_id}].perm", at: access, op: eq, value: {node: literal, sort: {name: string}, value: N}}
+      tags: [l1, acquire-legality]
+
+    - name: store_without_trunk_must_acquire_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}]
+      outputs: [{role: acquire, type: TL.Acquire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}, right: {node: event_field, event_id: access, field: hart, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: line_id, sort: {name: string}}, right: {node: event_field, event_id: access, field: line_id, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h${access.hart}.line[${line.line_id}].perm", at: access, op: ne, value: {node: literal, sort: {name: string}, value: T}}
+      state_mode: guard
+      tags: [l1, upgrade, acquire-obligation]
+
+    - name: store_acquire_requires_less_than_trunk_${product.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}, {role: acquire, type: TL.Acquire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      state_requirements:
+      - {state: "L1.h${access.hart}.line[${line.line_id}].perm", at: access, op: ne, value: {node: literal, sort: {name: string}, value: T}}
+      tags: [l1, acquire-legality]
+
+    - name: install_grant_data_h0_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}
+      state_updates:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: grant, value: {node: event_field, event_id: grant, field: cap, sort: {name: string}}}
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: grant, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L1.h0.line[${line.line_id}].value", at: grant, value: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h0.line[${line.line_id}].version", at: grant, value: {node: event_field, event_id: grant, field: version, sort: {name: int}}}
+      - {state: "L1.h0.line[${line.line_id}].source", at: grant, value: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+    - name: install_grant_nodata_h0_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}}
+      state_updates:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: grant, value: {node: event_field, event_id: grant, field: cap, sort: {name: string}}}
+    - name: install_grant_data_h1_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}
+      state_updates:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: grant, value: {node: event_field, event_id: grant, field: cap, sort: {name: string}}}
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: grant, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L1.h1.line[${line.line_id}].value", at: grant, value: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h1.line[${line.line_id}].version", at: grant, value: {node: event_field, event_id: grant, field: version, sort: {name: int}}}
+      - {state: "L1.h1.line[${line.line_id}].source", at: grant, value: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+    - name: install_grant_nodata_h1_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}}
+      state_updates:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: grant, value: {node: event_field, event_id: grant, field: cap, sort: {name: string}}}
+
+    - name: grant_ack_${product.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}]
+      outputs: [{role: ack, type: TL.GrantAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: sink_id, sort: {name: int}}, right: {node: event_field, event_id: grant, field: sink_id, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: event_field, event_id: grant, field: hart, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      exact: true
+
+    - name: store_updates_h0_${product.repeat_index}
+      inputs: [{role: store, type: Coherence.StorePerformed}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: store, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      - state: "L1.h0.line[${line.line_id}].version"
+        at: store
+        op: eq
+        value: {node: binary, op: sub, left: {node: event_field, event_id: store, field: version, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_updates:
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: store, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L1.h0.line[${line.line_id}].value", at: store, value: {node: event_field, event_id: store, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h0.line[${line.line_id}].version", at: store, value: {node: event_field, event_id: store, field: version, sort: {name: int}}}
+      - {state: "L1.h0.line[${line.line_id}].source", at: store, value: {node: event_field, event_id: store, field: source_op_id, sort: {name: op_id}}}
+    - name: store_updates_h1_${product.repeat_index}
+      inputs: [{role: store, type: Coherence.StorePerformed}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: store, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      - state: "L1.h1.line[${line.line_id}].version"
+        at: store
+        op: eq
+        value: {node: binary, op: sub, left: {node: event_field, event_id: store, field: version, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_updates:
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: store, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L1.h1.line[${line.line_id}].value", at: store, value: {node: event_field, event_id: store, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h1.line[${line.line_id}].version", at: store, value: {node: event_field, event_id: store, field: version, sort: {name: int}}}
+      - {state: "L1.h1.line[${line.line_id}].source", at: store, value: {node: event_field, event_id: store, field: source_op_id, sort: {name: op_id}}}
+
+    - name: probe_ack_dirty_h0_${product.repeat_index}
+      inputs: [{role: probe, type: TL.Probe}]
+      outputs: [{role: ack, type: TL.ProbeAck}]
+      when: &probe_h0
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: cap, sort: {name: string}}, right: {node: event_field, event_id: probe, field: cap, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L1.h0.line[${line.line_id}].value", at: ack, op: eq, value: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h0.line[${line.line_id}].version", at: ack, op: eq, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {state: "L1.h0.line[${line.line_id}].source", at: ack, op: eq, value: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: probe_ack_clean_h0_${product.repeat_index}
+      inputs: [{role: probe, type: TL.Probe}]
+      outputs: [{role: ack, type: TL.ProbeAck}]
+      when: *probe_h0
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: cap, sort: {name: string}}, right: {node: event_field, event_id: probe, field: cap, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L1.h0.line[${line.line_id}].value", at: ack, op: eq, value: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h0.line[${line.line_id}].version", at: ack, op: eq, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {state: "L1.h0.line[${line.line_id}].source", at: ack, op: eq, value: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: probe_ack_dirty_h1_${product.repeat_index}
+      inputs: [{role: probe, type: TL.Probe}]
+      outputs: [{role: ack, type: TL.ProbeAck}]
+      when: &probe_h1
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: cap, sort: {name: string}}, right: {node: event_field, event_id: probe, field: cap, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L1.h1.line[${line.line_id}].value", at: ack, op: eq, value: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h1.line[${line.line_id}].version", at: ack, op: eq, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {state: "L1.h1.line[${line.line_id}].source", at: ack, op: eq, value: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: probe_ack_clean_h1_${product.repeat_index}
+      inputs: [{role: probe, type: TL.Probe}]
+      outputs: [{role: ack, type: TL.ProbeAck}]
+      when: *probe_h1
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: ack, field: has_data, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: cap, sort: {name: string}}, right: {node: event_field, event_id: probe, field: cap, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: ack, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L1.h1.line[${line.line_id}].value", at: ack, op: eq, value: {node: event_field, event_id: ack, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h1.line[${line.line_id}].version", at: ack, op: eq, value: {node: event_field, event_id: ack, field: version, sort: {name: int}}}
+      - {state: "L1.h1.line[${line.line_id}].source", at: ack, op: eq, value: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: consume_probe_ack_h0_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ProbeAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      state_updates:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: ack, value: {node: event_field, event_id: ack, field: cap, sort: {name: string}}}
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: ack, value: {node: literal, sort: {name: bool}, value: false}}
+    - name: consume_probe_ack_h1_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ProbeAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_updates:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: ack, value: {node: event_field, event_id: ack, field: cap, sort: {name: string}}}
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: ack, value: {node: literal, sort: {name: bool}, value: false}}
+
+    - name: load_completes_${product.repeat_index}
+      inputs: [{role: result, type: Coherence.LoadResult}]
+      outputs: [{role: complete, type: Coherence.AccessComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+    - name: store_completes_${product.repeat_index}
+      inputs: [{role: store, type: Coherence.StorePerformed}]
+      outputs: [{role: complete, type: Coherence.AccessComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: store, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: store, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+
+- axes:
+  - {over: evictions, as: eviction}
+  - {over: lines, as: line}
+  include:
+    transformations:
+    - name: eviction_must_issue_release_${product.repeat_index}
+      inputs: [{role: evict, type: Coherence.Evict}]
+      outputs: [{role: release, type: TL.Release}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: event_field, event_id: evict, field: hart, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: line_id, sort: {name: string}}, right: {node: event_field, event_id: evict, field: line_id, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: evict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      - node: nary
+        op: or
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: shrink, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: TtoN}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: shrink, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: BtoN}}
+      exact: true
+
+    - name: release_dirty_h0_${product.repeat_index}
+      inputs: [{role: evict, type: Coherence.Evict}]
+      outputs: [{role: release, type: TL.Release}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: release, field: has_data, sort: {name: bool}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: shrink, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: TtoN}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: evict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: release, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L1.h0.line[${line.line_id}].value", at: release, op: eq, value: {node: event_field, event_id: release, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h0.line[${line.line_id}].version", at: release, op: eq, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      - {state: "L1.h0.line[${line.line_id}].source", at: release, op: eq, value: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: release_clean_h0_${product.repeat_index}
+      inputs: [{role: evict, type: Coherence.Evict}]
+      outputs: [{role: release, type: TL.Release}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: release, field: has_data, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: evict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: release, op: ne, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L1.h0.line[${line.line_id}].value", at: release, op: eq, value: {node: event_field, event_id: release, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h0.line[${line.line_id}].version", at: release, op: eq, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      - {state: "L1.h0.line[${line.line_id}].source", at: release, op: eq, value: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: release_dirty_h1_${product.repeat_index}
+      inputs: [{role: evict, type: Coherence.Evict}]
+      outputs: [{role: release, type: TL.Release}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: event_field, event_id: release, field: has_data, sort: {name: bool}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: shrink, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: TtoN}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: evict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: release, op: eq, value: {node: literal, sort: {name: string}, value: T}}
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "L1.h1.line[${line.line_id}].value", at: release, op: eq, value: {node: event_field, event_id: release, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h1.line[${line.line_id}].version", at: release, op: eq, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      - {state: "L1.h1.line[${line.line_id}].source", at: release, op: eq, value: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+    - name: release_clean_h1_${product.repeat_index}
+      inputs: [{role: evict, type: Coherence.Evict}]
+      outputs: [{role: release, type: TL.Release}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: release, field: has_data, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: evict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: release, op: ne, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "L1.h1.line[${line.line_id}].value", at: release, op: eq, value: {node: event_field, event_id: release, field: value, sort: {name: value, width: 64}}}
+      - {state: "L1.h1.line[${line.line_id}].version", at: release, op: eq, value: {node: event_field, event_id: release, field: version, sort: {name: int}}}
+      - {state: "L1.h1.line[${line.line_id}].source", at: release, op: eq, value: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}}
+      state_mode: guard
+      exact: true
+
+    - name: release_ack_clears_h0_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      state_updates:
+      - {state: "L1.h0.line[${line.line_id}].perm", at: ack, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L1.h0.line[${line.line_id}].dirty", at: ack, value: {node: literal, sort: {name: bool}, value: false}}
+    - name: release_ack_clears_h1_${product.repeat_index}
+      inputs: [{role: ack, type: TL.ReleaseAck}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: line_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${line.line_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_updates:
+      - {state: "L1.h1.line[${line.line_id}].perm", at: ack, value: {node: literal, sort: {name: string}, value: N}}
+      - {state: "L1.h1.line[${line.line_id}].dirty", at: ack, value: {node: literal, sort: {name: bool}, value: false}}
+
+- axes:
+  - {over: accesses, as: before}
+  - {over: accesses, as: after}
+  include:
+    transformations:
+    - name: explicit_access_dependency_${product.repeat_index}
+      inputs: [{role: complete, type: Coherence.AccessComplete}, {role: access, type: Coherence.Access}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${before.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${after.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: after_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: access, field: cycle, sort: {name: int}}}
+
+- axes:
+  - {over: accesses, as: access}
+  - {over: evictions, as: eviction}
+  include:
+    transformations:
+    - name: explicit_eviction_dependency_${product.repeat_index}
+      inputs: [{role: complete, type: Coherence.AccessComplete}, {role: evict, type: Coherence.Evict}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${eviction.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: evict, field: after_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: evict, field: cycle, sort: {name: int}}}

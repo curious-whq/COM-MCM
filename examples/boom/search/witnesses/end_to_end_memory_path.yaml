@@ -1,0 +1,1698 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  generated_by: umcm.search.hierarchical_merge_v021
+  child_witnesses: 2
+  input_contract: all dynamic interface events originate in a solved child model
+events:
+- id: blind_arch_init_0_InitX
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitX
+    address: x
+    value: 0
+  cycle: 0
+- id: blind_line_0_InitX
+  type: Coherence.LineInit
+  occurs: true
+  fields:
+    line_id: x
+    address: x
+    value: 0
+    version: 0
+    source_op_id: InitX
+    h0_perm: B
+    h1_perm: N
+    l2_state: BRANCH
+    owner: -1
+  cycle: 0
+- id: blind_page_0_h0_x
+  type: Core.PageMap
+  occurs: true
+  fields:
+    map_id: MapH0A0
+    hart: 0
+    entry_id: h0_a0
+    vpn: 0
+    paddr: x
+    initial_valid: false
+    accessible: true
+  cycle: 0
+- id: blind_page_1_h1_x
+  type: Core.PageMap
+  occurs: true
+  fields:
+    map_id: MapH1A0
+    hart: 1
+    entry_id: h1_a0
+    vpn: 0
+    paddr: x
+    initial_valid: true
+    accessible: true
+  cycle: 0
+- id: blind_instruction_0_L0
+  type: Core.MemoryInstruction
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    vaddr: x
+    address: x
+    vpn: 0
+    value: 1
+    write_value: 0
+    byte_mask: 255
+    cacheable: true
+    io_id: -1
+    reservation_id: NONE
+    uses_tlb: true
+    execution_class: ordinary
+  cycle: 1
+- id: blind_instruction_1_L1
+  type: Core.MemoryInstruction
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+    mem_kind: load
+    vaddr: x
+    address: x
+    vpn: 0
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    cacheable: true
+    io_id: -1
+    reservation_id: NONE
+    uses_tlb: true
+    execution_class: ordinary
+  cycle: 2
+- id: lsu_tlb_request_initial_0
+  type: TLB.Request
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    attempt: 0
+  cycle: 2
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - tlb_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_instruction_2_W0
+  type: Core.MemoryInstruction
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    rob_idx: 2
+    mem_kind: store
+    vaddr: x
+    address: x
+    vpn: 0
+    value: 0
+    write_value: 1
+    byte_mask: 255
+    cacheable: true
+    io_id: -1
+    reservation_id: NONE
+    uses_tlb: true
+    execution_class: ordinary
+  cycle: 3
+- id: tlb_decision_initial_0
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    attempt: 0
+    hit: false
+  cycle: 3
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: lsu_tlb_request_initial_2
+  type: TLB.Request
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    vpn: 0
+    attempt: 0
+  cycle: 4
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - tlb_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_initial_0
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    attempt: 0
+    paddr: x
+    miss: true
+    page_fault: false
+    cacheable: true
+  cycle: 4
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_decision_initial_4
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    vpn: 0
+    attempt: 0
+    hit: true
+  cycle: 5
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_decision_initial_5
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    vpn: 0
+    attempt: 0
+    hit: true
+  cycle: 5
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_miss_0
+  type: TLB.Miss
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+  cycle: 5
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - miss
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ptw_request_0
+  type: TLB.PTWRequest
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+  cycle: 6
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - ptw_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ptw_request_1
+  type: TLB.PTWRequest
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+  cycle: 6
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - ptw_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_initial_4
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    vpn: 0
+    attempt: 0
+    paddr: x
+    miss: false
+    page_fault: false
+    cacheable: true
+  cycle: 6
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_initial_5
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    vpn: 0
+    attempt: 0
+    paddr: x
+    miss: false
+    page_fault: false
+    cacheable: true
+  cycle: 6
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: translated_hit_2
+  type: Core.TranslatedMemory
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    rob_idx: 2
+    mem_kind: store
+    vaddr: x
+    address: x
+    vpn: 0
+    value: 0
+    write_value: 1
+    byte_mask: 255
+    cacheable: true
+    io_id: -1
+    reservation_id: NONE
+    uses_tlb: true
+    execution_class: ordinary
+    tlb_path: hit
+  cycle: 7
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - translated_memory
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_memory_complete_2
+  type: Core.MemoryComplete
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    rob_idx: 2
+    mem_kind: store
+    address: x
+    value: 0
+    write_value: 1
+    byte_mask: 255
+    success: true
+  cycle: 8
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - memory_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: lsu_tlb_request_initial_1
+  type: TLB.Request
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    vpn: 0
+    attempt: 0
+  cycle: 12
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - tlb_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_ldq_allocate_0
+  type: LSU.LDQAllocate
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+  cycle: 13
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ptw_result_1
+  type: TLB.PTWResult
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    paddr: x
+    fault: false
+  cycle: 13
+  annotations:
+    module_spec: bounded_ptw_environment
+    module_visibility: public
+    interface_ports:
+    - ptw_result
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ptw_result_0
+  type: TLB.PTWResult
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    paddr: x
+    fault: false
+  cycle: 14
+  annotations:
+    module_spec: bounded_ptw_environment
+    module_visibility: public
+    interface_ports:
+    - ptw_result
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_refill_0
+  type: TLB.Refill
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    paddr: x
+  cycle: 16
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_decision_initial_2
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    vpn: 0
+    attempt: 0
+    hit: true
+  cycle: 17
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_refill_write_0
+  type: MSHR.RefillWrite
+  occurs: true
+  fields:
+    mshr_id: 0
+    address: x
+  cycle: 18
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - refill_write
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_initial_3
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    vpn: 0
+    attempt: 0
+    paddr: x
+    miss: false
+    page_fault: false
+    cacheable: true
+  cycle: 18
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: translated_hit_1
+  type: Core.TranslatedMemory
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+    mem_kind: load
+    vaddr: x
+    address: x
+    vpn: 0
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    cacheable: true
+    io_id: -1
+    reservation_id: NONE
+    uses_tlb: true
+    execution_class: ordinary
+    tlb_path: hit
+  cycle: 19
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - translated_memory
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_dcache_req_1
+  type: LSU.DCacheReqValid
+  occurs: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    port: 0
+  cycle: 20
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - dcache_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_access_0_L1
+  type: Coherence.Access
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    line_id: x
+    address: x
+    mem_kind: load
+    write_value: 0
+    after_op_id: NONE
+  cycle: 21
+- id: blind_ldq_allocate_1
+  type: LSU.LDQAllocate
+  occurs: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+  cycle: 23
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_allocate_2
+  type: ROB.Allocate
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    rob_idx: 2
+  cycle: 26
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_load_result_0
+  type: Coherence.LoadResult
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    line_id: x
+    address: x
+    value: 0
+    version: 0
+    source_op_id: InitX
+    path: hit
+  cycle: 27
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - load_result
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_writeback_2
+  type: ROB.Writeback
+  occurs: true
+  fields:
+    op_id: W0
+    rob_idx: 2
+  cycle: 27
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_memory_complete_1
+  type: Core.MemoryComplete
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+    mem_kind: load
+    address: x
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 28
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - memory_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_access_complete_0
+  type: Coherence.AccessComplete
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    mem_kind: load
+  cycle: 28
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - access_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_commit_2
+  type: ROB.Commit
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    rob_idx: 2
+    mem_kind: store
+    address: x
+    value: 0
+    write_value: 1
+    byte_mask: 255
+    success: true
+  cycle: 28
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - commit
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_access_1_W0
+  type: Coherence.Access
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    line_id: x
+    address: x
+    mem_kind: store
+    write_value: 1
+    after_op_id: L1
+  cycle: 30
+- id: blind_load_response_1
+  type: DCache.LoadResponse
+  occurs: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+    value: 0
+    port: 0
+  cycle: 30
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - load_response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_allocate_1
+  type: ROB.Allocate
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+  cycle: 30
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_acquire_1
+  type: TL.Acquire
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 1
+    line_id: x
+    address: x
+    grow: TRUNK
+    need_data: false
+  cycle: 31
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - acquire
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_directory_result_1
+  type: L2.DirectoryResult
+  occurs: true
+  fields:
+    txn_id: W0
+    line_id: x
+    hit: true
+  cycle: 32
+  annotations:
+    module_spec: sifive_inclusive_l2_v021
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_miss_ready_0
+  type: TLB.MissReady
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+  cycle: 32
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - miss_ready
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_probe_1_h0
+  type: TL.Probe
+  occurs: true
+  fields:
+    txn_id: W0
+    requester_hart: 1
+    target_hart: 0
+    line_id: x
+    address: x
+    cap: N
+  cycle: 33
+  annotations:
+    module_spec: sifive_inclusive_l2_v021
+    module_visibility: public
+    interface_ports:
+    - probe
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: lsu_tlb_retry_0
+  type: TLB.Retry
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+  cycle: 33
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_probe_ack_1_h0
+  type: TL.ProbeAck
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 0
+    line_id: x
+    address: x
+    cap: N
+    has_data: false
+    value: 0
+    version: 0
+    source_op_id: InitX
+  cycle: 34
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - probe_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: lsu_tlb_request_retry_0
+  type: TLB.Request
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    attempt: 1
+  cycle: 34
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - tlb_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_decision_retry_1
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    attempt: 1
+    hit: true
+  cycle: 35
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_grant_1
+  type: TL.Grant
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 1
+    line_id: x
+    address: x
+    cap: T
+    has_data: false
+    value: 0
+    version: 0
+    source_op_id: InitX
+    sink_id: 1
+  cycle: 36
+  annotations:
+    module_spec: sifive_inclusive_l2_v021
+    module_visibility: public
+    interface_ports:
+    - grant
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_retry_0
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    vpn: 0
+    attempt: 1
+    paddr: x
+    miss: false
+    page_fault: false
+    cacheable: true
+  cycle: 36
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_grant_ack_1
+  type: TL.GrantAck
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 1
+    sink_id: 1
+  cycle: 37
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - grant_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_store_performed_1
+  type: Coherence.StorePerformed
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    line_id: x
+    address: x
+    value: 1
+    version: 1
+    source_op_id: W0
+    path: refill
+  cycle: 37
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - store_performed
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: translated_retry_0
+  type: Core.TranslatedMemory
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    vaddr: x
+    address: x
+    vpn: 0
+    value: 1
+    write_value: 0
+    byte_mask: 255
+    cacheable: true
+    io_id: -1
+    reservation_id: NONE
+    uses_tlb: true
+    execution_class: ordinary
+    tlb_path: retry
+  cycle: 37
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - translated_memory
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_dcache_req_0
+  type: LSU.DCacheReqValid
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 38
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - dcache_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_access_complete_1
+  type: Coherence.AccessComplete
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    mem_kind: store
+  cycle: 38
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - access_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_access_2_L0
+  type: Coherence.Access
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    line_id: x
+    address: x
+    mem_kind: load
+    write_value: 0
+    after_op_id: W0
+  cycle: 39
+- id: blind_acquire_block_0
+  type: MSHR.AcquireBlock
+  occurs: true
+  fields:
+    mshr_id: 0
+    op_id: L0
+    address: x
+  cycle: 39
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - acquire_block
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_mshr_request_0
+  type: DCache.MSHRRequest
+  occurs: true
+  fields:
+    op_id: L0
+    queue_kind: ldq
+    queue_idx: 0
+    address: x
+    mem_kind: load
+    mshr_id: 0
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: true
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+  cycle: 39
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - mshr_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_primary_miss_0
+  type: MSHR.PrimaryMissAccept
+  occurs: true
+  fields:
+    mshr_id: 0
+    op_id: L0
+    ldq_idx: 0
+    address: x
+  cycle: 39
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - primary_miss
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_acquire_2
+  type: TL.Acquire
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 0
+    line_id: x
+    address: x
+    grow: ProbeAckData
+    need_data: true
+  cycle: 40
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - acquire
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_directory_result_2
+  type: L2.DirectoryResult
+  occurs: true
+  fields:
+    txn_id: L0
+    line_id: x
+    hit: true
+  cycle: 41
+  annotations:
+    module_spec: sifive_inclusive_l2_v021
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_commit_store_2
+  type: Arch.CommitStore
+  occurs: true
+  fields:
+    op_id: W0
+  cycle: 41
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - commit_store
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_probe_2_h1
+  type: TL.Probe
+  occurs: true
+  fields:
+    txn_id: L0
+    requester_hart: 0
+    target_hart: 1
+    line_id: x
+    address: x
+    cap: N
+  cycle: 42
+  annotations:
+    module_spec: sifive_inclusive_l2_v021
+    module_visibility: public
+    interface_ports:
+    - probe
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_probe_ack_2_h1
+  type: TL.ProbeAck
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 1
+    line_id: x
+    address: x
+    cap: N
+    has_data: true
+    value: 1
+    version: 1
+    source_op_id: W0
+  cycle: 43
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - probe_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_ldld_search_3
+  type: LSU.LDLDSearch
+  occurs: true
+  fields:
+    searcher_op_id: L1
+    searcher_ldq_idx: 1
+    address: x
+    port: 0
+  cycle: 44
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_publish_probe_2_h1
+  type: Coherence.VersionPublish
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 1
+    line_id: x
+    address: x
+    value: 1
+    version: 1
+    source_op_id: W0
+    path: ProbeAckData
+  cycle: 44
+  annotations:
+    module_spec: sifive_inclusive_l2_v021
+    module_visibility: public
+    interface_ports:
+    - version_publish
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_probe_receive_1
+  type: DCache.ProbeReceive
+  occurs: true
+  fields:
+    source_op_id: W0
+    address: x
+  cycle: 45
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - probe_receive
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_grant_2
+  type: TL.Grant
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 0
+    line_id: x
+    address: x
+    cap: T
+    has_data: true
+    value: 1
+    version: 1
+    source_op_id: W0
+    sink_id: 2
+  cycle: 45
+  annotations:
+    module_spec: sifive_inclusive_l2_v021
+    module_visibility: public
+    interface_ports:
+    - grant
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_grant_data_0
+  type: MSHR.GrantData
+  occurs: true
+  fields:
+    mshr_id: 0
+    op_id: L0
+    source_op_id: W0
+    address: x
+    value: 1
+  cycle: 47
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - grant_data
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_grant_ack_2
+  type: TL.GrantAck
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 0
+    sink_id: 2
+  cycle: 47
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - grant_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_refill_complete_0
+  type: MSHR.RefillComplete
+  occurs: true
+  fields:
+    mshr_id: 0
+    op_id: L0
+    source_op_id: W0
+    address: x
+    value: 1
+  cycle: 48
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_refill_write_1
+  type: MSHR.RefillWrite
+  occurs: true
+  fields:
+    mshr_id: 1
+    address: x
+  cycle: 49
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - refill_write
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_load_result_2
+  type: Coherence.LoadResult
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    line_id: x
+    address: x
+    value: 1
+    version: 1
+    source_op_id: W0
+    path: refill
+  cycle: 51
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - load_result
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_arch_store_2
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+    byte_mask: 255
+  cycle: 51
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - arch_store
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_long_latency_0
+  type: DCache.LongLatencyLoadResponse
+  occurs: true
+  fields:
+    mshr_id: 0
+    op_id: L0
+    ldq_idx: 0
+    address: x
+    value: 1
+  cycle: 52
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - long_latency_response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_memory_complete_0
+  type: Core.MemoryComplete
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    address: x
+    value: 1
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 52
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - memory_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_access_complete_2
+  type: Coherence.AccessComplete
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    mem_kind: load
+  cycle: 52
+  annotations:
+    module_spec: boom_l1_coherence_client_v021
+    module_visibility: public
+    interface_ports:
+    - access_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_ldld_search_2
+  type: LSU.LDLDSearch
+  occurs: true
+  fields:
+    searcher_op_id: L1
+    searcher_ldq_idx: 1
+    address: x
+    port: 0
+  cycle: 56
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_probe_receive_0
+  type: DCache.ProbeReceive
+  occurs: true
+  fields:
+    source_op_id: W0
+    address: x
+  cycle: 56
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - probe_receive
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_probe_release_0
+  type: DCache.ProbeRelease
+  occurs: true
+  fields:
+    source_op_id: W0
+    address: x
+  cycle: 57
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - probe_release
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_writeback_1
+  type: ROB.Writeback
+  occurs: true
+  fields:
+    op_id: L1
+    rob_idx: 1
+  cycle: 58
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_ldld_assert_1
+  type: LSU.AssertViolation
+  occurs: true
+  fields:
+    property: older_load_found_observed_younger
+    older_op_id: L0
+    younger_op_id: L1
+    address: x
+  cycle: 60
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_ldld_conflict_1
+  type: LSU.LDLDConflict
+  occurs: true
+  fields:
+    older_op_id: L0
+    older_ldq_idx: 0
+    younger_op_id: L1
+    younger_ldq_idx: 1
+    address: x
+  cycle: 60
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_ldld_search_0
+  type: LSU.LDLDSearch
+  occurs: true
+  fields:
+    searcher_op_id: L0
+    searcher_ldq_idx: 0
+    address: x
+    port: 0
+  cycle: 60
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_observed_1
+  type: LSU.LoadObserved
+  occurs: true
+  fields:
+    op_id: L1
+    ldq_idx: 1
+    address: x
+  cycle: 60
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_probe_release_1
+  type: DCache.ProbeRelease
+  occurs: true
+  fields:
+    source_op_id: W0
+    address: x
+  cycle: 60
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - probe_release
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_allocate_0
+  type: ROB.Allocate
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+  cycle: 60
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_writeback_0
+  type: ROB.Writeback
+  occurs: true
+  fields:
+    op_id: L0
+    rob_idx: 0
+  cycle: 61
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_commit_0
+  type: ROB.Commit
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    address: x
+    value: 1
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 62
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - commit
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_commit_1
+  type: ROB.Commit
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+    mem_kind: load
+    address: x
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 63
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - commit
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: blind_store_ack_0
+  type: DCache.StoreAck
+  occurs: true
+  fields:
+    op_id: W0
+    stq_idx: 2
+    address: x
+  cycle: 64
+  annotations:
+    module_spec: boom_v4_cacheable_path
+    module_visibility: public
+    interface_ports:
+    - store_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_arch_load_0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 1
+    byte_mask: 255
+  cycle: 64
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - arch_load
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_arch_load_1
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 0
+    program_index: 1
+    address: x
+    value: 0
+    byte_mask: 255
+  cycle: 64
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - arch_load
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_commit_load_0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L0
+    value: 1
+  cycle: 64
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - commit_load
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_commit_load_1
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: L1
+    value: 0
+  cycle: 64
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - commit_load
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

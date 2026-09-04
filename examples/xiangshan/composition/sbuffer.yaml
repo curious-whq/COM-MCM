@@ -1,0 +1,48 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-sbuffer-v0.10
+horizon: 40
+metadata:
+  version: 0.10.0
+  stage: 10
+  purpose: Executable committed-store SBuffer allocation, merge, drain, replay, L1D acceptance, same-block serialization, and fence ordering.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: sbuffer, path: ../model/store/sbuffer.yaml}
+connections: []
+roles: &sbuffer_roles
+- name: sbuffer_entries
+  event_type: SBuffer.LineLayout
+  cardinality: many
+  min_matches: 1
+  exports:
+    entry_id: fields.entry_id
+    hart: fields.hart
+    entry_order: fields.entry_order
+    line_address: fields.line_address
+    member_count: fields.member_count
+    first_op_id: fields.first_op_id
+    first_beat: fields.first_beat
+    first_address: fields.first_address
+    first_value: fields.first_value
+    first_drain_mask: fields.first_drain_mask
+    first_line_data: fields.first_line_data
+    first_line_mask: fields.first_line_mask
+    second_op_id: fields.second_op_id
+    second_beat: fields.second_beat
+    second_address: fields.second_address
+    second_value: fields.second_value
+    second_drain_mask: fields.second_drain_mask
+    second_line_data: fields.second_line_data
+    second_line_mask: fields.second_line_mask
+    drain_reason: fields.drain_reason
+- name: fences
+  event_type: Core.FenceRequest
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    fence_kind: fields.fence_kind
+    cycle: cycle
+constraints: []

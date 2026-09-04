@@ -1,0 +1,17 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-v4-l1-probe-bridge-source-v021
+horizon: 16
+metadata: {version: 0.21.0, purpose: Verify the source-derived TileLink B to DCache ProbeUnit to TileLink C public-interface bridge, encapsulation: strict}
+modules:
+- {name: boom_v4_l1_probe_bridge, path: ../model/coherence/l1_probe_bridge_v021.yaml}
+connections: []
+roles:
+- name: accesses
+  event_type: Coherence.Access
+  cardinality: many
+  min_matches: 1
+  exports: {op_id: fields.op_id, hart: fields.hart, program_index: fields.program_index, line_id: fields.line_id, address: fields.address, mem_kind: fields.mem_kind, write_value: fields.write_value, after_op_id: fields.after_op_id}
+  derived:
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+constraints: []

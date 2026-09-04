@@ -1,0 +1,77 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_lsu_dcache_issue
+metadata:
+  version: 0.21.0
+  status: source-derived
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/lsu.scala
+    sha256: 405dffe86cca0d5632ee75f481b6a64202691e2e169e6a5961363d20ca33a40e
+    lines: [872, 960]
+  abstraction:
+  - The source priority mux payload is represented by DCacheIssueIntent; ScheduleGrant controls whether it reaches DCacheReqValid.
+  - TLB kill and exception causes remain in the LSU translation model and suppress construction of the corresponding intent.
+  hierarchy: IssueIntent and ScheduleGrant are LSU-child interfaces; no DCache-private state is read.
+ports:
+- {name: issue_intent, direction: input, event_type: LSU.DCacheIssueIntent, required_connection: false}
+- {name: schedule_grant, direction: input, event_type: LSU.ScheduleGrant, required_connection: false}
+- {name: dcache_req_valid, direction: output, event_type: LSU.DCacheReqValid, required_connection: false}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: requests
+  as: req
+  include:
+    slots:
+    - id: 'scheduled_dcache_req_${req.repeat_index}'
+      type: LSU.DCacheReqValid
+      required: false
+      fields:
+        op_id: '${req.op_id}'
+        ldq_idx: '${req.ldq_idx}'
+        stq_idx: '${req.stq_idx}'
+        queue_kind: '${req.queue_kind}'
+        queue_idx: '${req.queue_idx}'
+        address: '${req.address}'
+        block_address: '${req.block_address}'
+        set_index: '${req.set_index}'
+        tag: '${req.tag}'
+        bank: '${req.bank}'
+        port: '${req.port}'
+        mem_kind: '${req.mem_kind}'
+        value: '${req.value}'
+    transformations:
+    - name: 'selected_payload_reaches_dcache_${req.repeat_index}'
+      inputs: [{role: intent, type: LSU.DCacheIssueIntent}, {role: grant, type: LSU.ScheduleGrant}]
+      outputs: [{role: valid, type: LSU.DCacheReqValid}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: frame_id, sort: {name: string}}, right: {node: event_field, event_id: grant, field: frame_id, sort: {name: string}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: request_kind, sort: {name: string}}, right: {node: event_field, event_id: grant, field: request_kind, sort: {name: string}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: grant, field: op_id, sort: {name: op_id}}}
+        - {node: event_field, event_id: grant, field: uses_dcache, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: valid, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: intent, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: port, sort: {name: int}}, right: {node: event_field, event_id: grant, field: port, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: ldq_idx, sort: {name: bv, width: 6}}, right: {node: event_field, event_id: intent, field: ldq_idx, sort: {name: bv, width: 6}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: stq_idx, sort: {name: bv, width: 6}}, right: {node: event_field, event_id: intent, field: stq_idx, sort: {name: bv, width: 6}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: queue_kind, sort: {name: string}}, right: {node: event_field, event_id: intent, field: queue_kind, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: queue_idx, sort: {name: int}}, right: {node: event_field, event_id: intent, field: queue_idx, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: intent, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: block_address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: intent, field: block_address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: set_index, sort: {name: int}}, right: {node: event_field, event_id: intent, field: set_index, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: tag, sort: {name: int}}, right: {node: event_field, event_id: intent, field: tag, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: bank, sort: {name: int}}, right: {node: event_field, event_id: intent, field: bank, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: mem_kind, sort: {name: string}}, right: {node: event_field, event_id: intent, field: mem_kind, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: valid, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: intent, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:lsu.scala:872-960, selected-dcache-mux, payload-continuity]

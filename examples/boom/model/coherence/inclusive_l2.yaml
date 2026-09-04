@@ -35,10 +35,10 @@ ports:
 - {name: line_init, direction: input, event_type: Coherence.LineInit, required_connection: false}
 - {name: acquire, direction: input, event_type: TL.Acquire}
 - {name: probe, direction: output, event_type: TL.Probe}
-- {name: probe_ack, direction: input, event_type: TL.ProbeAck}
+- {name: probe_ack, direction: input, event_type: TL.ProbeAck, required_connection: false}
 - {name: grant, direction: output, event_type: TL.Grant}
 - {name: grant_ack, direction: input, event_type: TL.GrantAck}
-- {name: release, direction: input, event_type: TL.Release}
+- {name: release, direction: input, event_type: TL.Release, required_connection: false}
 - {name: release_ack, direction: output, event_type: TL.ReleaseAck}
 - {name: version_publish, direction: output, event_type: Coherence.VersionPublish, required_connection: false}
 internal_events: [L2.DirectoryResult, L2.OuterAcquire, L2.OuterGrant]
@@ -116,6 +116,7 @@ repeat:
       required: false
       fields:
         txn_id: ${access.op_id}
+        source_id: {$expr: {node: symbol, name: "l2::${access.op_id}::source_id", sort: {name: int}}}
         hart: ${access.hart}
         line_id: ${access.line_id}
         address: ${access.address}
@@ -149,7 +150,6 @@ repeat:
         version: {$expr: {node: symbol, name: "l2::${access.op_id}::h1::publish_version", sort: {name: int}}}
         source_op_id: {$expr: {node: symbol, name: "l2::${access.op_id}::h1::publish_source", sort: {name: op_id}}}
         path: ProbeAckData
-
 - over: evictions
   as: eviction
   include:
@@ -501,6 +501,7 @@ repeat_product:
         - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
         - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: T}}
       ensure: &grant_data_match
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}}
       - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}, right: {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}}
       - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
       state_requirements:
@@ -534,6 +535,7 @@ repeat_product:
         - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
         - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
       ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}}
       - {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}
       - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
       state_requirements:
@@ -597,6 +599,7 @@ repeat_product:
         - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
         - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: cap, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: B}}
       ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}}
       - {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}
       - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
       state_requirements:
@@ -624,6 +627,7 @@ repeat_product:
       output_when: {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${access.op_id}"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: directory, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: source_id, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: source_id, sort: {name: int}}}
       - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: hart, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: hart, sort: {name: int}}}
       - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: line_id, sort: {name: string}}, right: {node: event_field, event_id: acquire, field: line_id, sort: {name: string}}}
       - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: has_data, sort: {name: bool}}, right: {node: event_field, event_id: acquire, field: need_data, sort: {name: bool}}}

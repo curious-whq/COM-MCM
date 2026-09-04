@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.21.0
+
+- Withdrew the earlier blind-rediscovery claim because its realization used the
+  witness-oriented `model/search/cacheable_path.yaml` summary rather than the
+  detailed BOOM LSU/L1D/MSHR state machines.
+- Pinned the BOOM, Chipyard, Rocket-Chip and SiFive InclusiveCache revisions
+  and source-file SHA-256 values in `examples/boom/source/v021.yaml`.
+- Added a machine-readable behavior/source/implementation ledger and an
+  executable auditor that treats source mapping and executable coverage as
+  separate facts.
+- Added an admission gate that rejects `model/search/` modules and dynamic
+  microarchitectural outcomes in a future default blind-search query.
+- Added bounded source-derived LDQ/STQ allocation from decoded memory
+  instructions; queue indices are no longer required in the input trace.
+- Added the BOOM DCache/MSHR TileLink A/D/E adapter, including `source` routing,
+  and connected the detailed MSHR primary path to the InclusiveCache model so
+  the MSHR Grant is produced by L2 instead of supplied by the trace.
+- Added a two-entry Small/Medium BOOM `BoomMSHRFile` allocator that derives
+  primary/secondary choice and MSHR ID internally, including round-robin
+  allocation, block/tag/index matching, all-busy/conflict backpressure,
+  finish/reuse, Probe gating, and Rocket-Chip write-intent secondary rules.
+- Replaced the witness-shaped L1 for new source-model work with a generalized
+  four-way BOOM v4 L1D: per-set/per-way tag/permission/data state, s0/s1/s2,
+  state-derived hit/tag miss/permission miss and replacement, five nack causes,
+  MSHR refill/meta writes, store write/bypass timing, and generalized clean or
+  dirty ProbeUnit downgrade/invalidation paths.
+- Added the exact BOOM v4 LSU per-port scheduler: all twelve source-priority
+  calls, TLB/DCache/LCAM resource consumption, fixed-port rules, fast/slow
+  store drain, and incoming agen assertion.
+- Connected selected scheduler grants through the source request mux into the
+  generalized L1 and tested the state-derived hit/response path.
+- Connected the two-entry MSHR-file allocator to fixed BOOM entry readiness,
+  phase, primary/secondary acceptance, RPQ insertion and bounded SDQ lifetime;
+  MSHR and SDQ IDs are derived rather than supplied by source traces.
+- Replaced the legacy LSU-local TLB outcome slots in the integrated path with a
+  source-derived LDQ runtime driven only by `Core.TranslatedMemory` and public
+  DCache/ROB interfaces. It now covers dispatch allocation, translated address
+  state, fire/executed, nack, hit/refill success, probe observation, commit
+  deallocation, and BOOM's older-load/observed-younger assertion case.
+- Added a strict instruction-to-retirement ordinary-load composition. A cold
+  load now derives NBDTLB translation, scheduler selection, generalized L1
+  miss, MSHR0 selection, TileLink A/D/E, InclusiveL2 refill, LSQ success, ROB
+  commit and `Arch.Load` without supplied path or resource IDs.
+- Fixed load-data continuity so refill data, rather than the decoded
+  instruction placeholder, flows through `Core.MemoryComplete`, `ROB.Commit`,
+  `Arch.Load`, and `Arch.CommitLoad`.
+- Added a source-derived clean TileLink B/C ProbeUnit bridge and kept dirty
+  ProbeAckData plus separate per-hart generalized L1 state as explicit
+  remaining work.
+- Added the source-derived ordinary STQ lifecycle: independent address/data
+  readiness, delayed ROB-ready, in-order commit, post-commit scheduler drain,
+  DCache acknowledgement and committed-head clearing.
+- Integrated store hit, TLB retry and cold miss. The cold path derives MSHR/SDQ
+  selection, acknowledges on accepted MSHR request, acquires T permission, and
+  later replays retained SDQ data through the fixed-way DCache pipeline before
+  dirty metadata and GrantAck.
+- Added private exact-producer cause events so L1 can join hit/MSHR-accept
+  acknowledgements and hit/replay data writes without weakening event
+  provenance.
+- Added a finite two-attempt scheduler role and source-derived store-nack
+  recovery: execute-queue flush/head rewind, committed-store re-enqueue, and a
+  second exact store-commit scheduler/drain decision. The second DCache/L1
+  request pipeline remains explicitly blocked.
+- Kept the default BOOM/RVWMO search deliberately `BLOCKED` while full
+  default detailed composition remains unresolved. No
+  revised blind-rediscovery claim is made yet.
+- Complete regression: 238/238 tests pass.
+
 ## 0.20.0
 
 - Added `umcm search` and a serializable two-level hierarchical-search specification/report IR.

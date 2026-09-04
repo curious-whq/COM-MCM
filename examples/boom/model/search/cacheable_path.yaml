@@ -1,0 +1,309 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_cacheable_path
+metadata:
+  version: 0.21.0
+  component: BOOM v4 cacheable LSU/L1/MSHR public-interface join
+  source_repository: https://github.com/riscv-boom/riscv-boom
+  source_commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+  source_files:
+  - src/main/scala/v4/lsu/lsu.scala:506-547,890-905,960-984,1518-1571
+  - src/main/scala/v4/lsu/dcache.scala:818-860
+  - src/main/scala/v4/lsu/mshrs.scala:106-199,513-718
+  scope: Finite allocation, translated cache request, hit/refill response, MSHR observation, probe observation, and ROB completion.
+  hierarchy: Queue identity and path bookkeeping are private model choices; all cross-module dependencies use declared public events.
+ports:
+- {name: memory_instruction, direction: input, event_type: Core.MemoryInstruction, required_connection: false}
+- {name: translated_memory, direction: input, event_type: Core.TranslatedMemory}
+- {name: coherence_access, direction: input, event_type: Coherence.Access, required_connection: false}
+- {name: load_result, direction: input, event_type: Coherence.LoadResult, required_connection: false}
+- {name: store_result, direction: input, event_type: Coherence.StorePerformed, required_connection: false}
+- {name: tilelink_acquire, direction: input, event_type: TL.Acquire, required_connection: false}
+- {name: tilelink_grant, direction: input, event_type: TL.Grant, required_connection: false}
+- {name: tilelink_probe, direction: input, event_type: TL.Probe, required_connection: false}
+- {name: rob_commit, direction: input, event_type: ROB.Commit}
+- {name: dcache_request, direction: output, event_type: LSU.DCacheReqValid, required_connection: false}
+- {name: load_response, direction: output, event_type: DCache.LoadResponse, required_connection: false}
+- {name: long_latency_response, direction: output, event_type: DCache.LongLatencyLoadResponse, required_connection: false}
+- {name: store_ack, direction: output, event_type: DCache.StoreAck, required_connection: false}
+- {name: mshr_request, direction: output, event_type: DCache.MSHRRequest, required_connection: false}
+- {name: primary_miss, direction: output, event_type: MSHR.PrimaryMissAccept, required_connection: false}
+- {name: acquire_block, direction: output, event_type: MSHR.AcquireBlock, required_connection: false}
+- {name: grant_data, direction: output, event_type: MSHR.GrantData, required_connection: false}
+- {name: refill_write, direction: output, event_type: MSHR.RefillWrite, required_connection: false}
+- {name: probe_receive, direction: output, event_type: DCache.ProbeReceive, required_connection: false}
+- {name: probe_release, direction: output, event_type: DCache.ProbeRelease, required_connection: false}
+- {name: memory_complete, direction: output, event_type: Core.MemoryComplete}
+internal_events:
+- LSU.LDQAllocate
+- LSU.LoadObserved
+- LSU.LDLDSearch
+- LSU.LDLDConflict
+- LSU.AssertViolation
+- MSHR.RefillComplete
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: loads
+  as: load
+  include:
+    slots:
+    - {id: "blind_ldq_allocate_${load.repeat_index}", type: LSU.LDQAllocate, required: false, fields: {op_id: "${load.op_id}", ldq_idx: "${load.queue_idx}"}}
+    - {id: "blind_dcache_req_${load.repeat_index}", type: LSU.DCacheReqValid, required: false, fields: {op_id: "${load.op_id}", ldq_idx: "${load.queue_idx}", address: "${load.address}", port: 0}}
+    - id: blind_load_response_${load.repeat_index}
+      type: DCache.LoadResponse
+      required: false
+      fields: {op_id: "${load.op_id}", ldq_idx: "${load.queue_idx}", address: "${load.address}", value: {$expr: {node: symbol, name: "blind::${load.op_id}::hit_value", sort: {name: value, width: 64}}}, port: 0}
+    - id: blind_mshr_request_${load.repeat_index}
+      type: DCache.MSHRRequest
+      required: false
+      fields: {op_id: "${load.op_id}", queue_kind: ldq, queue_idx: "${load.queue_idx}", address: "${load.address}", mem_kind: load, mshr_id: "${load.mshr_id}", tag_match: false, old_line_dirty: false, needs_acquire: true, grant_has_data: true, secondary: false, requires_second_acquire: false, is_hit_again: false, is_probe: false}
+    - {id: "blind_primary_miss_${load.repeat_index}", type: MSHR.PrimaryMissAccept, required: false, fields: {mshr_id: "${load.mshr_id}", op_id: "${load.op_id}", ldq_idx: "${load.queue_idx}", address: "${load.address}"}}
+    - {id: "blind_acquire_block_${load.repeat_index}", type: MSHR.AcquireBlock, required: false, fields: {mshr_id: "${load.mshr_id}", op_id: "${load.op_id}", address: "${load.address}"}}
+    - id: blind_grant_data_${load.repeat_index}
+      type: MSHR.GrantData
+      required: false
+      fields: {mshr_id: "${load.mshr_id}", op_id: "${load.op_id}", source_op_id: {$expr: {node: symbol, name: "blind::${load.op_id}::grant_source", sort: {name: op_id}}}, address: "${load.address}", value: {$expr: {node: symbol, name: "blind::${load.op_id}::grant_value", sort: {name: value, width: 64}}}}
+    - id: blind_refill_complete_${load.repeat_index}
+      type: MSHR.RefillComplete
+      required: false
+      fields: {mshr_id: "${load.mshr_id}", op_id: "${load.op_id}", source_op_id: {$expr: {node: symbol, name: "blind::${load.op_id}::refill_source", sort: {name: op_id}}}, address: "${load.address}", value: {$expr: {node: symbol, name: "blind::${load.op_id}::refill_value", sort: {name: value, width: 64}}}}
+    - {id: "blind_refill_write_${load.repeat_index}", type: MSHR.RefillWrite, required: false, fields: {mshr_id: "${load.mshr_id}", address: "${load.address}"}}
+    - id: blind_long_latency_${load.repeat_index}
+      type: DCache.LongLatencyLoadResponse
+      required: false
+      fields: {mshr_id: "${load.mshr_id}", op_id: "${load.op_id}", ldq_idx: "${load.queue_idx}", address: "${load.address}", value: {$expr: {node: symbol, name: "blind::${load.op_id}::ll_value", sort: {name: value, width: 64}}}}
+    transformations:
+    - name: blind_allocates_load_${load.repeat_index}
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: allocate, type: LSU.LDQAllocate}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [lsq, ldq-allocation, blind-allocation]
+    - name: blind_issues_cache_request_${load.repeat_index}
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: request, type: LSU.DCacheReqValid}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [lsu, dcache-request]
+    - name: blind_request_matches_public_access_${load.repeat_index}
+      inputs: [{role: request, type: LSU.DCacheReqValid}, {role: access, type: Coherence.Access}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: access, field: cycle, sort: {name: int}}}]
+      tags: [public-interface-join]
+    - name: blind_hit_returns_to_lsu_${load.repeat_index}
+      inputs: [{role: result, type: Coherence.LoadResult}]
+      outputs: [{role: response, type: DCache.LoadResponse}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: result, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [l1-hit]
+    - name: blind_miss_observes_tilelink_acquire_${load.repeat_index}
+      inputs: [{role: access, type: Coherence.Access}, {role: acquire, type: TL.Acquire}]
+      outputs: [{role: request, type: DCache.MSHRRequest}, {role: primary, type: MSHR.PrimaryMissAccept}, {role: block, type: MSHR.AcquireBlock}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: acquire, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: le, left: {node: event_field, event_id: access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      - {node: binary, op: le, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: primary, field: cycle, sort: {name: int}}}
+      - {node: binary, op: le, left: {node: event_field, event_id: primary, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: block, field: cycle, sort: {name: int}}}
+      - {node: binary, op: le, left: {node: event_field, event_id: block, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: acquire, field: cycle, sort: {name: int}}}
+      exact: false
+      tags: [mshr, primary, tilelink-a]
+    - name: blind_grant_drains_mshr_${load.repeat_index}
+      inputs: [{role: grant, type: TL.Grant}, {role: result, type: Coherence.LoadResult}]
+      outputs: [{role: accepted, type: MSHR.GrantData}, {role: refill, type: MSHR.RefillComplete}, {role: write, type: MSHR.RefillWrite}, {role: response, type: DCache.LongLatencyLoadResponse}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: grant, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: refill}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: accepted, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: grant, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: accepted, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: accepted, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: grant, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: accepted, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: grant, field: source_op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: accepted, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: result, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: source_op_id, sort: {name: op_id}}, right: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: write, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: result, field: value, sort: {name: value, width: 64}}}
+      exact: false
+      tags: [mshr, grant, refill, long-latency-response]
+    - name: blind_load_completion_${load.repeat_index}
+      inputs: [{role: result, type: Coherence.LoadResult}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: result, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [load, completion]
+
+- over: memory_ops
+  as: op
+  include:
+    slots:
+    - id: blind_memory_complete_${op.repeat_index}
+      type: Core.MemoryComplete
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", rob_idx: "${op.rob_idx}", mem_kind: "${op.mem_kind}", address: "${op.address}", value: "${op.value}", write_value: "${op.write_value}", byte_mask: "${op.byte_mask}", success: true}
+    transformations:
+    - name: blind_translation_precedes_access_${op.repeat_index}
+      inputs: [{role: translated, type: Core.TranslatedMemory}, {role: access, type: Coherence.Access}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: access, field: cycle, sort: {name: int}}}]
+      tags: [translation, public-interface-join]
+
+- over: stores
+  as: store
+  include:
+    slots:
+    - {id: "blind_store_ack_${store.repeat_index}", type: DCache.StoreAck, required: false, fields: {op_id: "${store.op_id}", stq_idx: "${store.queue_idx}", address: "${store.address}"}}
+    transformations:
+    - name: blind_store_executes_before_commit_${store.repeat_index}
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [store, execute, rob-completion]
+    - name: blind_committed_store_may_become_visible_${store.repeat_index}
+      inputs: [{role: commit, type: ROB.Commit}, {role: access, type: Coherence.Access}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: access, field: cycle, sort: {name: int}}}]
+      tags: [store, commit, visibility]
+    - name: blind_store_result_ack_${store.repeat_index}
+      inputs: [{role: result, type: Coherence.StorePerformed}]
+      outputs: [{role: ack, type: DCache.StoreAck}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [store, drain-ack]
+
+repeat_product:
+- axes: [{over: loads, as: older}, {over: loads, as: younger}]
+  include:
+    slots:
+    - {id: "blind_observed_${product.repeat_index}", type: LSU.LoadObserved, required: false, fields: {op_id: "${younger.op_id}", ldq_idx: "${younger.queue_idx}", address: "${younger.address}"}}
+    - {id: "blind_ldld_search_${product.repeat_index}", type: LSU.LDLDSearch, required: false, fields: {searcher_op_id: "${older.op_id}", searcher_ldq_idx: "${older.queue_idx}", address: "${older.address}", port: 0}}
+    - {id: "blind_ldld_conflict_${product.repeat_index}", type: LSU.LDLDConflict, required: false, fields: {older_op_id: "${older.op_id}", older_ldq_idx: "${older.queue_idx}", younger_op_id: "${younger.op_id}", younger_ldq_idx: "${younger.queue_idx}", address: "${older.address}"}}
+    - {id: "blind_ldld_assert_${product.repeat_index}", type: LSU.AssertViolation, required: false, fields: {property: older_load_found_observed_younger, older_op_id: "${older.op_id}", younger_op_id: "${younger.op_id}", address: "${older.address}"}}
+    transformations:
+    - name: blind_out_of_order_load_requires_tlb_retry_${product.repeat_index}
+      inputs: [{role: older_access, type: Coherence.Access}, {role: younger_access, type: Coherence.Access}, {role: translated, type: Core.TranslatedMemory}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: older_access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: younger_access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: address, width: 64}, value: "${older.address}"}, right: {node: literal, sort: {name: address, width: 64}, value: "${younger.address}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: younger_access, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: older_access, field: cycle, sort: {name: int}}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: translated, field: tlb_path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: retry}}]
+      tags: [lsq, out-of-order-load, tlb-retry]
+    - name: blind_probe_marks_younger_observed_${product.repeat_index}
+      inputs: [{role: response, type: DCache.LoadResponse}, {role: release, type: DCache.ProbeRelease}]
+      outputs: [{role: observed, type: LSU.LoadObserved}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: release, field: address, sort: {name: address, width: 64}}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: observed, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+      ensure: [{node: binary, op: le, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: observed, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [lsq, observed, probe]
+    - name: blind_buggy_ldld_is_assertion_only_${product.repeat_index}
+      inputs: [{role: older_access, type: Coherence.Access}, {role: observed, type: LSU.LoadObserved}]
+      outputs: [{role: search, type: LSU.LDLDSearch}, {role: conflict, type: LSU.LDLDConflict}, {role: assertion, type: LSU.AssertViolation}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: older_access, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: observed, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: address, width: 64}, value: "${older.address}"}, right: {node: literal, sort: {name: address, width: 64}, value: "${younger.address}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: search, field: searcher_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+      ensure:
+      - {node: binary, op: le, left: {node: event_field, event_id: observed, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: search, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: search, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: conflict, field: cycle, sort: {name: int}}}
+      - {node: binary, op: le, left: {node: event_field, event_id: conflict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: assertion, field: cycle, sort: {name: int}}}
+      exact: false
+      tags: [lsq, ld-ld-conflict, buggy-assertion-only]
+
+- axes: [{over: stores, as: store}, {over: loads, as: load}]
+  include:
+    slots:
+    - {id: "blind_probe_receive_${product.repeat_index}", type: DCache.ProbeReceive, required: false, fields: {source_op_id: "${store.op_id}", address: "${store.address}"}}
+    - {id: "blind_probe_release_${product.repeat_index}", type: DCache.ProbeRelease, required: false, fields: {source_op_id: "${store.op_id}", address: "${store.address}"}}
+    transformations:
+    - name: blind_tilelink_probe_reaches_lsu_${product.repeat_index}
+      inputs: [{role: probe, type: TL.Probe}]
+      outputs: [{role: receive, type: DCache.ProbeReceive}, {role: release, type: DCache.ProbeRelease}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: target_hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${load.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: probe, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${load.address}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: receive, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: probe, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: receive, field: cycle, sort: {name: int}}}
+      - {node: binary, op: le, left: {node: event_field, event_id: receive, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      exact: false
+      tags: [tilelink-b, probe, lsu-release]

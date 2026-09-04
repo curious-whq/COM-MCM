@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 10, case: same-block-serialized, expected: FEASIBLE}
+events:
+- id: e0_layout
+  type: SBuffer.LineLayout
+  occurs: true
+  cycle: 0
+  fields: {entry_id: E0, hart: 0, entry_order: 0, line_address: 20480, member_count: 1, first_op_id: S0, first_beat: 0, first_address: 20480, first_value: 17, first_drain_mask: 1, first_line_data: 17, first_line_mask: 1, second_op_id: S0, second_beat: 0, second_address: 20480, second_value: 0, second_drain_mask: 0, second_line_data: 0, second_line_mask: 0, drain_reason: timeout}
+- id: e1_layout
+  type: SBuffer.LineLayout
+  occurs: true
+  cycle: 0
+  fields: {entry_id: E1, hart: 0, entry_order: 1, line_address: 20480, member_count: 1, first_op_id: S1, first_beat: 0, first_address: 20496, first_value: 34, first_drain_mask: 1, first_line_data: 11570933355080993190089064438057650077696, first_line_mask: 65536, second_op_id: S1, second_beat: 0, second_address: 20496, second_value: 0, second_drain_mask: 0, second_line_data: 0, second_line_mask: 0, drain_reason: timeout}
+- id: s0_drain
+  type: Store.Drain
+  occurs: true
+  cycle: 1
+  fields: {op_id: S0, beat: 0, hart: 0, address: 20480, value: 17, byte_mask: 1, last: true, cross_page: false}
+- id: s1_drain
+  type: Store.Drain
+  occurs: true
+  cycle: 3
+  fields: {op_id: S1, beat: 0, hart: 0, address: 20496, value: 34, byte_mask: 1, last: true, cross_page: false}
+constraints: []

@@ -1,0 +1,49 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-lsu-port-scheduler-source-v021
+horizon: 16
+metadata:
+  component: BOOM v4 LSU per-port scheduler
+  version: 0.21.0
+  status: source-derived
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/lsu.scala
+    lines: [576, 703]
+modules:
+- name: boom_v4_lsu_port_scheduler
+  path: ../model/lsu/port_scheduler_v021.yaml
+connections: []
+roles:
+- name: arbitration_frames
+  event_type: LSU.ArbitrationFrame
+  cardinality: many
+  min_matches: 0
+  exports:
+    frame_id: fields.frame_id
+    hart: fields.hart
+    hardware_cycle: fields.hardware_cycle
+    port: fields.port
+    lsu_width: fields.lsu_width
+    can_sfence: fields.can_sfence
+    can_store_commit: fields.can_store_commit
+    stq_almost_full: fields.stq_almost_full
+    can_load_agen: fields.can_load_agen
+    can_store_agen: fields.can_store_agen
+    can_release: fields.can_release
+    can_hella_incoming: fields.can_hella_incoming
+    can_hella_wakeup: fields.can_hella_wakeup
+    can_store_retry: fields.can_store_retry
+    can_load_retry: fields.can_load_retry
+    can_load_wakeup: fields.can_load_wakeup
+    sfence_op_id: fields.sfence_op_id
+    store_commit_op_id: fields.store_commit_op_id
+    load_agen_op_id: fields.load_agen_op_id
+    store_agen_op_id: fields.store_agen_op_id
+    release_op_id: fields.release_op_id
+    hella_incoming_op_id: fields.hella_incoming_op_id
+    hella_wakeup_op_id: fields.hella_wakeup_op_id
+    store_retry_op_id: fields.store_retry_op_id
+    load_retry_op_id: fields.load_retry_op_id
+    load_wakeup_op_id: fields.load_wakeup_op_id
+constraints: []

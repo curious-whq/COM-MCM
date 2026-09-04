@@ -1,0 +1,584 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-tlb-lsu-scheduler-l1-source-v021
+horizon: 96
+metadata:
+  version: 0.21.0
+  status: source-derived-integration
+  purpose: Derive a cacheable load from instruction through NBDTLB hit/retry, LSU can-fire construction and exact scheduler, selected request mux, and generalized BOOM v4 L1.
+  encapsulation: strict
+  input_firewall: [TLB.Miss, TLB.Retry, Core.TranslatedMemory, LSU.LDQAllocate, LSU.STQAllocate, LSU.StoreAddressReady, LSU.StoreDataReady, LSU.StoreROBReady, LSU.StoreCommitted, LSU.ArbitrationFrame, LSU.ScheduleGrant, LSU.DCacheIssueIntent, LSU.DCacheReqValid, LSU.StoreDrainIssue, DCache.LoadHit, DCache.LoadMiss, DCache.StoreHit, DCache.StoreAck, LSU.StoreCleared, ROB.Commit, Arch.Load, Arch.Store]
+parameters:
+  mshr_entry_ready_integrated: true
+modules:
+- {name: boom_v4_lsu_translation, path: ../model/core/lsu_translation.yaml}
+- {name: boom_v4_nbdtlb, path: ../model/core/tlb.yaml}
+- {name: bounded_ptw_environment, path: ../model/core/ptw_environment.yaml}
+- {name: boom_v4_lsu_cacheable_issue_frontend, path: ../model/lsu/cacheable_issue_frontend_v021.yaml}
+- {name: boom_v4_lsq_runtime, path: ../model/lsu/lsq_runtime_v021.yaml}
+- {name: boom_v4_store_runtime, path: ../model/lsu/store_runtime_v021.yaml}
+- {name: boom_v4_lsu_port_scheduler, path: ../model/lsu/port_scheduler_v021.yaml}
+- {name: boom_v4_lsu_dcache_issue, path: ../model/lsu/dcache_issue_v021.yaml}
+- {name: boom_dcache_v4, path: ../model/l1/generic_v021.yaml}
+- {name: boom_mshr_file_allocator_v021, path: ../model/mshr/file_allocator_v021.yaml}
+- {name: boom_mshr_entry_frontend_v021, path: ../model/mshr/entry_frontend_v021.yaml}
+- {name: boom_mshr_fixed_entry_datapath_v021, path: ../model/mshr/fixed_entry_datapath_v021.yaml}
+- {name: sifive_inclusive_l2, path: ../model/coherence/inclusive_l2.yaml}
+- {name: boom_v4_l1_probe_bridge, path: ../model/coherence/l1_probe_bridge_v021.yaml}
+- {name: boom_cacheable_completion_v021, path: ../model/core/cacheable_complete_v021.yaml}
+- {name: rob_core, path: ../model/core/rob.yaml}
+- {name: retire_core, path: ../model/core/retire.yaml}
+connections:
+- name: lsu_request_to_nbdtlb
+  source: {module: boom_v4_lsu_translation, port: tlb_request}
+  target: {module: boom_v4_nbdtlb, port: request}
+  mode: shared_event
+- name: nbdtlb_response_to_lsu
+  source: {module: boom_v4_nbdtlb, port: response}
+  target: {module: boom_v4_lsu_translation, port: tlb_response}
+  mode: shared_event
+- name: nbdtlb_ready_to_lsu_retry
+  source: {module: boom_v4_nbdtlb, port: miss_ready}
+  target: {module: boom_v4_lsu_translation, port: miss_ready}
+  mode: shared_event
+- name: nbdtlb_request_to_ptw
+  source: {module: boom_v4_nbdtlb, port: ptw_request}
+  target: {module: bounded_ptw_environment, port: ptw_request}
+  mode: shared_event
+- name: ptw_result_to_nbdtlb
+  source: {module: bounded_ptw_environment, port: ptw_result}
+  target: {module: boom_v4_nbdtlb, port: ptw_result}
+  mode: shared_event
+- name: translated_to_candidate_builder
+  source: {module: boom_v4_lsu_translation, port: translated_memory}
+  target: {module: boom_v4_lsu_cacheable_issue_frontend, port: translated_memory}
+  mode: shared_event
+- name: translated_to_lsq_runtime
+  source: {module: boom_v4_lsu_translation, port: translated_memory}
+  target: {module: boom_v4_lsq_runtime, port: translated_memory}
+  mode: shared_event
+- name: translated_to_store_runtime
+  source: {module: boom_v4_lsu_translation, port: translated_memory}
+  target: {module: boom_v4_store_runtime, port: translated_memory}
+  mode: shared_event
+- name: candidate_frame_to_scheduler
+  source: {module: boom_v4_lsu_cacheable_issue_frontend, port: arbitration_frame}
+  target: {module: boom_v4_lsu_port_scheduler, port: arbitration_frame}
+  mode: shared_event
+- name: candidate_payload_to_issue_mux
+  source: {module: boom_v4_lsu_cacheable_issue_frontend, port: issue_intent}
+  target: {module: boom_v4_lsu_dcache_issue, port: issue_intent}
+  mode: shared_event
+- name: scheduler_grant_to_issue_mux
+  source: {module: boom_v4_lsu_port_scheduler, port: schedule_grant}
+  target: {module: boom_v4_lsu_dcache_issue, port: schedule_grant}
+  mode: shared_event
+- name: selected_request_to_l1
+  source: {module: boom_v4_lsu_dcache_issue, port: dcache_req_valid}
+  target: {module: boom_dcache_v4, port: lsu_req_valid}
+  mode: shared_event
+- name: l1_fire_to_lsq_runtime
+  source: {module: boom_dcache_v4, port: req_fire}
+  target: {module: boom_v4_lsq_runtime, port: dcache_req_fire}
+  mode: shared_event
+- name: l1_fire_to_store_runtime
+  source: {module: boom_dcache_v4, port: req_fire}
+  target: {module: boom_v4_store_runtime, port: dcache_req_fire}
+  mode: shared_event
+- name: l1_hit_response_to_lsq_runtime
+  source: {module: boom_dcache_v4, port: load_response}
+  target: {module: boom_v4_lsq_runtime, port: dcache_load_response}
+  mode: shared_event
+- name: l1_nack_to_lsq_runtime
+  source: {module: boom_dcache_v4, port: load_nack}
+  target: {module: boom_v4_lsq_runtime, port: dcache_load_nack}
+  mode: shared_event
+- name: l1_request_nack_to_store_runtime
+  source: {module: boom_dcache_v4, port: request_nack}
+  target: {module: boom_v4_store_runtime, port: dcache_request_nack}
+  mode: shared_event
+- name: l1_request_nack_to_candidate_builder
+  source: {module: boom_dcache_v4, port: request_nack}
+  target: {module: boom_v4_lsu_cacheable_issue_frontend, port: dcache_request_nack}
+  mode: shared_event
+- name: l1_store_ack_to_store_runtime
+  source: {module: boom_dcache_v4, port: store_ack}
+  target: {module: boom_v4_store_runtime, port: dcache_store_ack}
+  mode: shared_event
+- name: l1_probe_release_to_lsq_runtime
+  source: {module: boom_dcache_v4, port: probe_release}
+  target: {module: boom_v4_lsq_runtime, port: probe_release}
+  mode: shared_event
+- name: l1_miss_to_allocator
+  source: {module: boom_dcache_v4, port: mshr_admission}
+  target: {module: boom_mshr_file_allocator_v021, port: admission}
+  mode: shared_event
+- name: l1_miss_to_entry_frontend
+  source: {module: boom_dcache_v4, port: mshr_admission}
+  target: {module: boom_mshr_entry_frontend_v021, port: admission}
+  mode: shared_event
+- name: entry_primary_ready_to_allocator
+  source: {module: boom_mshr_entry_frontend_v021, port: primary_ready}
+  target: {module: boom_mshr_file_allocator_v021, port: primary_ready}
+  mode: shared_event
+- name: entry_secondary_ready_to_allocator
+  source: {module: boom_mshr_entry_frontend_v021, port: secondary_ready}
+  target: {module: boom_mshr_file_allocator_v021, port: secondary_ready}
+  mode: shared_event
+- name: allocated_request_to_entry
+  source: {module: boom_mshr_file_allocator_v021, port: request}
+  target: {module: boom_mshr_entry_frontend_v021, port: request}
+  mode: shared_event
+- name: allocated_store_miss_ack_to_l1
+  source: {module: boom_mshr_file_allocator_v021, port: request}
+  target: {module: boom_dcache_v4, port: mshr_request}
+  mode: shared_event
+- name: primary_accept_to_entry_datapath
+  source: {module: boom_mshr_entry_frontend_v021, port: primary_accept}
+  target: {module: boom_mshr_fixed_entry_datapath_v021, port: primary_accept}
+  mode: shared_event
+- name: entry_acquire_to_l2
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: tilelink_acquire}
+  target: {module: sifive_inclusive_l2, port: acquire}
+  mode: shared_event
+- name: l2_grant_to_entry
+  source: {module: sifive_inclusive_l2, port: grant}
+  target: {module: boom_mshr_fixed_entry_datapath_v021, port: tilelink_grant}
+  mode: shared_event
+- name: entry_grantack_to_l2
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: tilelink_grant_ack}
+  target: {module: sifive_inclusive_l2, port: grant_ack}
+  mode: shared_event
+- name: l2_probe_to_boom_probe_bridge
+  source: {module: sifive_inclusive_l2, port: probe}
+  target: {module: boom_v4_l1_probe_bridge, port: tilelink_probe}
+  mode: shared_event
+- name: bridge_probe_to_l1_probeunit
+  source: {module: boom_v4_l1_probe_bridge, port: dcache_probe_receive}
+  target: {module: boom_dcache_v4, port: probe_receive}
+  mode: shared_event
+- name: l1_probe_release_to_bridge
+  source: {module: boom_dcache_v4, port: probe_release}
+  target: {module: boom_v4_l1_probe_bridge, port: dcache_probe_release}
+  mode: shared_event
+- name: bridge_probeack_to_l2
+  source: {module: boom_v4_l1_probe_bridge, port: tilelink_probe_ack}
+  target: {module: sifive_inclusive_l2, port: probe_ack}
+  mode: shared_event
+- name: entry_refill_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: refill_write}
+  target: {module: boom_dcache_v4, port: mshr_refill_write}
+  mode: shared_event
+- name: entry_meta_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: meta_write}
+  target: {module: boom_dcache_v4, port: mshr_meta_write}
+  mode: shared_event
+- name: entry_response_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: response}
+  target: {module: boom_dcache_v4, port: mshr_response}
+  mode: shared_event
+- name: entry_replay_to_l1
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: replay}
+  target: {module: boom_dcache_v4, port: mshr_replay}
+  mode: shared_event
+- name: entry_replay_releases_rpq_sdq
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: replay}
+  target: {module: boom_mshr_entry_frontend_v021, port: replay}
+  mode: shared_event
+- name: entry_long_response_to_lsq_runtime
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: long_latency_response}
+  target: {module: boom_v4_lsq_runtime, port: dcache_ll_response}
+  mode: shared_event
+- name: blocked_request_to_l1
+  source: {module: boom_mshr_file_allocator_v021, port: blocked}
+  target: {module: boom_dcache_v4, port: mshr_blocked}
+  mode: shared_event
+- name: finish_releases_allocator
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: mem_finish}
+  target: {module: boom_mshr_file_allocator_v021, port: finish}
+  mode: shared_event
+- name: finish_releases_entry
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: mem_finish}
+  target: {module: boom_mshr_entry_frontend_v021, port: finish}
+  mode: shared_event
+- name: l1_hit_to_completion
+  source: {module: boom_dcache_v4, port: load_response}
+  target: {module: boom_cacheable_completion_v021, port: load_response}
+  mode: shared_event
+- name: mshr_response_to_completion
+  source: {module: boom_mshr_fixed_entry_datapath_v021, port: long_latency_response}
+  target: {module: boom_cacheable_completion_v021, port: long_latency_response}
+  mode: shared_event
+- name: completion_to_rob
+  source: {module: boom_cacheable_completion_v021, port: memory_complete}
+  target: {module: rob_core, port: memory_complete}
+  mode: shared_event
+- name: store_ready_to_completion
+  source: {module: boom_v4_store_runtime, port: store_rob_ready}
+  target: {module: boom_cacheable_completion_v021, port: store_rob_ready}
+  mode: shared_event
+- name: rob_squash_to_lsq_runtime
+  source: {module: rob_core, port: squash_memory}
+  target: {module: boom_v4_lsq_runtime, port: squash_memory}
+  mode: shared_event
+- name: rob_squash_to_store_runtime
+  source: {module: rob_core, port: squash_memory}
+  target: {module: boom_v4_store_runtime, port: squash_memory}
+  mode: shared_event
+- name: tlb_fault_to_rob
+  source: {module: boom_v4_lsu_translation, port: memory_fault}
+  target: {module: rob_core, port: memory_fault}
+  mode: shared_event
+- name: rob_commit_to_retire
+  source: {module: rob_core, port: commit}
+  target: {module: retire_core, port: commit}
+  mode: shared_event
+- name: rob_commit_to_lsq_runtime
+  source: {module: rob_core, port: commit}
+  target: {module: boom_v4_lsq_runtime, port: rob_commit}
+  mode: shared_event
+- name: rob_commit_to_store_runtime
+  source: {module: rob_core, port: commit}
+  target: {module: boom_v4_store_runtime, port: rob_commit}
+  mode: shared_event
+- name: rob_commit_to_candidate_builder
+  source: {module: rob_core, port: commit}
+  target: {module: boom_v4_lsu_cacheable_issue_frontend, port: rob_commit}
+  mode: shared_event
+- name: scheduler_grant_to_store_runtime
+  source: {module: boom_v4_lsu_port_scheduler, port: schedule_grant}
+  target: {module: boom_v4_store_runtime, port: schedule_grant}
+  mode: shared_event
+roles:
+- name: tlb_harts
+  event_type: Core.MemoryInstruction
+  where: {fields.uses_tlb: true}
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.hart
+  exports: {hart: fields.hart}
+- name: memory_ops
+  event_type: Core.MemoryInstruction
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    vaddr: fields.vaddr
+    address: fields.address
+    vpn: fields.vpn
+    value: fields.value
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+    cacheable: fields.cacheable
+    io_id: fields.io_id
+    reservation_id: fields.reservation_id
+    uses_tlb: fields.uses_tlb
+    execution_class: fields.execution_class
+- name: tlb_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.uses_tlb: true}
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    vaddr: fields.vaddr
+    address: fields.address
+    vpn: fields.vpn
+    value: fields.value
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+    cacheable: fields.cacheable
+    io_id: fields.io_id
+    reservation_id: fields.reservation_id
+    execution_class: fields.execution_class
+- name: pages
+  event_type: Core.PageMap
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.entry_id
+  exports: {hart: fields.hart, entry_id: fields.entry_id, vpn: fields.vpn, paddr: fields.paddr, initial_valid: fields.initial_valid, accessible: fields.accessible}
+- name: loads
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: load, fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    address: fields.address
+    value: fields.value
+    byte_mask: fields.byte_mask
+    cycle: cycle
+    source_cycle: cycle
+    frame_id: fields.op_id
+    hardware_cycle: fields.program_index
+    block_address: fields.address
+  derived:
+    lsu_width: {kind: constant, value: 1}
+    port: {kind: constant, value: 0}
+    ldq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    stq_idx: {kind: constant, value: 0}
+    queue_kind: {kind: constant, value: ldq}
+    queue_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    bank: {kind: constant, value: 0}
+    mem_kind: {kind: constant, value: load}
+    line_id: {kind: constant, value: line0}
+    way_id: {kind: constant, value: 0}
+    dispatch_event_type: {kind: constant, value: Core.MemoryInstruction}
+- name: arbitration_frames
+  event_type: Core.MemoryInstruction
+  where: {fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 1
+  copies: 2
+  copy_exports: {frame_id: '${copy.frame_id}.${copy.copy_index}'}
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    frame_id: fields.op_id
+    hardware_cycle: fields.program_index
+    load_agen_op_id: fields.op_id
+    load_retry_op_id: fields.op_id
+    store_commit_op_id: fields.op_id
+  derived:
+    port: {kind: constant, value: 0}
+    lsu_width: {kind: constant, value: 1}
+    can_sfence: {kind: constant, value: false}
+    can_store_commit: {kind: constant, value: false}
+    stq_almost_full: {kind: constant, value: false}
+    can_load_agen: {kind: constant, value: true}
+    can_store_agen: {kind: constant, value: false}
+    can_release: {kind: constant, value: false}
+    can_hella_incoming: {kind: constant, value: false}
+    can_hella_wakeup: {kind: constant, value: false}
+    can_store_retry: {kind: constant, value: false}
+    can_load_retry: {kind: constant, value: false}
+    can_load_wakeup: {kind: constant, value: false}
+    sfence_op_id: {kind: constant, value: NONE}
+    store_agen_op_id: {kind: constant, value: NONE}
+    release_op_id: {kind: constant, value: NONE}
+    hella_incoming_op_id: {kind: constant, value: NONE}
+    hella_wakeup_op_id: {kind: constant, value: NONE}
+    store_retry_op_id: {kind: constant, value: NONE}
+    load_wakeup_op_id: {kind: constant, value: NONE}
+- name: requests
+  event_type: Core.MemoryInstruction
+  where: {fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    source_cycle: cycle
+    frame_id: fields.op_id
+    block_address: fields.address
+    mem_kind: fields.mem_kind
+  derived:
+    value:
+      kind: switch
+      path: fields.mem_kind
+      cases:
+        store: {path: fields.write_value}
+        sc: {path: fields.write_value}
+        amo: {path: fields.write_value}
+      default: {path: fields.value}
+    request_kind:
+      kind: switch
+      path: fields.mem_kind
+      cases:
+        load: {value: load-agen-exec}
+        store: {value: store-commit-slow}
+      default: {value: load-agen-exec}
+    ldq_idx: {kind: queue_index, group_by: [fields.hart, fields.mem_kind], start: 0, capacity: 16}
+    stq_idx: {kind: queue_index, group_by: [fields.hart, fields.mem_kind], start: 0, capacity: 16}
+    queue_kind:
+      kind: switch
+      path: fields.mem_kind
+      cases:
+        load: {value: ldq}
+        store: {value: stq}
+        lr: {value: ldq}
+        sc: {value: stq}
+        amo: {value: stq}
+      default: {value: ldq}
+    queue_idx: {kind: queue_index, group_by: [fields.hart, fields.mem_kind], start: 0, capacity: 16}
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    bank: {kind: constant, value: 0}
+    port: {kind: constant, value: 0}
+- name: configs
+  event_type: DCache.ConfigInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.config_id
+  exports: {config_id: fields.config_id, lsu_width: fields.lsu_width, num_banks: fields.num_banks, single_ported: fields.single_ported, n_sets: fields.n_sets, n_ways: fields.n_ways, n_mshrs: fields.n_mshrs}
+- name: sets
+  event_type: DCache.SetStateInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.set_index
+  exports:
+    set_id: fields.set_id
+    set_index: fields.set_index
+    replacement_way: fields.replacement_way
+    way0_tag: fields.way0_tag
+    way0_permission: fields.way0_permission
+    way0_value: fields.way0_value
+    way1_tag: fields.way1_tag
+    way1_permission: fields.way1_permission
+    way1_value: fields.way1_value
+    way2_tag: fields.way2_tag
+    way2_permission: fields.way2_permission
+    way2_value: fields.way2_value
+    way3_tag: fields.way3_tag
+    way3_permission: fields.way3_permission
+    way3_value: fields.way3_value
+- name: probes
+  event_type: Coherence.Access
+  where: {fields.mem_kind: store}
+  cardinality: many
+  min_matches: 0
+  exports: {source_op_id: fields.op_id, address: fields.address}
+  derived:
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    probe_param: {kind: constant, value: N}
+- name: meta_writes
+  event_type: MSHR.MetaWrite
+  cardinality: many
+  min_matches: 0
+  exports: {mshr_id: fields.mshr_id, address: fields.address, set_index: fields.set_index, tag: fields.tag, way_id: fields.way_id, permission: fields.permission}
+- name: refill_writes
+  event_type: MSHR.RefillWrite
+  cardinality: many
+  min_matches: 0
+  exports: {mshr_id: fields.mshr_id, address: fields.address, set_index: fields.set_index, way_id: fields.way_id, value: fields.value}
+- name: mshr_admissions
+  event_type: Core.MemoryInstruction
+  where: {fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, address: fields.address, block_address: fields.address, mem_kind: fields.mem_kind}
+  derived:
+    value:
+      kind: switch
+      path: fields.mem_kind
+      cases: {store: {path: fields.write_value}}
+      default: {path: fields.value}
+    queue_kind:
+      kind: switch
+      path: fields.mem_kind
+      cases: {store: {value: stq}}
+      default: {value: ldq}
+    queue_idx: {kind: queue_index, group_by: [fields.hart, fields.mem_kind], start: 0, capacity: 16}
+    tag: {kind: constant, value: 7}
+    set_index: {kind: constant, value: 0}
+    way_id: {kind: constant, value: 0}
+    cache_tag_match: {kind: constant, value: false}
+    old_line_dirty: {kind: constant, value: false}
+    needs_acquire: {kind: constant, value: true}
+    is_probe: {kind: constant, value: false}
+    sdq_id: {kind: queue_index, start: 0, capacity: 17}
+- name: lines
+  event_type: Coherence.LineInit
+  cardinality: many
+  min_matches: 0
+  distinct_by: fields.line_id
+  exports: {line_id: fields.line_id, address: fields.address, value: fields.value, version: fields.version, source_op_id: fields.source_op_id}
+- name: accesses
+  event_type: Coherence.Access
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, hart: fields.hart, program_index: fields.program_index, line_id: fields.line_id, address: fields.address, mem_kind: fields.mem_kind, write_value: fields.write_value, after_op_id: fields.after_op_id}
+  derived:
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+- name: evictions
+  event_type: Coherence.Evict
+  cardinality: many
+  min_matches: 0
+  exports: {txn_id: fields.txn_id, hart: fields.hart, line_id: fields.line_id, address: fields.address, after_op_id: fields.after_op_id}
+- name: local_stores
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, address: fields.address, value: fields.value, hart: fields.hart, program_index: fields.program_index, byte_mask: fields.byte_mask, cycle: cycle}
+  derived:
+    stq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    is_amo: {kind: constant, value: false}
+    dispatch_event_type: {kind: constant, value: Core.MemoryInstruction}
+- name: stores
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store, fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    address: fields.address
+    block_address: fields.address
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+  derived:
+    stq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    lsu_width: {kind: constant, value: 1}
+    port: {kind: constant, value: 0}
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    bank: {kind: constant, value: 0}
+- name: store_misses
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store, fields.execution_class: ordinary}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, hart: fields.hart, address: fields.address, write_value: fields.write_value}
+  derived:
+    stq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    way_id: {kind: constant, value: 0}
+    line_id: {kind: constant, value: line0}
+- name: fences
+  event_type: Arch.Fence
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, hart: fields.hart, program_index: fields.program_index, cycle: cycle}
+  derived:
+    stq_idx: {kind: constant, value: 0}
+    dispatch_event_type: {kind: constant, value: Arch.Fence}
+- name: init_write
+  event_type: Arch.InitWrite
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, address: fields.address, value: fields.value}
+- name: branch_events
+  event_type: Core.BranchMispredict
+  cardinality: many
+  min_matches: 0
+  exports: {branch_op_id: fields.branch_op_id, hart: fields.hart, program_index: fields.program_index}
+- name: lr_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: lr}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, hart: fields.hart, program_index: fields.program_index, reservation_id: fields.reservation_id}
+- name: sc_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: sc}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, hart: fields.hart, program_index: fields.program_index, reservation_id: fields.reservation_id}
+constraints: []

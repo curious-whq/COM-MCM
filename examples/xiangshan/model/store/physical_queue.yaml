@@ -644,7 +644,7 @@ repeat_product:
         op: and
         operands:
         - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
-        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "aligned_${layout.op_id}"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
       - {node: binary, op: lt, left: {node: event_field, event_id: layout_event, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
@@ -672,7 +672,7 @@ repeat_product:
         op: and
         operands:
         - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
-        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "within16_${layout.op_id}"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
       state_requirements:
@@ -737,7 +737,7 @@ repeat_product:
         operands:
         - {node: binary, op: eq, left: {node: event_field, event_id: low, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
         - {node: binary, op: eq, left: {node: event_field, event_id: low, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
-        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_low"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "cross16_${layout.op_id}_low"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: low, field: cycle, sort: {name: int}}}
       state_requirements:
@@ -856,6 +856,24 @@ repeat_product:
       - {state: "PSQ[${store.op_id}].live", at: high_drain, value: {node: literal, sort: {name: bool}, value: false}}
       exact: true
       tags: [drain, split, enter-sbuffer, deq-credit, port1, source:NewStoreQueue.scala:1160-1313]
+    constraints:
+    - node: binary
+      op: implies
+      left: {node: event_field, event_id: "split_low_${product.repeat_index}", field: occurs, sort: {name: bool}}
+      right:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${layout.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${layout.kind}"}, right: {node: literal, sort: {name: string}, value: cross16}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${layout.kind}"}, right: {node: literal, sort: {name: string}, value: cross_page}}
+    - node: binary
+      op: implies
+      left: {node: event_field, event_id: "split_high_${product.repeat_index}", field: occurs, sort: {name: bool}}
+      right: {node: event_field, event_id: "split_low_${product.repeat_index}", field: occurs, sort: {name: bool}}
 
 - axes:
   - {over: store_ops, as: store}
@@ -897,7 +915,7 @@ repeat_product:
         operands:
         - {node: binary, op: eq, left: {node: event_field, event_id: low, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
         - {node: binary, op: eq, left: {node: event_field, event_id: low, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
-        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_low"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "cross_page_${layout.op_id}_low"}}
       ensure:
       - {node: binary, op: lt, left: {node: event_field, event_id: tail_event, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: low, field: cycle, sort: {name: int}}}
       - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: low, field: cycle, sort: {name: int}}}
@@ -905,3 +923,19 @@ repeat_product:
       - {state: "PSQ[${store.op_id}].committed", at: low, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
       exact: true
       tags: [unalign-queue, cross-page, split, source:NewStoreQueue.scala:1094-1158,1392-1471]
+
+- axes:
+  - {over: unaligned_tails, as: tail_a}
+  - {over: unaligned_tails, as: tail_b}
+  - {over: unaligned_tails, as: tail_c}
+  include:
+    constraints:
+    - node: unary
+      op: not
+      operand:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: ne, left: {node: literal, sort: {name: op_id}, value: "${tail_a.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${tail_b.op_id}"}}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: op_id}, value: "${tail_a.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${tail_c.op_id}"}}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: op_id}, value: "${tail_b.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${tail_c.op_id}"}}

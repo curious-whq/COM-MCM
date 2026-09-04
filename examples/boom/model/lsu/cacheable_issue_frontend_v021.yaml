@@ -1,0 +1,294 @@
+schema_version: umcm.module.v0.15.0
+name: boom_v4_lsu_cacheable_issue_frontend
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/lsu.scala
+    sha256: 405dffe86cca0d5632ee75f481b6a64202691e2e169e6a5961363d20ca33a40e
+    lines: [576, 703, 830, 905, 960, 986]
+  abstraction:
+  - Core.TranslatedMemory is the public result of the separately modeled BOOM NBDTLB/LSU retry path.
+  - A translated ordinary load makes exactly one LSU scheduler candidate: load-agen-exec for a first-attempt hit, or load-retry after the retry queue.
+  - An ordinary store makes its DCache-consuming store-commit candidate only after ROB.Commit; address generation itself remains in the separately modeled translation/STQ path.
+  - A DCache-nacked ordinary store produces one bounded second store-commit arbitration frame after BOOM rewinds and refills the store execute queue; the corresponding second DCache pipeline remains a later multi-attempt L1 extension.
+  - The finite LDQ identity, set, tag, bank and port are composition-derived from the bounded instruction domain, never supplied as a dynamic path annotation.
+  hierarchy: Candidate construction is LSU-owned; only the can-fire frame and selected-payload intent cross into the scheduler and DCache issue children.
+ports:
+- {name: translated_memory, direction: input, event_type: Core.TranslatedMemory, required_connection: false}
+- {name: rob_commit, direction: input, event_type: ROB.Commit, required_connection: false}
+- {name: dcache_request_nack, direction: input, event_type: DCache.RequestNack, required_connection: false}
+- {name: arbitration_frame, direction: output, event_type: LSU.ArbitrationFrame, required_connection: false}
+- {name: issue_intent, direction: output, event_type: LSU.DCacheIssueIntent, required_connection: false}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: loads
+  as: load
+  include:
+    slots:
+    - id: 'translated_hit_frame_${load.repeat_index}'
+      type: LSU.ArbitrationFrame
+      required: false
+      fields: &hit_frame_fields
+        frame_id: '${load.frame_id}.0'
+        hart: '${load.hart}'
+        hardware_cycle: '${load.hardware_cycle}'
+        port: '${load.port}'
+        lsu_width: '${load.lsu_width}'
+        can_sfence: false
+        can_store_commit: false
+        stq_almost_full: false
+        can_load_agen: true
+        can_store_agen: false
+        can_release: false
+        can_hella_incoming: false
+        can_hella_wakeup: false
+        can_store_retry: false
+        can_load_retry: false
+        can_load_wakeup: false
+        sfence_op_id: NONE
+        store_commit_op_id: NONE
+        load_agen_op_id: '${load.op_id}'
+        store_agen_op_id: NONE
+        release_op_id: NONE
+        hella_incoming_op_id: NONE
+        hella_wakeup_op_id: NONE
+        store_retry_op_id: NONE
+        load_retry_op_id: NONE
+        load_wakeup_op_id: NONE
+    - id: 'translated_retry_frame_${load.repeat_index}'
+      type: LSU.ArbitrationFrame
+      required: false
+      fields:
+        <<: *hit_frame_fields
+        can_load_agen: false
+        can_load_retry: true
+        load_agen_op_id: NONE
+        load_retry_op_id: '${load.op_id}'
+    - id: 'translated_hit_intent_${load.repeat_index}'
+      type: LSU.DCacheIssueIntent
+      required: false
+      fields: &hit_intent_fields
+        frame_id: '${load.frame_id}.0'
+        request_kind: load-agen-exec
+        op_id: '${load.op_id}'
+        ldq_idx: '${load.ldq_idx}'
+        stq_idx: 0
+        queue_kind: ldq
+        queue_idx: '${load.ldq_idx}'
+        address: '${load.address}'
+        block_address: '${load.block_address}'
+        set_index: '${load.set_index}'
+        tag: '${load.tag}'
+        bank: '${load.bank}'
+        port: '${load.port}'
+        mem_kind: load
+        value: '${load.value}'
+    - id: 'translated_retry_intent_${load.repeat_index}'
+      type: LSU.DCacheIssueIntent
+      required: false
+      fields:
+        <<: *hit_intent_fields
+        request_kind: load-retry
+
+    transformations:
+    - name: 'translated_hit_builds_load_agen_exec_candidate_${load.repeat_index}'
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: tlb_path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: frame, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${load.frame_id}.0'}}
+        - {node: event_field, event_id: frame, field: can_load_agen, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_load_retry, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: frame, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [source:lsu.scala:604-605, source:lsu.scala:670, source:lsu.scala:890-905]
+    - name: 'load_agen_exec_candidate_builds_payload_${load.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      outputs: [{role: intent, type: LSU.DCacheIssueIntent}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: frame, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${load.frame_id}.0'}}
+        - {node: event_field, event_id: frame, field: can_load_agen, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load-agen-exec}}
+      ensure: &intent_same_cycle
+      - {node: binary, op: eq, left: {node: event_field, event_id: frame, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: intent, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [source:lsu.scala:668-670, source:lsu.scala:872-905]
+    - name: 'translated_retry_builds_load_retry_candidate_${load.repeat_index}'
+      inputs: [{role: translated, type: Core.TranslatedMemory}]
+      outputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translated, field: tlb_path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: retry}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: frame, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${load.frame_id}.0'}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: frame, field: can_load_agen, sort: {name: bool}}}
+        - {node: event_field, event_id: frame, field: can_load_retry, sort: {name: bool}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: translated, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: frame, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [source:lsu.scala:506-547, source:lsu.scala:677, source:lsu.scala:890-905]
+    - name: 'load_retry_candidate_builds_payload_${load.repeat_index}'
+      inputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      outputs: [{role: intent, type: LSU.DCacheIssueIntent}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: frame, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${load.frame_id}.0'}}
+        - {node: event_field, event_id: frame, field: can_load_retry, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${load.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: intent, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load-retry}}
+      ensure: *intent_same_cycle
+      exact: true
+      tags: [source:lsu.scala:676-677, source:lsu.scala:872-905]
+
+- over: stores
+  as: store
+  include:
+    slots:
+    - id: 'store_commit_frame_${store.repeat_index}'
+      type: LSU.ArbitrationFrame
+      required: false
+      fields:
+        frame_id: '${store.op_id}.0'
+        hart: '${store.hart}'
+        hardware_cycle: '${store.program_index}'
+        port: '${store.port}'
+        lsu_width: '${store.lsu_width}'
+        can_sfence: false
+        can_store_commit: true
+        stq_almost_full: false
+        can_load_agen: false
+        can_store_agen: false
+        can_release: false
+        can_hella_incoming: false
+        can_hella_wakeup: false
+        can_store_retry: false
+        can_load_retry: false
+        can_load_wakeup: false
+        sfence_op_id: NONE
+        store_commit_op_id: '${store.op_id}'
+        load_agen_op_id: NONE
+        store_agen_op_id: NONE
+        release_op_id: NONE
+        hella_incoming_op_id: NONE
+        hella_wakeup_op_id: NONE
+        store_retry_op_id: NONE
+        load_retry_op_id: NONE
+        load_wakeup_op_id: NONE
+    - id: 'store_commit_intent_${store.repeat_index}'
+      type: LSU.DCacheIssueIntent
+      required: false
+      fields:
+        frame_id: '${store.op_id}.0'
+        request_kind: store-commit-slow
+        op_id: '${store.op_id}'
+        ldq_idx: 0
+        stq_idx: '${store.stq_idx}'
+        queue_kind: stq
+        queue_idx: '${store.stq_idx}'
+        address: '${store.address}'
+        block_address: '${store.block_address}'
+        set_index: '${store.set_index}'
+        tag: '${store.tag}'
+        bank: '${store.bank}'
+        port: '${store.port}'
+        mem_kind: store
+        value: '${store.write_value}'
+    - id: 'store_commit_reissue_frame_${store.repeat_index}'
+      type: LSU.ArbitrationFrame
+      required: false
+      fields:
+        frame_id: '${store.op_id}.1'
+        hart: '${store.hart}'
+        hardware_cycle: '${store.program_index}'
+        port: '${store.port}'
+        lsu_width: '${store.lsu_width}'
+        can_sfence: false
+        can_store_commit: true
+        stq_almost_full: false
+        can_load_agen: false
+        can_store_agen: false
+        can_release: false
+        can_hella_incoming: false
+        can_hella_wakeup: false
+        can_store_retry: false
+        can_load_retry: false
+        can_load_wakeup: false
+        sfence_op_id: NONE
+        store_commit_op_id: '${store.op_id}'
+        load_agen_op_id: NONE
+        store_agen_op_id: NONE
+        release_op_id: NONE
+        hella_incoming_op_id: NONE
+        hella_wakeup_op_id: NONE
+        store_retry_op_id: NONE
+        load_retry_op_id: NONE
+        load_wakeup_op_id: NONE
+    transformations:
+    - name: 'rob_commit_builds_store_commit_candidate_${store.repeat_index}'
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      when: &store_commit {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: frame, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${store.op_id}.0'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: frame, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      exact: true
+      tags: [source:lsu.scala:548-570, source:lsu.scala:668-679, store-commit-candidate]
+    - name: 'rob_commit_builds_store_commit_payload_${store.repeat_index}'
+      inputs: [{role: commit, type: ROB.Commit}]
+      outputs: [{role: intent, type: LSU.DCacheIssueIntent}]
+      when: *store_commit
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: intent, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: intent, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      exact: true
+      tags: [source:lsu.scala:872-924, store-commit-payload]
+    - name: 'dcache_nack_rebuilds_store_commit_candidate_${store.repeat_index}'
+      inputs: [{role: nack, type: DCache.RequestNack}]
+      outputs: [{role: frame, type: LSU.ArbitrationFrame}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: nack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: nack, field: queue_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: stq}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: frame, field: frame_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${store.op_id}.1'}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: nack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: frame, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [source:lsu.scala:1535-1548, source:lsu.scala:548-570, stq-execute-queue-reissue]

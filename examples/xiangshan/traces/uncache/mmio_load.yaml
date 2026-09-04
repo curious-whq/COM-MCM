@@ -1,0 +1,53 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 11, case: mmio-load, expected: FEASIBLE}
+events:
+- id: mmio_load_request
+  type: Uncache.Request
+  occurs: true
+  cycle: 2
+  fields: {txn_id: LMMIO.uncache, op_id: LMMIO, hart: 0, program_index: 0, rob_idx: 0, lq_idx: 0, sq_idx: -1, mem_kind: load, region: mmio, vaddr: 4096, address: 2147483648, value: 42, byte_mask: 255, size: 8, nc: false, mem_back_type_mm: false}
+- id: mmio_load_layout
+  type: Uncache.BufferLayout
+  occurs: true
+  cycle: 0
+  fields: &single_layout
+    entry_id: U0
+    entry_order: 0
+    member_count: 1
+    outstanding_enabled: false
+    word_address: 2147483648
+    bus_address: 2147483648
+    merged_size: 8
+    first_txn_id: LMMIO.uncache
+    first_op_id: LMMIO
+    first_hart: 0
+    first_program_index: 0
+    first_rob_idx: 0
+    first_mem_kind: load
+    first_region: mmio
+    first_vaddr: 4096
+    first_address: 2147483648
+    first_value: 42
+    first_mask: 255
+    first_size: 8
+    first_mem_back_type_mm: false
+    second_txn_id: NONE.uncache
+    second_op_id: NONE
+    second_hart: 0
+    second_program_index: 0
+    second_rob_idx: 0
+    second_mem_kind: load
+    second_region: nc
+    second_vaddr: 0
+    second_address: 0
+    second_value: 0
+    second_mask: 0
+    second_size: 0
+    second_mem_back_type_mm: false
+- id: mmio_load_memory_response
+  type: Memory.Response
+  occurs: true
+  cycle: 18
+  fields: {txn_id: LMMIO.uncache, response_kind: uncache_grant, value: 42, success: true, denied: false, corrupt: false}
+constraints: []

@@ -1,0 +1,80 @@
+schema_version: umcm.module.v0.15.0
+name: boom_cacheable_completion_v021
+metadata:
+  version: 0.21.0
+  status: source-derived-interface-adapter
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    files:
+    - src/main/scala/v4/lsu/lsu.scala:1535-1600
+    - src/main/scala/v4/exu/rob.scala:371-429
+  purpose: Join L1 hit, MSHR long-latency response, and STQ clr_bsy readiness to the ROB writeback boundary without allowing spontaneous completion. Ordinary-store readiness precedes store drain.
+ports:
+- {name: load_response, direction: input, event_type: DCache.LoadResponse, required_connection: false}
+- {name: long_latency_response, direction: input, event_type: DCache.LongLatencyLoadResponse, required_connection: false}
+- {name: store_rob_ready, direction: input, event_type: LSU.StoreROBReady, required_connection: false}
+- {name: memory_complete, direction: output, event_type: Core.MemoryComplete, required_connection: false}
+internal_events: [Core.CacheableCompletionSource]
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+repeat:
+- over: memory_ops
+  as: op
+  include:
+    slots:
+    - {id: 'cacheable_hit_source_${op.repeat_index}', type: Core.CacheableCompletionSource, required: false, fields: {op_id: '${op.op_id}', path: hit, value: {$expr: {node: symbol, name: 'cacheable_complete::${op.op_id}::hit_value', sort: {name: value, width: 64}}}}}
+    - {id: 'cacheable_refill_source_${op.repeat_index}', type: Core.CacheableCompletionSource, required: false, fields: {op_id: '${op.op_id}', path: refill, value: {$expr: {node: symbol, name: 'cacheable_complete::${op.op_id}::refill_value', sort: {name: value, width: 64}}}}}
+    - {id: 'cacheable_store_source_${op.repeat_index}', type: Core.CacheableCompletionSource, required: false, fields: {op_id: '${op.op_id}', path: store-ready, value: '${op.write_value}'}}
+    - {id: 'cacheable_complete_${op.repeat_index}', type: Core.MemoryComplete, required: false, fields: {op_id: '${op.op_id}', hart: '${op.hart}', program_index: '${op.program_index}', rob_idx: '${op.rob_idx}', mem_kind: '${op.mem_kind}', address: '${op.address}', value: {$expr: {node: symbol, name: 'cacheable_complete::${op.op_id}::value', sort: {name: value, width: 64}}}, write_value: '${op.write_value}', byte_mask: '${op.byte_mask}', success: true}}
+    transformations:
+    - name: 'l1_hit_is_completion_source_${op.repeat_index}'
+      inputs: [{role: response, type: DCache.LoadResponse}]
+      outputs: [{role: source, type: Core.CacheableCompletionSource}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: source, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: source, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}]}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: source, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: source, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:lsu.scala:1565-1592, load-hit]
+    - name: 'mshr_response_is_completion_source_${op.repeat_index}'
+      inputs: [{role: response, type: DCache.LongLatencyLoadResponse}]
+      outputs: [{role: source, type: Core.CacheableCompletionSource}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: source, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: source, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: refill}}]}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: source, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: source, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:lsu.scala:1535-1563, long-latency]
+    - name: 'stq_ready_is_completion_source_${op.repeat_index}'
+      inputs: [{role: ready, type: LSU.StoreROBReady}]
+      outputs: [{role: source, type: Core.CacheableCompletionSource}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: source, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: source, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store-ready}}]}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: source, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: source, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [source:lsu.scala:1091-1122, store-clr-bsy]
+    - name: 'completion_source_writes_rob_${op.repeat_index}'
+      inputs: [{role: source, type: Core.CacheableCompletionSource}]
+      outputs: [{role: complete, type: Core.MemoryComplete}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: source, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: source, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: source, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: complete, field: value, sort: {name: value, width: 64}}}
+      exact: false
+      tags: [source:rob.scala:371-429]
+    - name: 'rob_completion_requires_cache_source_${op.repeat_index}'
+      inputs: [{role: complete, type: Core.MemoryComplete}]
+      outputs: [{role: source, type: Core.CacheableCompletionSource}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: source, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${op.op_id}'}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: source, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}]
+      exact: false
+      tags: [no-spontaneous-completion]

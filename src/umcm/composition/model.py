@@ -259,7 +259,10 @@ class ModuleSpec:
         try:
             return cls(
                 name=str(data["name"]),
-                ports=[ModulePort.from_dict(item) for item in raw_ports],
+                # ``enabled`` is a template-time composition switch.  It is
+                # consumed here and is intentionally not part of the runtime
+                # ModulePort IR.
+                ports=_enabled_ports_from_dict(raw_ports),
                 internal_events=[str(item) for item in raw_internal_events],
                 slots=[EventSlot.from_dict(item) for item in raw_slots],
                 state_variables=[
@@ -428,6 +431,7 @@ class CompositionSpec:
     modules: list[ModuleReference]
     connections: list[ConnectionSpec] = field(default_factory=list)
     roles: list[TraceRoleSpec] = field(default_factory=list)
+    parameters: dict[str, Any] = field(default_factory=dict)
     constraints: list[Expr] = field(default_factory=list)
     horizon: int = 8
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -440,6 +444,7 @@ class CompositionSpec:
         self.modules = list(self.modules)
         self.connections = list(self.connections)
         self.roles = list(self.roles)
+        self.parameters = dict(self.parameters)
         self.constraints = list(self.constraints)
         self.metadata = dict(self.metadata)
         if self.horizon < 0:
@@ -448,6 +453,12 @@ class CompositionSpec:
             [module.name for module in self.modules],
             "composition contains duplicate module reference(s)",
         )
+        overlap = set(self.parameters) & {role.name for role in self.roles}
+        if overlap:
+            raise SchemaError(
+                "composition parameters and trace roles overlap: "
+                + ", ".join(sorted(overlap))
+            )
         _reject_duplicates(
             [connection.name for connection in self.connections],
             "composition contains duplicate connection(s)",
@@ -479,6 +490,7 @@ class CompositionSpec:
             "modules": [module.to_dict() for module in self.modules],
             "connections": [item.to_dict() for item in self.connections],
             "roles": [item.to_dict() for item in self.roles],
+            "parameters": encode_value(self.parameters),
             "constraints": [expr_to_dict(item) for item in self.constraints],
         }
 
@@ -488,7 +500,7 @@ class CompositionSpec:
             raise SerializationError("composition spec must be a mapping")
         allowed = {
             "schema_version", "name", "horizon", "metadata", "modules",
-            "connections", "roles", "constraints",
+            "connections", "roles", "parameters", "constraints",
         }
         unknown = set(data) - allowed
         if unknown:
@@ -509,8 +521,11 @@ class CompositionSpec:
             if not isinstance(value, list):
                 raise SerializationError(f"composition {label} must be a list")
         metadata = decode_value(data.get("metadata", {}))
+        parameters = decode_value(data.get("parameters", {}))
         if not isinstance(metadata, dict):
             raise SerializationError("composition metadata must be a mapping")
+        if not isinstance(parameters, dict):
+            raise SerializationError("composition parameters must be a mapping")
         try:
             return cls(
                 name=str(data["name"]),
@@ -519,6 +534,7 @@ class CompositionSpec:
                     ConnectionSpec.from_dict(item) for item in raw_connections
                 ],
                 roles=[TraceRoleSpec.from_dict(item) for item in raw_roles],
+                parameters=parameters,
                 constraints=[expr_from_dict(item) for item in raw_constraints],
                 horizon=int(data.get("horizon", 8)),
                 metadata=metadata,
@@ -540,6 +556,22 @@ class CompositionSpec:
 
     def dump(self, path: str | Path) -> None:
         dump_data(self.to_dict(), path)
+
+
+def _enabled_ports_from_dict(raw_ports: list[Any]) -> list[ModulePort]:
+    ports: list[ModulePort] = []
+    for raw_port in raw_ports:
+        if not isinstance(raw_port, Mapping):
+            raise SerializationError("module port must be a mapping")
+        enabled = raw_port.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise SerializationError("module port enabled must be boolean")
+        if not enabled:
+            continue
+        port_data = dict(raw_port)
+        port_data.pop("enabled", None)
+        ports.append(ModulePort.from_dict(port_data))
+    return ports
 
 
 def _reject_duplicates(values: list[str], message: str) -> None:

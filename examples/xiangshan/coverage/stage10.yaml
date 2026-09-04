@@ -1,0 +1,78 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage10-sbuffer
+catalog: ../events.yaml
+metadata:
+  version: 0.10.0
+  purpose: Reachability coverage for committed-only allocation, byte-accurate cache-line merge, drain selection, replay resend, same-block serialization, fence quiescence, and Stage 9 integration.
+  witness_policy: Inputs contain public Store.Drain, deterministic line geometry, fence requests, and optional L1 responses; all allocation, merge, selection, request, retry, acceptance, and entry state are solver-derived.
+models:
+- name: sbuffer
+  composition: ../composition/sbuffer.yaml
+  input_event_types: [SBuffer.LineLayout, Store.Drain, Core.FenceRequest, L1.Response]
+  inputs:
+  - {name: single-store-hit, path: ../traces/sbuffer/single_store_hit.yaml}
+  - {name: merged-store, path: ../traces/sbuffer/merged_store.yaml}
+  - {name: replay-then-retry, path: ../traces/sbuffer/replay_then_retry.yaml}
+  - {name: fence-drain, path: ../traces/sbuffer/fence_drain.yaml}
+  - {name: same-block-serialized, path: ../traces/sbuffer/same_block_serialized.yaml}
+- name: scalar_store_sbuffer
+  composition: ../composition/scalar_store_sbuffer.yaml
+  input_event_types: [Core.MemoryIssue, Store.Layout, SBuffer.LineLayout, MMU.TranslateResponse, Core.MemoryWriteback, Core.MemoryCommit]
+  inputs:
+  - {name: integrated-sbuffer, path: ../traces/store/integrated_sbuffer.yaml}
+goals:
+- id: committed_drain_allocates_active_line
+  model: sbuffer
+  category: Entry lifetime
+  inputs: [single-store-hit]
+  require:
+  - {transformation: "committed_first_beat_allocates_entry_*"}
+  - {event: SBuffer.Allocate}
+- id: threshold_or_timeout_selects_l1_write
+  model: sbuffer
+  category: Drain
+  inputs: [single-store-hit]
+  require:
+  - {transformation: "autonomous_single_entry_selects_drain_*"}
+  - {transformation: "selected_entry_issues_one_l1_store_*"}
+  - {event: L1.Request}
+- id: same_line_bytes_merge_last_writer_wins
+  model: sbuffer
+  category: Merge
+  inputs: [merged-store]
+  require:
+  - {transformation: "second_same_line_beat_merges_active_entry_*"}
+  - {transformation: "merge_updates_line_data_and_mask_*"}
+  - {event: SBuffer.Merge}
+- id: replay_preserves_and_retries_entry
+  model: sbuffer
+  category: Replay
+  inputs: [replay-then-retry]
+  require:
+  - {transformation: "replay_keeps_entry_and_resends_after_timeout_*"}
+  - {transformation: "retry_is_eventually_accepted_*"}
+- id: fence_waits_for_successful_l1_acceptance
+  model: sbuffer
+  category: Fence
+  inputs: [fence-drain]
+  require:
+  - {transformation: "fence_flush_selects_single_entry_*"}
+  - {transformation: "ordered_observation_requires_entry_empty_*"}
+  - {event: Core.MemoryOrdered}
+- id: same_block_entries_are_serialized
+  model: sbuffer
+  category: Same-block inflight
+  inputs: [same-block-serialized]
+  require:
+  - {transformation: "same_block_inflight_blocks_younger_request_*"}
+  - {event: L1.Request, min_count: 2}
+- id: committed_scalar_store_reaches_l1
+  model: scalar_store_sbuffer
+  category: Stage 9 integration
+  inputs: [integrated-sbuffer]
+  require:
+  - {transformation: "retired_all_valid_entry_commits_psq_*"}
+  - {transformation: "committed_first_beat_allocates_entry_*"}
+  - {event: Store.Drain}
+  - {event: L1.Request}
+auto_goals: []

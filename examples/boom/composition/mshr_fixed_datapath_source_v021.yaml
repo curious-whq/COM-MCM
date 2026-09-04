@@ -1,0 +1,37 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-mshr-fixed-entry-datapath-source-v021
+horizon: 32
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded-entry-datapath
+  purpose: Exercise one of two fixed BOOM MSHR entries from PrimaryAccept through TileLink A/D/E, refill/meta and the RPQ response port.
+  encapsulation: strict
+modules:
+- {name: boom_mshr_fixed_entry_datapath_v021, path: ../model/mshr/fixed_entry_datapath_v021.yaml}
+connections: []
+roles:
+- name: loads
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: load}
+  cardinality: many
+  min_matches: 1
+  exports: {op_id: fields.op_id, hart: fields.hart, address: fields.address}
+  derived:
+    line_id: {kind: constant, value: line0}
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    way_id: {kind: constant, value: 0}
+    ldq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+- name: store_misses
+  event_type: Core.MemoryInstruction
+  where: {fields.mem_kind: store}
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, hart: fields.hart, address: fields.address, write_value: fields.write_value}
+  derived:
+    stq_idx: {kind: queue_index, group_by: fields.hart, start: 0, capacity: 16}
+    line_id: {kind: constant, value: line0}
+    set_index: {kind: constant, value: 0}
+    tag: {kind: constant, value: 7}
+    way_id: {kind: constant, value: 0}
+constraints: []

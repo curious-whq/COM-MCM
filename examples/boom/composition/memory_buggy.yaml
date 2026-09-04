@@ -6,6 +6,10 @@ metadata:
   purpose: generic LSQ + current L1/MSHR witness support
   encapsulation: strict
   hierarchy: ports-only-public-surface
+parameters:
+  mshr_tilelink_ports_enabled: false
+  mshr_grant_port_direction: output
+  mshr_internal_grant_generation: true
 modules:
 - name: lsu
   path: ../model/lsu/module.yaml
@@ -286,6 +290,8 @@ roles:
     cycle: cycle
     ldq_idx: annotations.microarch.ldq_idx
     byte_mask: fields.byte_mask
+  derived:
+    dispatch_event_type: {kind: constant, value: Arch.Load}
   description: All observed loads in this bounded trace; used to instantiate generic LDQ entry state and lifecycle rules.
 - name: local_stores
   event_type: Arch.Store
@@ -303,6 +309,8 @@ roles:
     cycle: cycle
     stq_idx: annotations.microarch.stq_idx
     is_amo: annotations.microarch.is_amo
+  derived:
+    dispatch_event_type: {kind: constant, value: Arch.Store}
 - name: fences
   event_type: Arch.Fence
   where:
@@ -315,6 +323,8 @@ roles:
     program_index: fields.program_index
     cycle: cycle
     stq_idx: annotations.microarch.stq_idx
+  derived:
+    dispatch_event_type: {kind: constant, value: Arch.Fence}
 - name: mshr_requests
   event_type: Arch.Load
   where:

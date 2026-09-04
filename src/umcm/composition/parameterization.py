@@ -41,10 +41,13 @@ class TraceRoleSpec:
     event_type: str | tuple[str, ...]
     where: Mapping[str, Any] = field(default_factory=dict)
     exports: Mapping[str, str] = field(default_factory=dict)
+    derived: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     event_id: str | None = None
     occurring_only: bool = True
     cardinality: str = "one"
     min_matches: int = 1
+    copies: int = 1
+    copy_exports: Mapping[str, str] = field(default_factory=dict)
     distinct_by: str | None = None
     description: str = ""
 
@@ -64,11 +67,111 @@ class TraceRoleSpec:
             raise SchemaError("trace role cardinality must be one or many")
         if self.min_matches < 0:
             raise SchemaError("trace role min_matches must be non-negative")
+        if not isinstance(self.copies, int) or isinstance(self.copies, bool) or self.copies <= 0:
+            raise SchemaError("trace role copies must be a positive integer")
+        if self.cardinality != "many" and self.copies != 1:
+            raise SchemaError("trace role copies requires cardinality=many")
+        object.__setattr__(self, "copy_exports", dict(self.copy_exports))
+        if self.copy_exports and self.copies == 1:
+            raise SchemaError("trace role copy_exports requires copies greater than one")
+        available = set(self.exports) | set(self.derived)
+        for alias, template in self.copy_exports.items():
+            if alias not in available or not isinstance(template, str) or not template:
+                raise SchemaError(
+                    f"trace role {self.name!r} copy_exports must replace an "
+                    "exported name with a non-empty template"
+                )
         object.__setattr__(self, "exports", dict(self.exports))
+        object.__setattr__(
+            self,
+            "derived",
+            {str(alias): dict(spec) for alias, spec in self.derived.items()},
+        )
+        overlap = set(self.exports) & set(self.derived)
+        if overlap:
+            raise SchemaError(
+                f"trace role {self.name!r} exports and derived names overlap: "
+                + ", ".join(sorted(overlap))
+            )
         for alias, path in self.exports.items():
             if not alias or not path:
                 raise SchemaError(
                     f"trace role {self.name!r} exports must use non-empty names and paths"
+                )
+        for alias, spec in self.derived.items():
+            if not alias:
+                raise SchemaError(
+                    f"trace role {self.name!r} derived names must be non-empty"
+                )
+            kind = str(spec.get("kind", ""))
+            if kind not in {"constant", "queue_index", "switch"}:
+                raise SchemaError(
+                    f"trace role {self.name!r} derived export {alias!r} has "
+                    f"unsupported kind {kind!r}"
+                )
+            if kind == "constant":
+                if "value" not in spec:
+                    raise SchemaError(
+                        f"trace role {self.name!r} constant {alias!r} "
+                        "requires a value"
+                    )
+                continue
+            if kind == "switch":
+                path = spec.get("path")
+                cases = spec.get("cases")
+                if not isinstance(path, str) or not path:
+                    raise SchemaError(
+                        f"trace role {self.name!r} switch {alias!r} "
+                        "requires a non-empty path"
+                    )
+                if not isinstance(cases, Mapping) or not cases:
+                    raise SchemaError(
+                        f"trace role {self.name!r} switch {alias!r} "
+                        "requires a non-empty cases mapping"
+                    )
+                for choice in (*cases.values(), spec.get("default")):
+                    if choice is None:
+                        continue
+                    if not isinstance(choice, Mapping):
+                        raise SchemaError(
+                            f"trace role {self.name!r} switch {alias!r} "
+                            "choices must be mappings"
+                        )
+                    choice_keys = set(choice)
+                    if choice_keys not in ({"value"}, {"path"}):
+                        raise SchemaError(
+                            f"trace role {self.name!r} switch {alias!r} "
+                            "choices require exactly one of value or path"
+                        )
+                    if "path" in choice and (
+                        not isinstance(choice["path"], str) or not choice["path"]
+                    ):
+                        raise SchemaError(
+                            f"trace role {self.name!r} switch {alias!r} "
+                            "choice path must be non-empty"
+                        )
+                continue
+            capacity = spec.get("capacity")
+            start = spec.get("start", 0)
+            if not isinstance(capacity, int) or capacity <= 0:
+                raise SchemaError(
+                    f"trace role {self.name!r} queue_index {alias!r} requires "
+                    "a positive integer capacity"
+                )
+            if not isinstance(start, int) or start < 0 or start >= capacity:
+                raise SchemaError(
+                    f"trace role {self.name!r} queue_index {alias!r} start "
+                    "must be within the queue capacity"
+                )
+            group_by = spec.get("group_by", [])
+            if isinstance(group_by, str):
+                group_by = [group_by]
+            if not isinstance(group_by, list) or any(
+                not isinstance(path, str) or not path for path in group_by
+            ):
+                raise SchemaError(
+                    f"trace role {self.name!r} queue_index {alias!r} group_by "
+                    "must be a path or list of paths"
                 )
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,10 +184,17 @@ class TraceRoleSpec:
             ),
             "where": encode_value(dict(self.where)),
             "exports": dict(self.exports),
+            "derived": {
+                alias: dict(spec) for alias, spec in self.derived.items()
+            },
             "occurring_only": self.occurring_only,
             "cardinality": self.cardinality,
             "min_matches": self.min_matches,
         }
+        if self.copies != 1:
+            data["copies"] = self.copies
+        if self.copy_exports:
+            data["copy_exports"] = dict(self.copy_exports)
         if self.event_id is not None:
             data["event_id"] = self.event_id
         if self.distinct_by is not None:
@@ -98,8 +208,8 @@ class TraceRoleSpec:
         if not isinstance(data, Mapping):
             raise SerializationError("trace role must be a mapping")
         allowed = {
-            "name", "event_type", "where", "exports", "event_id",
-            "occurring_only", "cardinality", "min_matches", "distinct_by", "description",
+            "name", "event_type", "where", "exports", "derived", "event_id",
+            "occurring_only", "cardinality", "min_matches", "copies", "copy_exports", "distinct_by", "description",
         }
         unknown = set(data) - allowed
         if unknown:
@@ -109,10 +219,21 @@ class TraceRoleSpec:
             )
         raw_where = decode_value(data.get("where", {}))
         raw_exports = data.get("exports", {})
+        raw_derived = data.get("derived", {})
         if not isinstance(raw_where, Mapping):
             raise SerializationError("trace role where must be a mapping")
         if not isinstance(raw_exports, Mapping):
             raise SerializationError("trace role exports must be a mapping")
+        if not isinstance(raw_derived, Mapping):
+            raise SerializationError("trace role derived must be a mapping")
+        raw_copy_exports = data.get("copy_exports", {})
+        if not isinstance(raw_copy_exports, Mapping):
+            raise SerializationError("trace role copy_exports must be a mapping")
+        for alias, spec in raw_derived.items():
+            if not isinstance(spec, Mapping):
+                raise SerializationError(
+                    f"trace role derived export {alias!r} must be a mapping"
+                )
         try:
             return cls(
                 name=str(data["name"]),
@@ -123,12 +244,15 @@ class TraceRoleSpec:
                 ),
                 where=dict(raw_where),
                 exports={str(k): str(v) for k, v in raw_exports.items()},
+                derived={str(k): dict(v) for k, v in raw_derived.items()},
                 event_id=(
                     None if data.get("event_id") is None else str(data["event_id"])
                 ),
                 occurring_only=bool(data.get("occurring_only", True)),
                 cardinality=str(data.get("cardinality", "one")),
                 min_matches=int(data.get("min_matches", 1)),
+                copies=int(data.get("copies", 1)),
+                copy_exports={str(k): str(v) for k, v in raw_copy_exports.items()},
                 distinct_by=(None if data.get("distinct_by") is None else str(data.get("distinct_by"))),
                 description=str(data.get("description", "")),
             )
@@ -141,6 +265,8 @@ class TraceRoleSpec:
 def resolve_trace_roles(
     trace: Trace,
     roles: list[TraceRoleSpec] | tuple[TraceRoleSpec, ...],
+    *,
+    initial_context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve singular or collection roles in declaration order.
 
@@ -149,7 +275,7 @@ def resolve_trace_roles(
     Collection roles are used by finite LSQ/MSHR-family expansion; distinct_by supports one persistent instance per shared resource id.
     """
 
-    context: dict[str, Any] = {}
+    context: dict[str, Any] = dict(initial_context or {})
     for role in roles:
         if role.name in context:
             raise CompositionError(f"duplicate trace role {role.name!r}")
@@ -217,7 +343,10 @@ def resolve_trace_roles(
                     f"trace role {role.name!r} must resolve to exactly one "
                     f"{_role_type_label(role)} event; {detail}"
                 )
-            context[role.name] = _export_role_event(role, matches[0])
+            derived = _derive_role_exports(role, matches)
+            context[role.name] = _export_role_event(
+                role, matches[0], derived[0]
+            )
             continue
 
         if len(matches) < role.min_matches:
@@ -226,9 +355,19 @@ def resolve_trace_roles(
                 f"{role.min_matches} {_role_type_label(role)} event(s); "
                 f"only {len(matches)} matched"
             )
-        context[role.name] = [
-            _export_role_event(role, event) for event in matches
+        derived = _derive_role_exports(role, matches)
+        exported = [
+            _export_role_event(role, event, values)
+            for event, values in zip(matches, derived)
         ]
+        copies = []
+        for item in exported:
+            for copy_index in range(role.copies):
+                copied = {**item, "copy_index": copy_index}
+                for alias, template in role.copy_exports.items():
+                    copied[alias] = render_template(template, {"copy": copied})
+                copies.append(copied)
+        context[role.name] = copies
     return context
 
 
@@ -238,7 +377,53 @@ def _role_type_label(role: TraceRoleSpec) -> str:
     return role.event_type
 
 
-def _export_role_event(role: TraceRoleSpec, event) -> dict[str, Any]:
+def _derive_role_exports(
+    role: TraceRoleSpec,
+    matches: list[Any],
+) -> list[dict[str, Any]]:
+    result = [dict() for _ in matches]
+    for alias, spec in role.derived.items():
+        if spec["kind"] == "constant":
+            for values in result:
+                values[alias] = spec["value"]
+            continue
+        if spec["kind"] == "switch":
+            cases = spec["cases"]
+            default = spec.get("default")
+            for index, event in enumerate(matches):
+                selector = _resolve_event_path(event, spec["path"])
+                choice = cases.get(selector, default)
+                if choice is None:
+                    raise CompositionError(
+                        f"trace role {role.name!r} switch {alias!r} has no "
+                        f"case for {selector!r} and no default"
+                    )
+                if "path" in choice:
+                    result[index][alias] = _resolve_event_path(
+                        event, str(choice["path"])
+                    )
+                else:
+                    result[index][alias] = choice["value"]
+            continue
+        group_by = spec.get("group_by", [])
+        if isinstance(group_by, str):
+            group_by = [group_by]
+        counters: dict[tuple[Any, ...], int] = {}
+        start = int(spec.get("start", 0))
+        capacity = int(spec["capacity"])
+        for index, event in enumerate(matches):
+            group = tuple(_resolve_event_path(event, path) for path in group_by)
+            ordinal = counters.get(group, 0)
+            counters[group] = ordinal + 1
+            result[index][alias] = (start + ordinal) % capacity
+    return result
+
+
+def _export_role_event(
+    role: TraceRoleSpec,
+    event,
+    derived: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     exported: dict[str, Any] = {
         "event_id": event.id,
         "event_type": event.event_type,
@@ -252,6 +437,7 @@ def _export_role_event(role: TraceRoleSpec, event) -> dict[str, Any]:
                 "concrete observed value"
             )
         exported[alias] = value
+    exported.update(dict(derived or {}))
     return exported
 
 

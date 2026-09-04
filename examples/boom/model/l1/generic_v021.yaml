@@ -1,0 +1,1172 @@
+schema_version: umcm.module.v0.15.0
+name: boom_dcache_v4
+metadata:
+  version: 0.21.0
+  status: source-derived-bounded
+  source:
+    repository: https://github.com/riscv-boom/riscv-boom.git
+    commit: 58ef2720eae13be26b3008c02b5a74ce29c61c44
+    file: src/main/scala/v4/lsu/dcache.scala
+    sha256: 82d5562b6d6220be5714716c6b935a001ed6fc54747b4fc925603cabbde9aac4
+  configuration:
+    family: BOOM-v4-four-way
+    geometry: SmallBoom/MediumBoom-compatible
+    width_and_banks: selected-by-DCache.ConfigInit
+  abstraction:
+  - Physical SRAM rows and ECC are represented by per-set, per-way tag/permission/value state.
+  - A valid tag always has permission branch, trunk, or dirty; invalidation writes EMPTY_TAG and nothing together.
+  - Decoupled stalls are stutter-abstracted, but the source priority order and s0/s1/s2 stage distance are preserved.
+  - Cache blocks are line-granular; byte extraction and ECC correction do not affect the memory-order surface.
+  - Store-hit data enters the ghost word state at the end of s2 so the source s3/s4/s5 bypass is visible to a next-cycle load; StoreDataWrite still records the physical s3 write one cycle later.
+  hierarchy: Tag, permission, data-array, pipeline, nack-cause, and ProbeUnit events are private. LSU, MSHR, and TileLink-facing events are ports only.
+
+ports:
+- {name: config_init, direction: input, event_type: DCache.ConfigInit, required_connection: false}
+- {name: lsu_req_valid, direction: input, event_type: LSU.DCacheReqValid, required_connection: false}
+- {name: req_ready, direction: output, event_type: DCache.ReqReady, required_connection: false}
+- {name: req_fire, direction: output, event_type: LSU.DCacheReqFire, required_connection: false}
+- {name: load_response, direction: output, event_type: DCache.LoadResponse, required_connection: false}
+- {name: request_nack, direction: output, event_type: DCache.RequestNack, required_connection: false}
+- {name: load_nack, direction: output, event_type: DCache.LoadNack, required_connection: false}
+- {name: store_ack, direction: output, event_type: DCache.StoreAck, required_connection: false}
+- {name: probe_receive, direction: input, event_type: DCache.ProbeReceive, required_connection: false}
+- {name: probe_release, direction: output, event_type: DCache.ProbeRelease, required_connection: false}
+- {name: mshr_admission, direction: output, event_type: DCache.MSHRAdmissionRequest, required_connection: false}
+- {name: mshr_request, direction: input, event_type: DCache.MSHRRequest, required_connection: false}
+- {name: mshr_blocked, direction: input, event_type: MSHRFile.RequestBlocked, required_connection: false}
+- {name: mshr_block_hit, direction: input, event_type: MSHRFile.BlockHit, required_connection: false}
+- {name: mshr_replay, direction: input, event_type: MSHR.Replay, required_connection: false}
+- {name: mshr_response, direction: input, event_type: MSHR.ResponseDequeue, required_connection: false}
+- {name: mshr_meta_read, direction: input, event_type: MSHR.MetaReadRequest, required_connection: false}
+- {name: mshr_meta_write, direction: input, event_type: MSHR.MetaWrite, required_connection: false}
+- {name: mshr_refill_write, direction: input, event_type: MSHR.RefillWrite, required_connection: false}
+- {name: mshr_writeback, direction: input, event_type: MSHR.WritebackRequest, required_connection: false}
+- {name: mshr_probe_blocked, direction: input, event_type: MSHR.ProbeBlocked, required_connection: false}
+
+internal_events:
+- DCache.PipelineS1
+- DCache.PipelineS2
+- DCache.TagMatch
+- DCache.TagMiss
+- DCache.LoadHit
+- DCache.StoreHit
+- DCache.StoreAckCause
+- DCache.StoreWriteCause
+- DCache.StoreDataWrite
+- DCache.ReplayS1
+- DCache.ReplayS2
+- DCache.NackCause
+- DCache.DataBankConflict
+- DCache.ProbeMetaRead
+- DCache.ProbeMetaResp
+- DCache.ProbeMSHRCheck
+- DCache.ProbeRetry
+- DCache.ProbeWriteback
+- DCache.ProbeAck
+- DCache.ProbeMetaWrite
+
+slots: []
+state_variables: []
+transformations:
+# metaReadArb priority: replay > probe > writeback > MSHR meta-read > LSU > prefetch.
+# Ready may stutter past a busy cycle, but cannot coincide with an older arbiter input.
+- &forbid_ready_replay
+  name: ready_blocked_by_replay
+  inputs: [{role: ready, type: DCache.ReqReady}, {role: contender, type: MSHR.Replay}]
+  outputs: []
+  when: &same_cycle
+    {node: binary, op: eq, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: contender, field: cycle, sort: {name: int}}}
+  ensure: [&false_expr {node: literal, sort: {name: bool}, value: false}]
+  tags: [arbiter, priority-0, source:dcache.scala:533-540]
+- name: ready_blocked_by_probe_meta_read
+  inputs: [{role: ready, type: DCache.ReqReady}, {role: contender, type: DCache.ProbeMetaRead}]
+  outputs: []
+  when: *same_cycle
+  ensure: [*false_expr]
+  tags: [arbiter, priority-1, source:dcache.scala:585-595]
+- name: ready_blocked_by_writeback
+  inputs: [{role: ready, type: DCache.ReqReady}, {role: contender, type: MSHR.WritebackRequest}]
+  outputs: []
+  when: *same_cycle
+  ensure: [*false_expr]
+  tags: [arbiter, priority-2, source:dcache.scala:563-580]
+- name: ready_blocked_by_mshr_meta_read
+  inputs: [{role: ready, type: DCache.ReqReady}, {role: contender, type: MSHR.MetaReadRequest}]
+  outputs: []
+  when: *same_cycle
+  ensure: [*false_expr]
+  tags: [arbiter, priority-3, source:dcache.scala:552-557]
+constraints: []
+
+repeat:
+- over: configs
+  as: config
+  include:
+    transformations:
+    - name: 'supported_four_way_geometry_${config.repeat_index}'
+      inputs: [{role: init, type: DCache.ConfigInit}]
+      outputs: []
+      when: {node: binary, op: eq, left: {node: event_field, event_id: init, field: config_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: '${config.config_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: init, field: n_sets, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 64}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: init, field: n_ways, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 4}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: init, field: n_mshrs, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}
+      - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: 0}, right: {node: event_field, event_id: init, field: lsu_width, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: 0}, right: {node: event_field, event_id: init, field: num_banks, sort: {name: int}}}
+      tags: [configuration, source:config-mixins.scala:96-192]
+    - name: 'one_wide_response_blocks_new_request_${config.repeat_index}'
+      inputs: [{role: ready, type: DCache.ReqReady}, {role: contender, type: MSHR.ResponseDequeue}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: contender, field: cycle, sort: {name: int}}}, {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: '${config.lsu_width}'}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: [*false_expr]
+      tags: [arbiter, one-wide-config, source:dcache.scala:508-512]
+
+- over: sets
+  as: set
+  include:
+    state_variables:
+    - {name: 'DCache.set[${set.set_id}].replacement_way', sort: {name: int}, initial: '${set.replacement_way}'}
+    - {name: 'DCache.set[${set.set_id}].way[0].tag', sort: {name: int}, initial: '${set.way0_tag}'}
+    - {name: 'DCache.set[${set.set_id}].way[0].permission', sort: {name: string}, initial: '${set.way0_permission}'}
+    - {name: 'DCache.set[${set.set_id}].way[0].value', sort: {name: value, width: 64}, initial: '${set.way0_value}'}
+    - {name: 'DCache.set[${set.set_id}].way[1].tag', sort: {name: int}, initial: '${set.way1_tag}'}
+    - {name: 'DCache.set[${set.set_id}].way[1].permission', sort: {name: string}, initial: '${set.way1_permission}'}
+    - {name: 'DCache.set[${set.set_id}].way[1].value', sort: {name: value, width: 64}, initial: '${set.way1_value}'}
+    - {name: 'DCache.set[${set.set_id}].way[2].tag', sort: {name: int}, initial: '${set.way2_tag}'}
+    - {name: 'DCache.set[${set.set_id}].way[2].permission', sort: {name: string}, initial: '${set.way2_permission}'}
+    - {name: 'DCache.set[${set.set_id}].way[2].value', sort: {name: value, width: 64}, initial: '${set.way2_value}'}
+    - {name: 'DCache.set[${set.set_id}].way[3].tag', sort: {name: int}, initial: '${set.way3_tag}'}
+    - {name: 'DCache.set[${set.set_id}].way[3].permission', sort: {name: string}, initial: '${set.way3_permission}'}
+    - {name: 'DCache.set[${set.set_id}].way[3].value', sort: {name: value, width: 64}, initial: '${set.way3_value}'}
+    transformations:
+    - name: 'dynamic_mshr_meta_way0_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      when: &dynamic_meta_way0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[0].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[0].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, dynamic-interface, source:dcache.scala:499-505]
+    - name: 'dynamic_mshr_meta_way1_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[1].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, dynamic-interface, source:dcache.scala:499-505]
+    - name: 'dynamic_mshr_meta_way2_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[2].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, dynamic-interface, source:dcache.scala:499-505]
+    - name: 'dynamic_mshr_meta_way3_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[3].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, dynamic-interface, source:dcache.scala:499-505]
+    - name: 'dynamic_mshr_refill_way0_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      when: &dynamic_refill_way0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[0].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, dynamic-interface, source:dcache.scala:457-479]
+    - name: 'dynamic_mshr_refill_way1_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[1].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, dynamic-interface, source:dcache.scala:457-479]
+    - name: 'dynamic_mshr_refill_way2_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[2].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, dynamic-interface, source:dcache.scala:457-479]
+    - name: 'dynamic_mshr_refill_way3_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[3].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, dynamic-interface, source:dcache.scala:457-479]
+
+- over: requests
+  as: req
+  include:
+    state_variables:
+    - {name: 'DCache.request[${req.op_id}].pre_s2_nacked', sort: {name: bool}, initial: false}
+    slots:
+    - {id: 'ready_${req.repeat_index}', type: DCache.ReqReady, required: false, fields: {op_id: '${req.op_id}', port: '${req.port}'}}
+    - id: 'fire_${req.repeat_index}'
+      type: LSU.DCacheReqFire
+      required: false
+      fields: &request_fields {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', stq_idx: '${req.stq_idx}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', bank: '${req.bank}', port: '${req.port}', mem_kind: '${req.mem_kind}', value: '${req.value}'}
+    - {id: 's1_${req.repeat_index}', type: DCache.PipelineS1, required: false, fields: *request_fields}
+    - {id: 's2_${req.repeat_index}', type: DCache.PipelineS2, required: false, fields: *request_fields}
+    - {id: 'nack_cause_bank_${req.repeat_index}', type: DCache.NackCause, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', port: '${req.port}', reason: data-bank-conflict}}
+    - {id: 'nack_cause_probe_${req.repeat_index}', type: DCache.NackCause, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', port: '${req.port}', reason: probe-meta-write-conflict}}
+    - {id: 'nack_cause_victim_${req.repeat_index}', type: DCache.NackCause, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', port: '${req.port}', reason: mshr-block-hit}}
+    - {id: 'nack_cause_wb_${req.repeat_index}', type: DCache.NackCause, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', port: '${req.port}', reason: writeback-set-conflict}}
+    - {id: 'nack_cause_mshr_${req.repeat_index}', type: DCache.NackCause, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', port: '${req.port}', reason: mshr-not-ready}}
+    - {id: 'request_nack_bank_${req.repeat_index}', type: DCache.RequestNack, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', port: '${req.port}', reason: data-bank-conflict}}
+    - {id: 'request_nack_probe_${req.repeat_index}', type: DCache.RequestNack, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', port: '${req.port}', reason: probe-meta-write-conflict}}
+    - {id: 'request_nack_victim_${req.repeat_index}', type: DCache.RequestNack, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', port: '${req.port}', reason: mshr-block-hit}}
+    - {id: 'request_nack_wb_${req.repeat_index}', type: DCache.RequestNack, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', port: '${req.port}', reason: writeback-set-conflict}}
+    - {id: 'request_nack_mshr_${req.repeat_index}', type: DCache.RequestNack, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', port: '${req.port}', reason: mshr-not-ready}}
+    - {id: 'load_nack_${req.repeat_index}', type: DCache.LoadNack, required: false, fields: {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', address: '${req.address}', port: '${req.port}'}}
+    - {id: 'load_response_${req.repeat_index}', type: DCache.LoadResponse, required: false, fields: {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', address: '${req.address}', port: '${req.port}', set_index: '${req.set_index}'}}
+    - {id: 'store_ack_${req.repeat_index}', type: DCache.StoreAck, required: false, fields: {op_id: '${req.op_id}', stq_idx: '${req.stq_idx}', address: '${req.address}', set_index: '${req.set_index}'}}
+    - {id: 'store_ack_hit_cause_${req.repeat_index}', type: DCache.StoreAckCause, required: false, fields: {op_id: '${req.op_id}', path: hit}}
+    - {id: 'store_ack_miss_cause_${req.repeat_index}', type: DCache.StoreAckCause, required: false, fields: {op_id: '${req.op_id}', path: mshr-accept}}
+    transformations:
+    - name: 'request_can_wait_for_ready_${req.repeat_index}'
+      inputs: [{role: valid, type: LSU.DCacheReqValid}]
+      outputs: [{role: ready, type: DCache.ReqReady}]
+      when: &valid_for_req {node: binary, op: eq, left: {node: event_field, event_id: valid, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: le, left: {node: event_field, event_id: valid, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [s0, ready, source:dcache.scala:508-518]
+    - name: 'request_fire_${req.repeat_index}'
+      inputs: [{role: valid, type: LSU.DCacheReqValid}, {role: ready, type: DCache.ReqReady}]
+      outputs: [{role: fire, type: LSU.DCacheReqFire}]
+      when: {node: nary, op: and, operands: [*valid_for_req, {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: fire, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: fire, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [s0, fire, source:dcache.scala:612-631]
+    - name: 's0_to_s1_${req.repeat_index}'
+      inputs: [{role: fire, type: LSU.DCacheReqFire}]
+      outputs: [{role: s1, type: DCache.PipelineS1}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: fire, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: fire, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      exact: true
+      tags: [s1, source:dcache.scala:633-649]
+    - name: 's1_to_s2_${req.repeat_index}'
+      inputs: [{role: s1, type: DCache.PipelineS1}]
+      outputs: [{role: s2, type: DCache.PipelineS2}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      exact: true
+      tags: [s2, source:dcache.scala:670-687]
+    - name: 'nack_cause_to_public_request_nack_${req.repeat_index}'
+      inputs: [{role: cause, type: DCache.NackCause}]
+      outputs: [{role: nack, type: DCache.RequestNack}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: nack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: nack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: nack, field: reason, sort: {name: string}}, right: {node: event_field, event_id: cause, field: reason, sort: {name: string}}}
+      exact: true
+      tags: [nack, source:dcache.scala:759-784]
+    - name: 'load_request_nack_${req.repeat_index}'
+      inputs: [{role: request_nack, type: DCache.RequestNack}]
+      outputs: [{role: load_nack, type: DCache.LoadNack}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request_nack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: literal, sort: {name: string}, value: '${req.mem_kind}'}, right: {node: literal, sort: {name: string}, value: load}}, {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: '${req.mem_kind}'}, right: {node: literal, sort: {name: string}, value: lr}}]}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: load_nack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: load_nack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request_nack, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load-nack, source:dcache.scala:884-885]
+    - name: 'accepted_store_miss_ack_${req.repeat_index}'
+      inputs: [{role: request, type: DCache.MSHRRequest}]
+      outputs: [{role: cause, type: DCache.StoreAckCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: request, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mshr-accept}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [store-miss-ack, source:dcache.scala:773-779, source:dcache.scala:888-889]
+    - name: 'store_ack_cause_to_lsu_${req.repeat_index}'
+      inputs: [{role: cause, type: DCache.StoreAckCause}]
+      outputs: [{role: ack, type: DCache.StoreAck}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ack, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [store-ack, exact-cause-union, source:dcache.scala:773-779, source:dcache.scala:888-889]
+    - name: 'store_write_cause_to_data_array_${req.repeat_index}'
+      inputs: [{role: cause, type: DCache.StoreWriteCause}]
+      outputs: [{role: write, type: DCache.StoreDataWrite}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: cause, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: event_field, event_id: cause, field: set_index, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: event_field, event_id: cause, field: way_id, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: cause, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [s3-data-write, exact-cause-union, source:dcache.scala:895-938]
+    - name: 'bank_conflict_nack_${req.repeat_index}'
+      inputs: [{role: conflict, type: DCache.DataBankConflict}]
+      outputs: [{role: cause, type: DCache.NackCause}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: conflict, field: victim_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: data-bank-conflict}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: conflict, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: conflict, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [nack-data, source:dcache.scala:327-349, source:dcache.scala:766-770]
+    - name: 'probe_meta_write_nack_${req.repeat_index}'
+      inputs: [{role: s1, type: DCache.PipelineS1}, {role: probe_write, type: DCache.ProbeMetaWrite}]
+      outputs: [{role: cause, type: DCache.NackCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: s1, field: set_index, sort: {name: int}}, right: {node: event_field, event_id: probe_write, field: set_index, sort: {name: int}}}, {node: binary, op: eq, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: probe_write, field: cycle, sort: {name: int}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: probe-meta-write-conflict}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s1, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [nack-hit, probe-conflict, source:dcache.scala:647, source:dcache.scala:759-770]
+    - name: 'mshr_block_hit_nack_${req.repeat_index}'
+      inputs: [{role: s1, type: DCache.PipelineS1}, {role: blocked, type: MSHRFile.BlockHit}]
+      outputs: [{role: cause, type: DCache.NackCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mshr-block-hit}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s1, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [nack-victim, secondary-miss, source:dcache.scala:762-770]
+    - name: 'writeback_set_nack_${req.repeat_index}'
+      inputs: [{role: s1, type: DCache.PipelineS1}, {role: writeback, type: MSHR.WritebackRequest}]
+      outputs: [{role: cause, type: DCache.NackCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: s1, field: set_index, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: set_index, sort: {name: int}}}, {node: binary, op: eq, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: writeback-set-conflict}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s1, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [nack-writeback, source:dcache.scala:664, source:dcache.scala:768-770]
+    - name: 'mshr_not_ready_nack_${req.repeat_index}'
+      inputs: [{role: admission, type: DCache.MSHRAdmissionRequest}, {role: blocked, type: MSHRFile.RequestBlocked}]
+      outputs: [{role: cause, type: DCache.NackCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: blocked, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: reason, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mshr-not-ready}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: blocked, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [nack-miss, source:dcache.scala:764-770]
+
+- over: probes
+  as: probe
+  include:
+    state_variables:
+    - {name: 'DCache.probe[${probe.source_op_id}].blocked', sort: {name: bool}, initial: false}
+    slots:
+    - &probe_meta_read_slot {id: 'probe_meta_read_${probe.repeat_index}', type: DCache.ProbeMetaRead, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_meta_resp_${probe.repeat_index}', type: DCache.ProbeMetaResp, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_mshr_check_${probe.repeat_index}', type: DCache.ProbeMSHRCheck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_retry_${probe.repeat_index}', type: DCache.ProbeRetry, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', reason: mshr-or-writeback-not-ready}}
+    transformations:
+    - name: 'probe_receive_to_meta_read_${probe.repeat_index}'
+      inputs: [{role: receive, type: DCache.ProbeReceive}]
+      outputs: [{role: meta_read, type: DCache.ProbeMetaRead}]
+      when: &probe_receive_match {node: binary, op: eq, left: {node: event_field, event_id: receive, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: meta_read, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: meta_read, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: receive, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      exact: true
+      tags: [probe-fsm, s_invalid-to-s_meta_read, source:dcache.scala:213-222]
+    - name: 'probe_meta_read_to_resp_${probe.repeat_index}'
+      inputs: [{role: meta_read, type: DCache.ProbeMetaRead}]
+      outputs: [{role: meta_resp, type: DCache.ProbeMetaResp}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: meta_read, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: meta_resp, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: meta_resp, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: meta_read, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      exact: true
+      tags: [probe-fsm, s_meta_read-to-s_meta_resp, source:dcache.scala:220-225]
+    - name: 'probe_meta_resp_to_mshr_check_${probe.repeat_index}'
+      inputs: [{role: meta_resp, type: DCache.ProbeMetaResp}]
+      outputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: meta_resp, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: check, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: meta_resp, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      exact: true
+      tags: [probe-fsm, s_meta_resp-to-s_mshr_req, source:dcache.scala:224-231]
+    - name: 'probe_blocked_retries_${probe.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}, {role: blocked, type: MSHR.ProbeBlocked}]
+      outputs: [{role: retry, type: DCache.ProbeRetry}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: check, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: check, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: blocked, field: address, sort: {name: address, width: 64}}}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: retry, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: retry, field: cycle, sort: {name: int}}}]
+      state_updates: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: blocked, value: {node: literal, sort: {name: bool}, value: true}}]
+      exact: true
+      tags: [probe-fsm, retry, source:dcache.scala:227-232]
+
+repeat_product:
+- axes:
+  - {over: requests, as: req}
+  - {over: configs, as: config}
+  include:
+    transformations:
+    - name: 'request_port_in_range_${req.repeat_index}_${config.repeat_index}'
+      inputs: [{role: valid, type: LSU.DCacheReqValid}]
+      outputs: []
+      when: {node: binary, op: eq, left: {node: event_field, event_id: valid, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+      ensure: [{node: binary, op: lt, left: {node: event_field, event_id: valid, field: port, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${config.lsu_width}'}}]
+      tags: [configuration, lsu-width, source:dcache.scala:454-455]
+
+- axes:
+  - {over: requests, as: req}
+  - {over: sets, as: set}
+  include:
+    slots:
+    - {id: 'tag_match_w0_${req.repeat_index}_${set.repeat_index}', type: DCache.TagMatch, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 0}}
+    - {id: 'tag_match_w1_${req.repeat_index}_${set.repeat_index}', type: DCache.TagMatch, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 1}}
+    - {id: 'tag_match_w2_${req.repeat_index}_${set.repeat_index}', type: DCache.TagMatch, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 2}}
+    - {id: 'tag_match_w3_${req.repeat_index}_${set.repeat_index}', type: DCache.TagMatch, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 3}}
+    - {id: 'tag_miss_${req.repeat_index}_${set.repeat_index}', type: DCache.TagMiss, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}'}}
+    - {id: 'load_hit_w0_${req.repeat_index}_${set.repeat_index}', type: DCache.LoadHit, required: false, fields: {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', address: '${req.address}', port: '${req.port}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 0}}
+    - {id: 'load_hit_w1_${req.repeat_index}_${set.repeat_index}', type: DCache.LoadHit, required: false, fields: {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', address: '${req.address}', port: '${req.port}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 1}}
+    - {id: 'load_hit_w2_${req.repeat_index}_${set.repeat_index}', type: DCache.LoadHit, required: false, fields: {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', address: '${req.address}', port: '${req.port}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 2}}
+    - {id: 'load_hit_w3_${req.repeat_index}_${set.repeat_index}', type: DCache.LoadHit, required: false, fields: {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', address: '${req.address}', port: '${req.port}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 3}}
+    - {id: 'load_miss_${req.repeat_index}_${set.repeat_index}', type: DCache.LoadMiss, required: false, fields: {op_id: '${req.op_id}', ldq_idx: '${req.ldq_idx}', address: '${req.address}', port: '${req.port}', set_index: '${req.set_index}'}}
+    - {id: 'store_hit_w0_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreHit, required: false, fields: {op_id: '${req.op_id}', stq_idx: '${req.stq_idx}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 0, value: '${req.value}'}}
+    - {id: 'store_hit_w1_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreHit, required: false, fields: {op_id: '${req.op_id}', stq_idx: '${req.stq_idx}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 1, value: '${req.value}'}}
+    - {id: 'store_hit_w2_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreHit, required: false, fields: {op_id: '${req.op_id}', stq_idx: '${req.stq_idx}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 2, value: '${req.value}'}}
+    - {id: 'store_hit_w3_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreHit, required: false, fields: {op_id: '${req.op_id}', stq_idx: '${req.stq_idx}', address: '${req.address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 3, value: '${req.value}'}}
+    - {id: 'store_write_w0_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreDataWrite, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', way_id: 0, value: '${req.value}'}}
+    - {id: 'store_write_w1_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreDataWrite, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', way_id: 1, value: '${req.value}'}}
+    - {id: 'store_write_w2_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreDataWrite, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', way_id: 2, value: '${req.value}'}}
+    - {id: 'store_write_w3_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreDataWrite, required: false, fields: {op_id: '${req.op_id}', address: '${req.address}', set_index: '${req.set_index}', way_id: 3, value: '${req.value}'}}
+    - {id: 'store_hit_write_cause_w0_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreWriteCause, required: false, fields: {op_id: '${req.op_id}', path: hit, address: '${req.address}', set_index: '${req.set_index}', way_id: 0, value: '${req.value}'}}
+    - {id: 'store_hit_write_cause_w1_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreWriteCause, required: false, fields: {op_id: '${req.op_id}', path: hit, address: '${req.address}', set_index: '${req.set_index}', way_id: 1, value: '${req.value}'}}
+    - {id: 'store_hit_write_cause_w2_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreWriteCause, required: false, fields: {op_id: '${req.op_id}', path: hit, address: '${req.address}', set_index: '${req.set_index}', way_id: 2, value: '${req.value}'}}
+    - {id: 'store_hit_write_cause_w3_${req.repeat_index}_${set.repeat_index}', type: DCache.StoreWriteCause, required: false, fields: {op_id: '${req.op_id}', path: hit, address: '${req.address}', set_index: '${req.set_index}', way_id: 3, value: '${req.value}'}}
+    - &admit_repl0_clean {id: 'admit_repl0_clean_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 0, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_repl0_dirty_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 0, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: true, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_repl1_clean_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 1, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_repl1_dirty_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 1, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: true, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_repl2_clean_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 2, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_repl2_dirty_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 2, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: true, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_repl3_clean_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 3, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_repl3_dirty_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 3, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: false, old_line_dirty: true, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_upgrade0_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 0, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: true, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_upgrade1_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 1, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: true, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_upgrade2_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 2, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: true, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    - {id: 'admit_upgrade3_${req.repeat_index}_${set.repeat_index}', type: DCache.MSHRAdmissionRequest, required: false, fields: {op_id: '${req.op_id}', queue_kind: '${req.queue_kind}', queue_idx: '${req.queue_idx}', address: '${req.address}', block_address: '${req.block_address}', set_index: '${req.set_index}', tag: '${req.tag}', way_id: 3, value: '${req.value}', mem_kind: '${req.mem_kind}', cache_tag_match: true, old_line_dirty: false, needs_acquire: true, is_probe: false, sdq_id: '${req.queue_idx}'}}
+    transformations:
+    - &match_way0
+      name: 'tag_match_way0_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}]
+      outputs: [{role: match, type: DCache.TagMatch}]
+      when: &s2_for_set {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: &same_s2_cycle [{node: binary, op: eq, left: {node: event_field, event_id: match, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s2, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'DCache.set[${set.set_id}].way[0].tag', at: s2, op: eq, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[0].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}
+      state_mode: guard
+      exact: true
+      tags: [tag-match, source:dcache.scala:657-687]
+    - name: 'tag_match_way1_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}]
+      outputs: [{role: match, type: DCache.TagMatch}]
+      when: *s2_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: *same_s2_cycle
+      state_requirements:
+      - {state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s2, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'DCache.set[${set.set_id}].way[1].tag', at: s2, op: eq, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[1].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}
+      state_mode: guard
+      exact: true
+      tags: [tag-match, source:dcache.scala:657-687]
+    - name: 'tag_match_way2_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}]
+      outputs: [{role: match, type: DCache.TagMatch}]
+      when: *s2_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      ensure: *same_s2_cycle
+      state_requirements:
+      - {state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s2, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'DCache.set[${set.set_id}].way[2].tag', at: s2, op: eq, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[2].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}
+      state_mode: guard
+      exact: true
+      tags: [tag-match, source:dcache.scala:657-687]
+    - name: 'tag_match_way3_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}]
+      outputs: [{role: match, type: DCache.TagMatch}]
+      when: *s2_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      ensure: *same_s2_cycle
+      state_requirements:
+      - {state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s2, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'DCache.set[${set.set_id}].way[3].tag', at: s2, op: eq, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[3].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}
+      state_mode: guard
+      exact: true
+      tags: [tag-match, source:dcache.scala:657-687]
+    - name: 'tag_miss_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}]
+      outputs: [{role: miss, type: DCache.TagMiss}]
+      when: *s2_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: miss, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: miss, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'DCache.request[${req.op_id}].pre_s2_nacked', at: s2, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'DCache.set[${set.set_id}].way[0].tag', at: s2, op: ne, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[1].tag', at: s2, op: ne, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[2].tag', at: s2, op: ne, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[3].tag', at: s2, op: ne, value: {node: event_field, event_id: s2, field: tag, sort: {name: int}}}
+      state_mode: guard
+      exact: true
+      tags: [tag-miss, source:dcache.scala:657-687]
+    - &load_hit_way0
+      name: 'read_hit_way0_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.LoadHit}]
+      when: &read_match_way0
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'DCache.set[${set.set_id}].way[0].value', at: hit, op: eq, value: {node: event_field, event_id: hit, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [read-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'read_hit_way1_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.LoadHit}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[1].value', at: hit, op: eq, value: {node: event_field, event_id: hit, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [read-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'read_hit_way2_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.LoadHit}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[2].value', at: hit, op: eq, value: {node: event_field, event_id: hit, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [read-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'read_hit_way3_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.LoadHit}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: lr}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[3].value', at: hit, op: eq, value: {node: event_field, event_id: hit, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [read-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'read_hit_response_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: hit, type: DCache.LoadHit}]
+      outputs: [{role: response, type: DCache.LoadResponse}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: response, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: hit, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [load-response, source:dcache.scala:772-779, source:dcache.scala:867-880]
+    - &store_hit_way0
+      name: 'write_hit_way0_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.StoreHit}]
+      when: &write_match_way0
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[0].permission', at: s2, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [write-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'write_hit_way1_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.StoreHit}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[1].permission', at: s2, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [write-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'write_hit_way2_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.StoreHit}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[2].permission', at: s2, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [write-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'write_hit_way3_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: hit, type: DCache.StoreHit}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[3].permission', at: s2, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [write-hit, permission-stable, source:dcache.scala:683-687]
+    - name: 'store_hit_ack_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: hit, type: DCache.StoreHit}]
+      outputs: [{role: cause, type: DCache.StoreAckCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [store-ack, source:dcache.scala:777-779, source:dcache.scala:888-889]
+    - name: 'store_data_write_way0_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: hit, type: DCache.StoreHit}]
+      outputs: [{role: cause, type: DCache.StoreWriteCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[0].value', at: hit, value: {node: event_field, event_id: cause, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [s3-data-write, source:dcache.scala:896-938]
+    - name: 'load_tag_miss_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: load_miss, type: DCache.LoadMiss}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: tag_miss, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: '${req.mem_kind}'}, right: {node: literal, sort: {name: string}, value: load}}
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: '${req.mem_kind}'}, right: {node: literal, sort: {name: string}, value: lr}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: load_miss, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: load_miss, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: load_miss, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: tag_miss, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [load-miss, source:dcache.scala:791-812]
+    - &replace_way0_clean
+      name: 'replace_way0_clean_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: &tag_miss_for_req {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: tag_miss, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: tag_miss, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: &admit_repl0_clean_scope {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}]}
+      ensure: &admission_at_miss [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: tag_miss, field: cycle, sort: {name: int}}}]
+      state_requirements:
+      - {state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 0}}
+      - {state: 'DCache.set[${set.set_id}].way[0].permission', at: tag_miss, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}
+      state_mode: guard
+      exact: true
+      tags: [replacement, clean-victim, source:dcache.scala:755-812]
+    - name: 'replace_way0_dirty_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: *tag_miss_for_req
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: *admission_at_miss
+      state_requirements:
+      - {state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 0}}
+      - {state: 'DCache.set[${set.set_id}].way[0].permission', at: tag_miss, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}
+      state_mode: guard
+      exact: true
+      tags: [replacement, dirty-victim, source:dcache.scala:755-812]
+    - name: 'replace_way1_clean_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: *tag_miss_for_req
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}]}
+      ensure: *admission_at_miss
+      state_requirements: [{state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 1}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: tag_miss, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [replacement, clean-victim, source:dcache.scala:755-812]
+    - name: 'replace_way1_dirty_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: *tag_miss_for_req
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: *admission_at_miss
+      state_requirements: [{state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 1}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: tag_miss, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [replacement, dirty-victim, source:dcache.scala:755-812]
+    - name: 'replace_way2_clean_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: *tag_miss_for_req
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}]}
+      ensure: *admission_at_miss
+      state_requirements: [{state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 2}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: tag_miss, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [replacement, clean-victim, source:dcache.scala:755-812]
+    - name: 'replace_way2_dirty_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: *tag_miss_for_req
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: *admission_at_miss
+      state_requirements: [{state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 2}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: tag_miss, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [replacement, dirty-victim, source:dcache.scala:755-812]
+    - name: 'replace_way3_clean_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: *tag_miss_for_req
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}]}
+      ensure: *admission_at_miss
+      state_requirements: [{state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 3}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: tag_miss, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [replacement, clean-victim, source:dcache.scala:755-812]
+    - name: 'replace_way3_dirty_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: tag_miss, type: DCache.TagMiss}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: *tag_miss_for_req
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: false}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: old_line_dirty, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: *admission_at_miss
+      state_requirements: [{state: 'DCache.set[${set.set_id}].replacement_way', at: tag_miss, op: eq, value: {node: literal, sort: {name: int}, value: 3}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: tag_miss, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [replacement, dirty-victim, source:dcache.scala:755-812]
+    - name: 'permission_upgrade_way0_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: &write_match0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[0].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [permission-miss, source:dcache.scala:683-687, source:dcache.scala:791-812]
+    - name: 'permission_upgrade_way1_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[1].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [permission-miss, source:dcache.scala:683-687, source:dcache.scala:791-812]
+    - name: 'permission_upgrade_way2_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[2].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [permission-miss, source:dcache.scala:683-687, source:dcache.scala:791-812]
+    - name: 'permission_upgrade_way3_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.PipelineS2}, {role: match, type: DCache.TagMatch}]
+      outputs: [{role: admission, type: DCache.MSHRAdmissionRequest}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: match, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: nary, op: or, operands: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sc}}, {node: binary, op: eq, left: {node: event_field, event_id: s2, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: amo}}]}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: binary, op: eq, left: {node: event_field, event_id: admission, field: cache_tag_match, sort: {name: bool}}, right: {node: literal, sort: {name: bool}, value: true}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: admission, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}}]
+      state_requirements: [{state: 'DCache.set[${set.set_id}].way[3].permission', at: s2, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [permission-miss, source:dcache.scala:683-687, source:dcache.scala:791-812]
+    - name: 'store_data_write_way1_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: hit, type: DCache.StoreHit}]
+      outputs: [{role: cause, type: DCache.StoreWriteCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[1].value', at: hit, value: {node: event_field, event_id: cause, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [s3-data-write, source:dcache.scala:896-938]
+    - name: 'store_data_write_way2_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: hit, type: DCache.StoreHit}]
+      outputs: [{role: cause, type: DCache.StoreWriteCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[2].value', at: hit, value: {node: event_field, event_id: cause, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [s3-data-write, source:dcache.scala:896-938]
+    - name: 'store_data_write_way3_${req.repeat_index}_${set.repeat_index}'
+      inputs: [{role: hit, type: DCache.StoreHit}]
+      outputs: [{role: cause, type: DCache.StoreWriteCause}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: hit, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${req.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hit}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[3].value', at: hit, value: {node: event_field, event_id: cause, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [s3-data-write, source:dcache.scala:896-938]
+
+- axes:
+  - {over: requests, as: winner}
+  - {over: requests, as: victim}
+  - {over: configs, as: config}
+  include:
+    slots:
+    - {id: 'bank_conflict_${winner.repeat_index}_${victim.repeat_index}_${config.repeat_index}', type: DCache.DataBankConflict, required: false, fields: {winner_op_id: '${winner.op_id}', victim_op_id: '${victim.op_id}', bank: '${victim.bank}', victim_port: '${victim.port}'}}
+    transformations:
+    - name: 'coissued_requests_share_ready_cycle_${winner.repeat_index}_${victim.repeat_index}_${config.repeat_index}'
+      inputs: [{role: winner_ready, type: DCache.ReqReady}, {role: victim_ready, type: DCache.ReqReady}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: winner_ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${winner.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: victim_ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${victim.op_id}'}}, {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: '${winner.source_cycle}'}, right: {node: literal, sort: {name: int}, value: '${victim.source_cycle}'}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: winner_ready, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: victim_ready, field: cycle, sort: {name: int}}}]
+      tags: [lsu-width, common-pipeline-advance, source:dcache.scala:612-631]
+    - name: 'lower_port_wins_bank_${winner.repeat_index}_${victim.repeat_index}_${config.repeat_index}'
+      inputs: [{role: winner_s1, type: DCache.PipelineS1}, {role: victim_s1, type: DCache.PipelineS1}]
+      outputs: [{role: conflict, type: DCache.DataBankConflict}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: winner_s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${winner.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: victim_s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${victim.op_id}'}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: winner_s1, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: victim_s1, field: cycle, sort: {name: int}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: winner_s1, field: bank, sort: {name: int}}, right: {node: event_field, event_id: victim_s1, field: bank, sort: {name: int}}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: winner_s1, field: port, sort: {name: int}}, right: {node: event_field, event_id: victim_s1, field: port, sort: {name: int}}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: 1}, right: {node: literal, sort: {name: int}, value: '${config.num_banks}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: conflict, field: winner_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${winner.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: conflict, field: victim_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${victim.op_id}'}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: conflict, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: victim_s1, field: cycle, sort: {name: int}}}]
+      exact: true
+      tags: [bank-conflict, port-priority, source:dcache.scala:327-349]
+
+- axes:
+  - {over: probes, as: probe}
+  - {over: sets, as: set}
+  include:
+    slots:
+    - {id: 'probe_release_nohit_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: -1, tag_match: false, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_nohit_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: -1, tag_match: false, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_release_clean_w0_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 0, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_release_clean_w1_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 1, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_release_clean_w2_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 2, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_release_clean_w3_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 3, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_writeback_w0_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeWriteback, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', probe_param: '${probe.probe_param}', way_id: 0}}
+    - {id: 'probe_writeback_w1_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeWriteback, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', probe_param: '${probe.probe_param}', way_id: 1}}
+    - {id: 'probe_writeback_w2_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeWriteback, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', probe_param: '${probe.probe_param}', way_id: 2}}
+    - {id: 'probe_writeback_w3_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeWriteback, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', probe_param: '${probe.probe_param}', way_id: 3}}
+    - {id: 'probe_release_dirty_w0_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 0, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_release_dirty_w1_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 1, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_release_dirty_w2_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 2, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_release_dirty_w3_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeRelease, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 3, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_clean_w0_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 0, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_clean_w1_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 1, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_clean_w2_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 2, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_clean_w3_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 3, tag_match: true, had_data: false, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_dirty_w0_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 0, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_dirty_w1_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 1, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_dirty_w2_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 2, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_ack_dirty_w3_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeAck, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 3, tag_match: true, had_data: true, probe_param: '${probe.probe_param}'}}
+    - {id: 'probe_meta_to_n_w0_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 0, new_permission: nothing}}
+    - {id: 'probe_meta_to_n_w1_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 1, new_permission: nothing}}
+    - {id: 'probe_meta_to_n_w2_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 2, new_permission: nothing}}
+    - {id: 'probe_meta_to_n_w3_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 3, new_permission: nothing}}
+    - {id: 'probe_meta_to_b_w0_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 0, new_permission: branch}}
+    - {id: 'probe_meta_to_b_w1_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 1, new_permission: branch}}
+    - {id: 'probe_meta_to_b_w2_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 2, new_permission: branch}}
+    - {id: 'probe_meta_to_b_w3_${probe.repeat_index}_${set.repeat_index}', type: DCache.ProbeMetaWrite, required: false, fields: {source_op_id: '${probe.source_op_id}', address: '${probe.address}', set_index: '${probe.set_index}', tag: '${probe.tag}', way_id: 3, new_permission: branch}}
+    transformations:
+    - name: 'probe_no_tag_release_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: release, type: DCache.ProbeRelease}]
+      when: &probe_check_for_set {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: check, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: check, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: unary, op: not, operand: {node: event_field, event_id: release, field: tag_match, sort: {name: bool}}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements:
+      - {state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: 'DCache.set[${set.set_id}].way[0].tag', at: check, op: ne, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[1].tag', at: check, op: ne, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[2].tag', at: check, op: ne, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}
+      - {state: 'DCache.set[${set.set_id}].way[3].tag', at: check, op: ne, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, no-tag, source:dcache.scala:231-255]
+    - name: 'probe_clean_way0_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: release, type: DCache.ProbeRelease}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: unary, op: not, operand: {node: event_field, event_id: release, field: had_data, sort: {name: bool}}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[0].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[0].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}, {state: 'DCache.set[${set.set_id}].way[0].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, clean, source:dcache.scala:231-255]
+    - name: 'probe_clean_way1_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: release, type: DCache.ProbeRelease}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: unary, op: not, operand: {node: event_field, event_id: release, field: had_data, sort: {name: bool}}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[1].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, clean, source:dcache.scala:231-255]
+    - name: 'probe_clean_way2_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: release, type: DCache.ProbeRelease}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: unary, op: not, operand: {node: event_field, event_id: release, field: had_data, sort: {name: bool}}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[2].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, clean, source:dcache.scala:231-255]
+    - name: 'probe_clean_way3_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: release, type: DCache.ProbeRelease}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: unary, op: not, operand: {node: event_field, event_id: release, field: had_data, sort: {name: bool}}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[3].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: dirty}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: check, op: ne, value: {node: literal, sort: {name: string}, value: nothing}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, clean, source:dcache.scala:231-255]
+    - name: 'probe_dirty_way0_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: writeback, type: DCache.ProbeWriteback}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[0].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[0].permission', at: check, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, dirty-writeback, source:dcache.scala:231-249]
+    - name: 'probe_dirty_way1_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: writeback, type: DCache.ProbeWriteback}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[1].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: check, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, dirty-writeback, source:dcache.scala:231-249]
+    - name: 'probe_dirty_way2_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: writeback, type: DCache.ProbeWriteback}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[2].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: check, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, dirty-writeback, source:dcache.scala:231-249]
+    - name: 'probe_dirty_way3_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: check, type: DCache.ProbeMSHRCheck}]
+      outputs: [{role: writeback, type: DCache.ProbeWriteback}]
+      when: *probe_check_for_set
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: check, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_requirements: [{state: 'DCache.probe[${probe.source_op_id}].blocked', at: check, op: eq, value: {node: literal, sort: {name: bool}, value: false}}, {state: 'DCache.set[${set.set_id}].way[3].tag', at: check, op: eq, value: {node: event_field, event_id: check, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: check, op: eq, value: {node: literal, sort: {name: string}, value: dirty}}]
+      state_mode: guard
+      exact: true
+      tags: [probe-fsm, dirty-writeback, source:dcache.scala:231-249]
+    - name: 'probe_dirty_writeback_to_release_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: writeback, type: DCache.ProbeWriteback}]
+      outputs: [{role: release, type: DCache.ProbeRelease}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: writeback, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: event_field, event_id: release, field: tag_match, sort: {name: bool}}, {node: event_field, event_id: release, field: had_data, sort: {name: bool}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: way_id, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: way_id, sort: {name: int}}}
+      exact: true
+      tags: [probe-fsm, writeback-response, source:dcache.scala:242-250]
+    - name: 'probe_release_to_ack_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: release, type: DCache.ProbeRelease}]
+      outputs: [{role: ack, type: DCache.ProbeAck}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: release, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: event_field, event_id: release, field: way_id, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, right: {node: event_field, event_id: release, field: tag_match, sort: {name: bool}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ack, field: had_data, sort: {name: bool}}, right: {node: event_field, event_id: release, field: had_data, sort: {name: bool}}}
+      exact: true
+      tags: [probe-fsm, probe-ack, source:dcache.scala:211-240]
+    - &probe_to_n_way0
+      name: 'probe_to_n_way0_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: &probe_ack_to_n_way0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toN}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: nothing}}]}
+      ensure: &meta_after_ack [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: ack, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      state_updates:
+      - {state: 'DCache.set[${set.set_id}].way[0].tag', at: meta, value: {node: literal, sort: {name: int}, value: -1}}
+      - {state: 'DCache.set[${set.set_id}].way[0].permission', at: meta, value: {node: literal, sort: {name: string}, value: nothing}}
+      exact: true
+      tags: [probe-fsm, invalidate, source:dcache.scala:238-256]
+    - name: 'probe_to_n_way1_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toN}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: nothing}}]}
+      ensure: *meta_after_ack
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[1].tag', at: meta, value: {node: literal, sort: {name: int}, value: -1}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: meta, value: {node: literal, sort: {name: string}, value: nothing}}]
+      exact: true
+      tags: [probe-fsm, invalidate, source:dcache.scala:238-256]
+    - name: 'probe_to_n_way2_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toN}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: nothing}}]}
+      ensure: *meta_after_ack
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[2].tag', at: meta, value: {node: literal, sort: {name: int}, value: -1}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: meta, value: {node: literal, sort: {name: string}, value: nothing}}]
+      exact: true
+      tags: [probe-fsm, invalidate, source:dcache.scala:238-256]
+    - name: 'probe_to_n_way3_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toN}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: nothing}}]}
+      ensure: *meta_after_ack
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[3].tag', at: meta, value: {node: literal, sort: {name: int}, value: -1}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: meta, value: {node: literal, sort: {name: string}, value: nothing}}]
+      exact: true
+      tags: [probe-fsm, invalidate, source:dcache.scala:238-256]
+    - name: 'probe_to_b_way0_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: &probe_ack_to_b_way0 {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toB}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: branch}}]}
+      ensure: *meta_after_ack
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[0].permission', at: meta, value: {node: literal, sort: {name: string}, value: branch}}]
+      exact: true
+      tags: [probe-fsm, downgrade, source:dcache.scala:238-256]
+    - name: 'probe_to_b_way1_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toB}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: branch}}]}
+      ensure: *meta_after_ack
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[1].permission', at: meta, value: {node: literal, sort: {name: string}, value: branch}}]
+      exact: true
+      tags: [probe-fsm, downgrade, source:dcache.scala:238-256]
+    - name: 'probe_to_b_way2_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toB}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: branch}}]}
+      ensure: *meta_after_ack
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[2].permission', at: meta, value: {node: literal, sort: {name: string}, value: branch}}]
+      exact: true
+      tags: [probe-fsm, downgrade, source:dcache.scala:238-256]
+    - name: 'probe_to_b_way3_${probe.repeat_index}_${set.repeat_index}'
+      inputs: [{role: ack, type: DCache.ProbeAck}]
+      outputs: [{role: meta, type: DCache.ProbeMetaWrite}]
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: ack, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: event_field, event_id: ack, field: tag_match, sort: {name: bool}}, {node: binary, op: eq, left: {node: event_field, event_id: ack, field: probe_param, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: toB}}]}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: meta, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${probe.source_op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}, {node: binary, op: eq, left: {node: event_field, event_id: meta, field: new_permission, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: branch}}]}
+      ensure: *meta_after_ack
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[3].permission', at: meta, value: {node: literal, sort: {name: string}, value: branch}}]
+      exact: true
+      tags: [probe-fsm, downgrade, source:dcache.scala:238-256]
+
+- axes:
+  - {over: meta_writes, as: write}
+  - {over: sets, as: set}
+  include:
+    transformations:
+    - name: 'mshr_meta_write_way0_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[0].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[0].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, source:dcache.scala:499-505]
+    - name: 'mshr_meta_write_way1_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[1].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[1].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, source:dcache.scala:499-505]
+    - name: 'mshr_meta_write_way2_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[2].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[2].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, source:dcache.scala:499-505]
+    - name: 'mshr_meta_write_way3_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.MetaWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[3].tag', at: write, value: {node: event_field, event_id: write, field: tag, sort: {name: int}}}, {state: 'DCache.set[${set.set_id}].way[3].permission', at: write, value: {node: event_field, event_id: write, field: permission, sort: {name: string}}}]
+      tags: [mshr-meta-write, source:dcache.scala:499-505]
+
+- axes:
+  - {over: refill_writes, as: write}
+  - {over: sets, as: set}
+  include:
+    transformations:
+    - name: 'mshr_refill_data_way0_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[0].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, source:dcache.scala:457-479]
+    - name: 'mshr_refill_data_way1_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[1].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, source:dcache.scala:457-479]
+    - name: 'mshr_refill_data_way2_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[2].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, source:dcache.scala:457-479]
+    - name: 'mshr_refill_data_way3_${write.repeat_index}_${set.repeat_index}'
+      inputs: [{role: write, type: MSHR.RefillWrite}]
+      outputs: []
+      when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: write, field: mshr_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${write.mshr_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: write, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}]}
+      ensure: []
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[3].value', at: write, value: {node: event_field, event_id: write, field: value, sort: {name: value, width: 64}}}]
+      tags: [mshr-refill-write, source:dcache.scala:457-479]
+
+- axes:
+  - {over: store_misses, as: store}
+  - {over: sets, as: set}
+  include:
+    slots:
+    - id: 'replay_s1_${store.repeat_index}_${set.repeat_index}'
+      type: DCache.ReplayS1
+      required: false
+      fields: &replay_pipeline_fields {op_id: '${store.op_id}', mshr_id: {$expr: {node: symbol, name: 'dcache::${store.op_id}::replay_mshr', sort: {name: int}}}, queue_kind: stq, queue_idx: '${store.stq_idx}', address: '${store.address}', set_index: '${store.set_index}', tag: '${store.tag}', way_id: '${store.way_id}', value: '${store.write_value}'}
+    - {id: 'replay_s2_${store.repeat_index}_${set.repeat_index}', type: DCache.ReplayS2, required: false, fields: *replay_pipeline_fields}
+    - {id: 'store_replay_write_cause_${store.repeat_index}_${set.repeat_index}', type: DCache.StoreWriteCause, required: false, fields: {op_id: '${store.op_id}', path: replay, address: '${store.address}', set_index: '${store.set_index}', way_id: '${store.way_id}', value: '${store.write_value}'}}
+    transformations:
+    - name: 'mshr_store_replay_to_s1_${store.repeat_index}_${set.repeat_index}'
+      inputs: [{role: replay, type: MSHR.Replay}]
+      outputs: [{role: s1, type: DCache.ReplayS1}]
+      when: &store_replay_for_set {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: replay, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: '${store.set_index}'}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}]}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: replay, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: s1, field: mshr_id, sort: {name: int}}, right: {node: event_field, event_id: replay, field: mshr_id, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: s1, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: replay, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [mshr-replay, meta-data-arbiters, source:dcache.scala:526-544]
+    - name: 'mshr_store_replay_s1_to_s2_${store.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s1, type: DCache.ReplayS1}]
+      outputs: [{role: s2, type: DCache.ReplayS2}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: s1, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      ensure: [{node: binary, op: eq, left: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: s1, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}]
+      exact: true
+      tags: [mshr-replay, fixed-way-hit, source:dcache.scala:652-691]
+    - name: 'mshr_store_replay_writes_way_${store.repeat_index}_${set.repeat_index}'
+      inputs: [{role: s2, type: DCache.ReplayS2}]
+      outputs: [{role: cause, type: DCache.StoreWriteCause}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: s2, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}
+      output_when: {node: nary, op: and, operands: [{node: binary, op: eq, left: {node: event_field, event_id: cause, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: '${store.op_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: set_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${set.set_index}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: way_id, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: '${store.way_id}'}}, {node: binary, op: eq, left: {node: event_field, event_id: cause, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: replay}}]}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: cause, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: s2, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: cause, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: s2, field: value, sort: {name: value, width: 64}}}
+      state_updates: [{state: 'DCache.set[${set.set_id}].way[${store.way_id}].value', at: s2, value: {node: event_field, event_id: s2, field: value, sort: {name: value, width: 64}}}]
+      exact: true
+      tags: [mshr-replay, s3-data-write, source:dcache.scala:691, source:dcache.scala:895-938]

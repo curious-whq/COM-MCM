@@ -1,0 +1,121 @@
+schema_version: umcm.composition.v0.15.0
+name: boom-mshr-tilelink-source-v021
+horizon: 40
+metadata:
+  version: 0.21.0
+  purpose: Source-derived closure of BoomMSHR mem_acquire/mem_grant/mem_finish with InclusiveCache TileLink A/D/E.
+  encapsulation: strict
+  status: executable-primary-path-integration
+  source:
+  - src/main/scala/v4/lsu/dcache.scala:818-845
+  - src/main/scala/v4/lsu/mshrs.scala:241-265,361-365,717-718
+parameters:
+  mshr_tilelink_ports_enabled: true
+  mshr_grant_port_direction: input
+  mshr_internal_grant_generation: false
+modules:
+- {name: mshr, path: ../model/mshr/module.yaml}
+- {name: boom_mshr_tilelink_wiring_v021, path: ../model/mshr/tilelink_wiring_v021.yaml}
+- {name: sifive_inclusive_l2, path: ../model/coherence/inclusive_l2.yaml}
+connections:
+- name: mshr_acquire_to_wiring
+  source: {module: mshr, port: mem_acquire}
+  target: {module: boom_mshr_tilelink_wiring_v021, port: mshr_acquire}
+  mode: shared_event
+- name: wiring_a_to_l2
+  source: {module: boom_mshr_tilelink_wiring_v021, port: tilelink_acquire}
+  target: {module: sifive_inclusive_l2, port: acquire}
+  mode: shared_event
+- name: l2_d_to_wiring
+  source: {module: sifive_inclusive_l2, port: grant}
+  target: {module: boom_mshr_tilelink_wiring_v021, port: tilelink_grant}
+  mode: shared_event
+- name: wiring_data_to_mshr
+  source: {module: boom_mshr_tilelink_wiring_v021, port: mshr_grant_data}
+  target: {module: mshr, port: grant_data}
+  mode: shared_event
+- name: wiring_nodata_to_mshr
+  source: {module: boom_mshr_tilelink_wiring_v021, port: mshr_grant_no_data}
+  target: {module: mshr, port: grant_no_data}
+  mode: shared_event
+- name: mshr_finish_to_wiring
+  source: {module: mshr, port: mem_finish}
+  target: {module: boom_mshr_tilelink_wiring_v021, port: mshr_finish}
+  mode: shared_event
+- name: wiring_e_to_l2
+  source: {module: boom_mshr_tilelink_wiring_v021, port: tilelink_grant_ack}
+  target: {module: sifive_inclusive_l2, port: grant_ack}
+  mode: shared_event
+constraints: []
+roles:
+- name: mshr_requests
+  event_type: DCache.MSHRRequest
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    queue_kind: fields.queue_kind
+    queue_idx: fields.queue_idx
+    address: fields.address
+    value: fields.value
+    mem_kind: fields.mem_kind
+    mshr_id: fields.mshr_id
+    tag_match: fields.tag_match
+    old_line_dirty: fields.old_line_dirty
+    needs_acquire: fields.needs_acquire
+    grant_has_data: fields.grant_has_data
+    secondary: fields.secondary
+    requires_second_acquire: fields.requires_second_acquire
+    is_hit_again: fields.is_hit_again
+    is_probe: fields.is_probe
+    sdq_id: fields.sdq_id
+- name: mshr_instances
+  event_type: DCache.MSHRRequest
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.mshr_id
+  exports:
+    op_id: fields.op_id
+    address: fields.address
+    mshr_id: fields.mshr_id
+    grant_has_data: fields.grant_has_data
+    needs_acquire: fields.needs_acquire
+  derived:
+    hart: {kind: constant, value: 0}
+    grow: {kind: constant, value: NtoB}
+    need_data: {kind: constant, value: true}
+    line_id: {kind: constant, value: line0}
+- name: io_requests
+  event_type: IOMSHR.Request
+  cardinality: many
+  min_matches: 0
+  exports: {op_id: fields.op_id, address: fields.address, value: fields.value, mem_kind: fields.mem_kind, io_id: fields.io_id}
+- name: lines
+  event_type: Coherence.LineInit
+  cardinality: many
+  min_matches: 1
+  distinct_by: fields.line_id
+  exports:
+    line_id: fields.line_id
+    address: fields.address
+    value: fields.value
+    version: fields.version
+    source_op_id: fields.source_op_id
+- name: accesses
+  event_type: Coherence.Access
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    line_id: fields.line_id
+    address: fields.address
+    mem_kind: fields.mem_kind
+    write_value: fields.write_value
+    after_op_id: fields.after_op_id
+- name: evictions
+  event_type: Coherence.Evict
+  cardinality: many
+  min_matches: 0
+  exports: {txn_id: fields.txn_id, hart: fields.hart, line_id: fields.line_id, address: fields.address, after_op_id: fields.after_op_id}

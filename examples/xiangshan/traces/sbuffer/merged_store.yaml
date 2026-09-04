@@ -1,0 +1,40 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 10, case: merged-store, expected: FEASIBLE}
+events:
+- id: em_layout
+  type: SBuffer.LineLayout
+  occurs: true
+  cycle: 0
+  fields:
+    entry_id: EM
+    hart: 0
+    entry_order: 0
+    line_address: 8192
+    member_count: 2
+    first_op_id: S0
+    first_beat: 0
+    first_address: 8192
+    first_value: 8721
+    first_drain_mask: 3
+    first_line_data: 8721
+    first_line_mask: 3
+    second_op_id: S1
+    second_beat: 0
+    second_address: 8192
+    second_value: 43520
+    second_drain_mask: 2
+    second_line_data: 43520
+    second_line_mask: 2
+    drain_reason: threshold
+- id: s0_drain
+  type: Store.Drain
+  occurs: true
+  cycle: 1
+  fields: {op_id: S0, beat: 0, hart: 0, address: 8192, value: 8721, byte_mask: 3, last: true, cross_page: false}
+- id: s1_drain
+  type: Store.Drain
+  occurs: true
+  cycle: 3
+  fields: {op_id: S1, beat: 0, hart: 0, address: 8192, value: 43520, byte_mask: 2, last: true, cross_page: false}
+constraints: []
