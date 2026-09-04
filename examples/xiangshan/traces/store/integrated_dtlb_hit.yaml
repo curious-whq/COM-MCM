@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: integrated-dtlb-hit, expected: FEASIBLE}
+events:
+- id: integrated_store_page
+  type: MMU.PageMap
+  occurs: true
+  cycle: 0
+  fields: {map_id: SMAP, hart: 0, entry_id: STLB0, tlb_instance: sttlb, vpn: 144, paddr: 36864, asid: 1, vmid: 0, translation_stage: s1, initial_valid: true}
+- id: integrated_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 1
+  fields: {op_id: SINT, hart: 0, program_index: 10, rob_idx: 10, mem_kind: store, vaddr: 589832, write_value: 123, size: 8, byte_mask: 255, sq_idx: 10, vector: false, tlb_instance: sttlb, vpn: 144, asid: 1, vmid: 0, translation_stage: s1}
+- id: integrated_store_translate
+  type: MMU.TranslateRequest
+  occurs: true
+  cycle: 4
+  fields: {op_id: SINT, hart: 0, tlb_instance: sttlb, vaddr: 589832, vpn: 144, attempt: 0, access_kind: store, size: 8, asid: 1, vmid: 0, translation_stage: s1}
+constraints: []

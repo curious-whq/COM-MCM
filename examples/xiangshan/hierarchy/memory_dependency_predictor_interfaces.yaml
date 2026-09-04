@@ -1,0 +1,141 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-memory-dependency-predictor-v0.7
+policy: ports-only-public-surface
+modules:
+- module: memory_dependency_predictor
+  ports:
+  - name: entry_config
+    direction: input
+    event_type: MDP.EntryConfig
+    required_connection: false
+  - name: train
+    direction: input
+    event_type: MDP.Train
+    required_connection: false
+  - name: lookup
+    direction: input
+    event_type: MDP.Lookup
+    required_connection: false
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: wait_prediction
+    direction: output
+    event_type: MDP.WaitPrediction
+    required_connection: false
+  public_event_types:
+  - Core.MemoryIssue
+  - Core.Redirect
+  - MDP.EntryConfig
+  - MDP.Lookup
+  - MDP.Train
+  - MDP.WaitPrediction
+  private_slot_ids:
+  - lfst_allocate_0
+  - lfst_allocate_1
+  - lfst_allocate_2
+  - lfst_allocate_3
+  - lfst_issue_release_0
+  - lfst_issue_release_1
+  - lfst_issue_release_2
+  - lfst_issue_release_3
+  - lfst_redirect_release_0
+  - lfst_redirect_release_1
+  - lfst_redirect_release_2
+  - lfst_redirect_release_3
+  - ssit_allocate_0
+  - ssit_allocate_1
+  - ssit_allocate_2
+  - ssit_allocate_3
+  - ssit_attach_load_0
+  - ssit_attach_load_1
+  - ssit_attach_load_2
+  - ssit_attach_load_3
+  - ssit_attach_store_0
+  - ssit_attach_store_1
+  - ssit_attach_store_2
+  - ssit_attach_store_3
+  - ssit_merge_0
+  - ssit_merge_1
+  - ssit_merge_2
+  - ssit_merge_3
+  - ssit_read_0
+  - ssit_read_1
+  - ssit_read_2
+  - ssit_read_3
+  - ssit_strict_0
+  - ssit_strict_1
+  - ssit_strict_2
+  - ssit_strict_3
+  private_event_types:
+  - MDP.LFSTAllocate
+  - MDP.LFSTRelease
+  - MDP.SSITRead
+  - MDP.SSITTrain
+  private_state_names:
+  - LFST[L0].pending
+  - LFST[S0].pending
+  - SSIT[EL].ssid
+  - SSIT[EL].strict
+  - SSIT[EL].valid
+  - SSIT[ES].ssid
+  - SSIT[ES].strict
+  - SSIT[ES].valid
+  private_transformation_names:
+  - assigned_load_attaches_store_0
+  - assigned_load_attaches_store_1
+  - assigned_load_attaches_store_2
+  - assigned_load_attaches_store_3
+  - assigned_store_attaches_load_0
+  - assigned_store_attaches_load_1
+  - assigned_store_attaches_load_2
+  - assigned_store_attaches_load_3
+  - different_store_sets_merge_to_lower_ssid_0
+  - different_store_sets_merge_to_lower_ssid_1
+  - different_store_sets_merge_to_lower_ssid_2
+  - different_store_sets_merge_to_lower_ssid_3
+  - issuing_store_releases_lfst_0
+  - issuing_store_releases_lfst_1
+  - issuing_store_releases_lfst_2
+  - issuing_store_releases_lfst_3
+  - matching_pending_store_predicts_load_wait_0
+  - matching_pending_store_predicts_load_wait_1
+  - matching_pending_store_predicts_load_wait_2
+  - matching_pending_store_predicts_load_wait_3
+  - redirect_cancels_pending_lfst_store_0
+  - redirect_cancels_pending_lfst_store_1
+  - redirect_cancels_pending_lfst_store_2
+  - redirect_cancels_pending_lfst_store_3
+  - redirected_lfst_release_clears_pending_0
+  - redirected_lfst_release_clears_pending_1
+  - redirected_lfst_release_clears_pending_2
+  - redirected_lfst_release_clears_pending_3
+  - repeated_same_set_violation_promotes_strict_load_0
+  - repeated_same_set_violation_promotes_strict_load_1
+  - repeated_same_set_violation_promotes_strict_load_2
+  - repeated_same_set_violation_promotes_strict_load_3
+  - ssit_read_returns_current_entry_0
+  - ssit_read_returns_current_entry_1
+  - ssit_read_returns_current_entry_2
+  - ssit_read_returns_current_entry_3
+  - store_lookup_allocates_lfst_0
+  - store_lookup_allocates_lfst_1
+  - store_lookup_allocates_lfst_2
+  - store_lookup_allocates_lfst_3
+  - unassigned_pair_allocates_store_set_0
+  - unassigned_pair_allocates_store_set_1
+  - unassigned_pair_allocates_store_set_2
+  - unassigned_pair_allocates_store_set_3
+  - valid_ssit_entry_answers_lookup_0
+  - valid_ssit_entry_answers_lookup_1
+  - valid_ssit_entry_answers_lookup_2
+  - valid_ssit_entry_answers_lookup_3
+  - wait_prediction_delays_load_until_store_issue_0
+  - wait_prediction_delays_load_until_store_issue_1
+  - wait_prediction_delays_load_until_store_issue_2
+  - wait_prediction_delays_load_until_store_issue_3

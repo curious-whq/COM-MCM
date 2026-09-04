@@ -1,0 +1,777 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: fence-wait
+  expected: FEASIBLE
+  goal: fence waits for public DCache.Ordered
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.17.0
+      purpose: executable BOOM core-side memory slice with source-grounded NBDTLB/LSU
+        retry, atomics, MMIO, fences, ROB, and recovery
+      encapsulation: strict
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          boom_v4_lsu_translation:
+            public_ports:
+            - name: memory_instruction
+              direction: input
+              event_type: Core.MemoryInstruction
+              required_connection: false
+            - name: tlb_response
+              direction: input
+              event_type: TLB.Response
+              required_connection: true
+            - name: miss_ready
+              direction: input
+              event_type: TLB.MissReady
+              required_connection: true
+            - name: tlb_request
+              direction: output
+              event_type: TLB.Request
+              required_connection: false
+            - name: translated_memory
+              direction: output
+              event_type: Core.TranslatedMemory
+              required_connection: false
+            - name: memory_fault
+              direction: output
+              event_type: Core.MemoryFault
+              required_connection: false
+            public_event_types:
+            - Core.MemoryFault
+            - Core.MemoryInstruction
+            - Core.TranslatedMemory
+            - TLB.MissReady
+            - TLB.Request
+            - TLB.Response
+            private_slot_ids: []
+            private_event_types:
+            - TLB.Retry
+            private_state_names: []
+            private_transformation_names: []
+          boom_v4_nbdtlb:
+            public_ports:
+            - name: request
+              direction: input
+              event_type: TLB.Request
+              required_connection: true
+            - name: ptw_result
+              direction: input
+              event_type: TLB.PTWResult
+              required_connection: true
+            - name: sfence
+              direction: input
+              event_type: TLB.SFence
+              required_connection: false
+            - name: response
+              direction: output
+              event_type: TLB.Response
+              required_connection: false
+            - name: miss
+              direction: output
+              event_type: TLB.Miss
+              required_connection: false
+            - name: ptw_request
+              direction: output
+              event_type: TLB.PTWRequest
+              required_connection: false
+            - name: miss_ready
+              direction: output
+              event_type: TLB.MissReady
+              required_connection: false
+            public_event_types:
+            - TLB.Miss
+            - TLB.MissReady
+            - TLB.PTWRequest
+            - TLB.PTWResult
+            - TLB.Request
+            - TLB.Response
+            - TLB.SFence
+            private_slot_ids:
+            - tlb_invalidate_0
+            private_event_types:
+            - TLB.Decision
+            - TLB.Invalidate
+            - TLB.Refill
+            private_state_names:
+            - NBDTLB.entry[h0_v0].valid
+            private_transformation_names:
+            - sfence_invalidates_entry_0
+          bounded_ptw_environment:
+            public_ports:
+            - name: ptw_request
+              direction: input
+              event_type: TLB.PTWRequest
+              required_connection: true
+            - name: page_map
+              direction: input
+              event_type: Core.PageMap
+              required_connection: false
+            - name: ptw_result
+              direction: output
+              event_type: TLB.PTWResult
+              required_connection: false
+            public_event_types:
+            - Core.PageMap
+            - TLB.PTWRequest
+            - TLB.PTWResult
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names: []
+          atomic_core:
+            public_ports:
+            - name: translated_memory
+              direction: input
+              event_type: Core.TranslatedMemory
+              required_connection: true
+            - name: reservation_invalidate
+              direction: input
+              event_type: Core.ReservationInvalidate
+              required_connection: false
+            - name: memory_complete
+              direction: output
+              event_type: Core.MemoryComplete
+              required_connection: false
+            public_event_types:
+            - Core.MemoryComplete
+            - Core.ReservationInvalidate
+            - Core.TranslatedMemory
+            private_slot_ids: []
+            private_event_types:
+            - Atomic.AMORead
+            - Atomic.AMOWrite
+            - Atomic.LRRead
+            - Atomic.ReservationSet
+            - Atomic.SCDecision
+            - Atomic.SCWrite
+            private_state_names: []
+            private_transformation_names: []
+          reservation_bridge:
+            public_ports:
+            - name: probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: reservation_invalidate
+              direction: output
+              event_type: Core.ReservationInvalidate
+              required_connection: false
+            public_event_types:
+            - Core.ReservationInvalidate
+            - DCache.ProbeRelease
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names: []
+          mmio_core:
+            public_ports:
+            - name: translated_memory
+              direction: input
+              event_type: Core.TranslatedMemory
+              required_connection: true
+            - name: io_request
+              direction: output
+              event_type: IOMSHR.Request
+              required_connection: false
+            - name: io_access
+              direction: output
+              event_type: IOMSHR.MemAccess
+              required_connection: false
+            - name: io_ack
+              direction: output
+              event_type: IOMSHR.MemAck
+              required_connection: false
+            - name: io_response
+              direction: output
+              event_type: IOMSHR.Response
+              required_connection: false
+            - name: memory_complete
+              direction: output
+              event_type: Core.MemoryComplete
+              required_connection: false
+            public_event_types:
+            - Core.MemoryComplete
+            - Core.TranslatedMemory
+            - IOMSHR.MemAccess
+            - IOMSHR.MemAck
+            - IOMSHR.Request
+            - IOMSHR.Response
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names:
+            - IOMSHR.busy
+            private_transformation_names: []
+          fence_core:
+            public_ports:
+            - name: memory_instruction
+              direction: input
+              event_type: Core.MemoryInstruction
+              required_connection: false
+            - name: dcache_ordered
+              direction: input
+              event_type: DCache.Ordered
+              required_connection: false
+            - name: arch_fence
+              direction: output
+              event_type: Arch.Fence
+              required_connection: false
+            - name: memory_complete
+              direction: output
+              event_type: Core.MemoryComplete
+              required_connection: false
+            public_event_types:
+            - Arch.Fence
+            - Core.MemoryComplete
+            - Core.MemoryInstruction
+            - DCache.Ordered
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names:
+            - decode_fence_0
+            - fence_waits_for_ordered_0
+          rob_core:
+            public_ports:
+            - name: memory_instruction
+              direction: input
+              event_type: Core.MemoryInstruction
+              required_connection: false
+            - name: memory_complete
+              direction: input
+              event_type: Core.MemoryComplete
+              required_connection: false
+            - name: memory_fault
+              direction: input
+              event_type: Core.MemoryFault
+              required_connection: false
+            - name: branch_mispredict
+              direction: input
+              event_type: Core.BranchMispredict
+              required_connection: false
+            - name: commit
+              direction: output
+              event_type: ROB.Commit
+              required_connection: false
+            - name: precise_exception
+              direction: output
+              event_type: ROB.PreciseException
+              required_connection: false
+            - name: squash_memory
+              direction: output
+              event_type: Core.SquashMemory
+              required_connection: false
+            - name: branch_kill
+              direction: output
+              event_type: Core.BranchKill
+              required_connection: false
+            public_event_types:
+            - Core.BranchKill
+            - Core.BranchMispredict
+            - Core.MemoryComplete
+            - Core.MemoryFault
+            - Core.MemoryInstruction
+            - Core.SquashMemory
+            - ROB.Commit
+            - ROB.PreciseException
+            private_slot_ids:
+            - rob_allocate_0
+            - rob_exception_record_0
+            - rob_writeback_0
+            private_event_types:
+            - ROB.Allocate
+            - ROB.ExceptionRecord
+            - ROB.Writeback
+            private_state_names:
+            - ROB.entry[F0].allocated
+            - ROB.entry[F0].committed
+            - ROB.entry[F0].completed
+            - ROB.entry[F0].faulted
+            - ROB.entry[F0].squashed
+            private_transformation_names:
+            - commit_waits_for_older_0
+            - precise_exception_squashes_younger_0
+            - precise_exception_waits_for_older_0
+            - rob_allocates_memory_op_0
+            - rob_captures_completion_0
+            - rob_commits_completed_op_0
+            - rob_raises_precise_exception_0
+            - rob_records_memory_fault_0
+            - squash_marks_entry_0
+          retire_core:
+            public_ports:
+            - name: commit
+              direction: input
+              event_type: ROB.Commit
+              required_connection: true
+            - name: arch_load
+              direction: output
+              event_type: Arch.Load
+              required_connection: false
+            - name: arch_store
+              direction: output
+              event_type: Arch.Store
+              required_connection: false
+            - name: arch_amo
+              direction: output
+              event_type: Arch.AMO
+              required_connection: false
+            - name: arch_lr
+              direction: output
+              event_type: Arch.LR
+              required_connection: false
+            - name: arch_sc
+              direction: output
+              event_type: Arch.SC
+              required_connection: false
+            - name: arch_sc_failure
+              direction: output
+              event_type: Arch.SCFailure
+              required_connection: false
+            - name: lrsc_pair
+              direction: output
+              event_type: Arch.LRSCPair
+              required_connection: false
+            - name: commit_load
+              direction: output
+              event_type: Arch.CommitLoad
+              required_connection: false
+            - name: commit_store
+              direction: output
+              event_type: Arch.CommitStore
+              required_connection: false
+            - name: commit_fence
+              direction: output
+              event_type: Arch.CommitFence
+              required_connection: false
+            public_event_types:
+            - Arch.AMO
+            - Arch.CommitFence
+            - Arch.CommitLoad
+            - Arch.CommitStore
+            - Arch.LR
+            - Arch.LRSCPair
+            - Arch.Load
+            - Arch.SC
+            - Arch.SCFailure
+            - Arch.Store
+            - ROB.Commit
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names:
+            - retire_amo_0
+            - retire_failed_sc_0
+            - retire_fence_0
+            - retire_load_0
+            - retire_lr_0
+            - retire_read_value_0
+            - retire_store_0
+            - retire_successful_sc_0
+            - retire_write_0
+      exclusions:
+      - cacheable ordinary load/store execution remains owned by the existing detailed
+        LSQ/L1/MSHR composition
+      - real L2 coherence is deferred to v0.18
+      composition:
+        name: boom-core-side-v0.17
+        resolved_roles:
+          tlb_harts: []
+          memory_ops:
+          - event_id: instruction_fence
+            event_type: Core.MemoryInstruction
+            op_id: F0
+            hart: 0
+            program_index: 0
+            rob_idx: 0
+            mem_kind: fence
+            vaddr: x
+            address: x
+            vpn: 0
+            value: 0
+            write_value: 0
+            byte_mask: 255
+            cacheable: true
+            io_id: 0
+            reservation_id: h0_x
+            uses_tlb: false
+            execution_class: fence
+          tlb_ops: []
+          atomic_ops: []
+          mmio_ops: []
+          lr_ops: []
+          sc_ops: []
+          fence_ops:
+          - event_id: instruction_fence
+            event_type: Core.MemoryInstruction
+            op_id: F0
+            hart: 0
+            program_index: 0
+            rob_idx: 0
+            mem_kind: fence
+            address: x
+            value: 0
+            write_value: 0
+            byte_mask: 255
+          pages:
+          - event_id: unused_page
+            event_type: Core.PageMap
+            hart: 0
+            entry_id: h0_v0
+            vpn: 0
+            paddr: x
+            initial_valid: true
+            accessible: true
+          sfences: []
+          reservation_lines: []
+          probe_events: []
+          branch_events: []
+          ordered_markers:
+          - event_id: dcache_ordered
+            event_type: DCache.Ordered
+            hart: 0
+        modules:
+        - boom_v4_lsu_translation
+        - boom_v4_nbdtlb
+        - bounded_ptw_environment
+        - atomic_core
+        - reservation_bridge
+        - mmio_core
+        - fence_core
+        - rob_core
+        - retire_core
+        connections:
+        - name: lsu_request_to_nbdtlb
+          mode: shared_event
+          source: boom_v4_lsu_translation.tlb_request
+          target: boom_v4_nbdtlb.request
+        - name: nbdtlb_response_to_lsu
+          mode: shared_event
+          source: boom_v4_nbdtlb.response
+          target: boom_v4_lsu_translation.tlb_response
+        - name: nbdtlb_ready_to_lsu_retry
+          mode: shared_event
+          source: boom_v4_nbdtlb.miss_ready
+          target: boom_v4_lsu_translation.miss_ready
+        - name: nbdtlb_request_to_ptw
+          mode: shared_event
+          source: boom_v4_nbdtlb.ptw_request
+          target: bounded_ptw_environment.ptw_request
+        - name: ptw_result_to_nbdtlb
+          mode: shared_event
+          source: bounded_ptw_environment.ptw_result
+          target: boom_v4_nbdtlb.ptw_result
+        - name: tlb_translation_to_atomic
+          mode: shared_event
+          source: boom_v4_lsu_translation.translated_memory
+          target: atomic_core.translated_memory
+        - name: tlb_translation_to_mmio
+          mode: shared_event
+          source: boom_v4_lsu_translation.translated_memory
+          target: mmio_core.translated_memory
+        - name: probe_to_atomic_reservation
+          mode: shared_event
+          source: reservation_bridge.reservation_invalidate
+          target: atomic_core.reservation_invalidate
+        - name: tlb_fault_to_rob
+          mode: shared_event
+          source: boom_v4_lsu_translation.memory_fault
+          target: rob_core.memory_fault
+        - name: rob_commit_to_retire
+          mode: shared_event
+          source: rob_core.commit
+          target: retire_core.commit
+        generated_transformations: []
+    selected_slots:
+    - arch_fence_0
+    - fence_complete_0
+    - rob_allocate_0
+    - rob_writeback_0
+    - rob_commit_0
+    - retired_commit_fence_0
+    state:
+      initial:
+        NBDTLB.entry[h0_v0].valid: true
+        IOMSHR.busy: false
+        ROB.entry[F0].allocated: false
+        ROB.entry[F0].completed: false
+        ROB.entry[F0].faulted: false
+        ROB.entry[F0].squashed: false
+        ROB.entry[F0].committed: false
+      final:
+        NBDTLB.entry[h0_v0].valid: true
+        IOMSHR.busy: false
+        ROB.entry[F0].allocated: true
+        ROB.entry[F0].completed: true
+        ROB.entry[F0].faulted: false
+        ROB.entry[F0].squashed: false
+        ROB.entry[F0].committed: true
+      steps:
+      - cycle: 1
+        before:
+          NBDTLB.entry[h0_v0].valid: true
+          IOMSHR.busy: false
+          ROB.entry[F0].allocated: false
+          ROB.entry[F0].completed: false
+          ROB.entry[F0].faulted: false
+          ROB.entry[F0].squashed: false
+          ROB.entry[F0].committed: false
+        after:
+          NBDTLB.entry[h0_v0].valid: true
+          IOMSHR.busy: false
+          ROB.entry[F0].allocated: true
+          ROB.entry[F0].completed: false
+          ROB.entry[F0].faulted: false
+          ROB.entry[F0].squashed: false
+          ROB.entry[F0].committed: false
+        active_requirements:
+        - transformation.rob_allocates_memory_op_0.forward.0.instruction_fence.instance.0.rob_allocate_0.requirement.0
+        active_updates:
+        - transformation.rob_allocates_memory_op_0.forward.0.instruction_fence.instance.0.rob_allocate_0.update.0
+        changes:
+        - state: ROB.entry[F0].allocated
+          before: false
+          after: true
+          origins:
+          - transformation.rob_allocates_memory_op_0.forward.0.instruction_fence.instance.0.rob_allocate_0.update.0
+      - cycle: 7
+        before:
+          NBDTLB.entry[h0_v0].valid: true
+          IOMSHR.busy: false
+          ROB.entry[F0].allocated: true
+          ROB.entry[F0].completed: false
+          ROB.entry[F0].faulted: false
+          ROB.entry[F0].squashed: false
+          ROB.entry[F0].committed: false
+        after:
+          NBDTLB.entry[h0_v0].valid: true
+          IOMSHR.busy: false
+          ROB.entry[F0].allocated: true
+          ROB.entry[F0].completed: true
+          ROB.entry[F0].faulted: false
+          ROB.entry[F0].squashed: false
+          ROB.entry[F0].committed: false
+        active_requirements:
+        - transformation.rob_captures_completion_0.forward.0.fence_complete_0.instance.0.rob_writeback_0.requirement.0
+        - transformation.rob_captures_completion_0.forward.0.fence_complete_0.instance.0.rob_writeback_0.requirement.1
+        active_updates:
+        - transformation.rob_captures_completion_0.forward.0.fence_complete_0.instance.0.rob_writeback_0.update.0
+        changes:
+        - state: ROB.entry[F0].completed
+          before: false
+          after: true
+          origins:
+          - transformation.rob_captures_completion_0.forward.0.fence_complete_0.instance.0.rob_writeback_0.update.0
+      - cycle: 8
+        before:
+          NBDTLB.entry[h0_v0].valid: true
+          IOMSHR.busy: false
+          ROB.entry[F0].allocated: true
+          ROB.entry[F0].completed: true
+          ROB.entry[F0].faulted: false
+          ROB.entry[F0].squashed: false
+          ROB.entry[F0].committed: false
+        after:
+          NBDTLB.entry[h0_v0].valid: true
+          IOMSHR.busy: false
+          ROB.entry[F0].allocated: true
+          ROB.entry[F0].completed: true
+          ROB.entry[F0].faulted: false
+          ROB.entry[F0].squashed: false
+          ROB.entry[F0].committed: true
+        active_requirements:
+        - transformation.rob_commits_completed_op_0.forward.0.fence_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.0
+        - transformation.rob_commits_completed_op_0.forward.0.fence_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.1
+        - transformation.rob_commits_completed_op_0.forward.0.fence_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.2
+        - transformation.rob_commits_completed_op_0.forward.0.fence_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.3
+        active_updates:
+        - transformation.rob_commits_completed_op_0.forward.0.fence_complete_0,rob_writeback_0.instance.0.rob_commit_0.update.0
+        changes:
+        - state: ROB.entry[F0].committed
+          before: false
+          after: true
+          origins:
+          - transformation.rob_commits_completed_op_0.forward.0.fence_complete_0,rob_writeback_0.instance.0.rob_commit_0.update.0
+    active_transformations:
+    - name: transformation.decode_fence_0.activation.0.0
+      transformation: decode_fence_0
+      binding:
+        instruction: instruction_fence
+        fence: arch_fence_0
+    - name: transformation.fence_waits_for_ordered_0.activation.0.0
+      transformation: fence_waits_for_ordered_0
+      binding:
+        instruction: instruction_fence
+        fence: arch_fence_0
+        ordered: dcache_ordered
+        complete: fence_complete_0
+    - name: transformation.retire_fence_0.activation.0.0
+      transformation: retire_fence_0
+      binding:
+        commit: rob_commit_0
+        arch_commit: retired_commit_fence_0
+    - name: transformation.rob_allocates_memory_op_0.activation.0.0
+      transformation: rob_allocates_memory_op_0
+      binding:
+        instruction: instruction_fence
+        allocate: rob_allocate_0
+    - name: transformation.rob_captures_completion_0.activation.0.0
+      transformation: rob_captures_completion_0
+      binding:
+        complete: fence_complete_0
+        writeback: rob_writeback_0
+    - name: transformation.rob_commits_completed_op_0.activation.0.0
+      transformation: rob_commits_completed_op_0
+      binding:
+        complete: fence_complete_0
+        writeback: rob_writeback_0
+        commit: rob_commit_0
+events:
+- id: unused_page
+  type: Core.PageMap
+  occurs: true
+  fields:
+    map_id: P0
+    hart: 0
+    entry_id: h0_v0
+    vpn: 0
+    paddr: x
+    initial_valid: true
+    accessible: true
+  cycle: 0
+- id: instruction_fence
+  type: Core.MemoryInstruction
+  occurs: true
+  fields:
+    op_id: F0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: fence
+    vaddr: x
+    address: x
+    vpn: 0
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    cacheable: true
+    io_id: 0
+    reservation_id: h0_x
+    uses_tlb: false
+    execution_class: fence
+  cycle: 0
+- id: dcache_ordered
+  type: DCache.Ordered
+  occurs: true
+  fields:
+    hart: 0
+  cycle: 5
+- id: arch_fence_0
+  type: Arch.Fence
+  occurs: true
+  fields:
+    op_id: F0
+    hart: 0
+    program_index: 0
+  cycle: 1
+  annotations:
+    module_spec: fence_core
+    module_visibility: public
+    interface_ports:
+    - arch_fence
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: fence_complete_0
+  type: Core.MemoryComplete
+  occurs: true
+  fields:
+    op_id: F0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: fence
+    address: x
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 6
+  annotations:
+    module_spec: fence_core
+    module_visibility: public
+    interface_ports:
+    - memory_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_allocate_0
+  type: ROB.Allocate
+  occurs: true
+  fields:
+    op_id: F0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+  cycle: 1
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_writeback_0
+  type: ROB.Writeback
+  occurs: true
+  fields:
+    op_id: F0
+    rob_idx: 0
+  cycle: 7
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_commit_0
+  type: ROB.Commit
+  occurs: true
+  fields:
+    op_id: F0
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: fence
+    address: x
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 8
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - commit
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_commit_fence_0
+  type: Arch.CommitFence
+  occurs: true
+  fields:
+    op_id: F0
+  cycle: 26
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - commit_fence
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

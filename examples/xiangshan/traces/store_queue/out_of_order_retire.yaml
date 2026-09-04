@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: out-of-order-retire, expected: INFEASIBLE}
+events:
+- id: ooo_head_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SQOH, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 4096, write_value: 5, size: 8, byte_mask: 255, sq_idx: 0, vector: false}
+- id: ooo_tail_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 1
+  fields: {op_id: SQOT, hart: 0, program_index: 1, rob_idx: 1, mem_kind: store, vaddr: 8192, write_value: 6, size: 8, byte_mask: 255, sq_idx: 1, vector: false}
+- id: forbidden_tail_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 7
+  fields: {op_id: SQOT, hart: 0, rob_idx: 1, mem_kind: store}
+constraints: []

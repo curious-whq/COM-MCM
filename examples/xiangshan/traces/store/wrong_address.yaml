@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: wrong-address, expected: INFEASIBLE}
+events:
+- id: wrong_address_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SWA, hart: 0, program_index: 3, rob_idx: 3, mem_kind: store, vaddr: 262144, write_value: 11, size: 8, byte_mask: 255, sq_idx: 3, vector: false, tlb_instance: sttlb, vpn: 64, asid: 1, vmid: 0, translation_stage: s1}
+- id: wrong_address_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: SWA, hart: 0, tlb_instance: sttlb, vaddr: 262144, vpn: 64, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 12288, hit_level: l1, replay: false, fault: false, cause: none}
+- id: forbidden_wrong_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 12
+  fields: {op_id: SWA, sq_idx: 3, hart: 0, program_index: 3, rob_idx: 3, address: 16384, byte_mask: 255}
+constraints: []

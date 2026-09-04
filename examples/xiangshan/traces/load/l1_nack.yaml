@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 5, case: l1-nack, expected: FEASIBLE}
+events:
+- id: load_nack_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LNACK, hart: 0, program_index: 0, rob_idx: 3, mem_kind: load, vaddr: 196608, size: 8, byte_mask: 255, lq_idx: 3, vector: false, tlb_instance: ldtlb, vpn: 48, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_nack_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 5
+  fields: {op_id: LNACK, hart: 0, tlb_instance: ldtlb, vaddr: 196608, vpn: 48, attempt: 0, access_kind: load, asid: 1, vmid: 0, translation_stage: s1, paddr: 12288, hit_level: l1, replay: false, fault: false, cause: none}
+- id: load_nack_forward
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 10
+  fields: {op_id: LNACK, value: 0, byte_mask: 0, match: false, data_invalid: false}
+- id: load_nack_response
+  type: L1.Nack
+  occurs: true
+  cycle: 10
+  fields: {txn_id: LNACK.load.a0, op_id: LNACK, cause: mshr_nack}
+constraints: []

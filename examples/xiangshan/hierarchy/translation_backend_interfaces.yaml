@@ -1,0 +1,87 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-translation-backend-v0.4
+policy: ports-only-public-surface
+modules:
+- module: translation_backend
+  ports:
+  - name: ptw_request
+    direction: input
+    event_type: MMU.PTWRequest
+    required_connection: false
+  - name: ptw_response
+    direction: output
+    event_type: MMU.PTWResponse
+    required_connection: false
+  - name: sfence
+    direction: input
+    event_type: Core.SFence
+    required_connection: false
+  public_event_types:
+  - Core.SFence
+  - MMU.PTWRequest
+  - MMU.PTWResponse
+  private_slot_ids:
+  - backend_access_fault_0
+  - bitmap_check_0
+  - l2tlb_hit_0
+  - l2tlb_invalidate_0
+  - l2tlb_lookup_0
+  - l2tlb_miss_0
+  - l2tlb_refill_0
+  - mpt_check_0
+  - pma_check_0
+  - pmp_check_0
+  - ptw_guest_page_fault_l2_0
+  - ptw_guest_page_fault_walk_0
+  - ptw_page_fault_l2_0
+  - ptw_page_fault_walk_0
+  - ptw_resolved_l2_0
+  - ptw_resolved_s1_0
+  - ptw_resolved_s2_0
+  - ptw_s1_complete_0
+  - ptw_s1_walk_0
+  - ptw_s2_complete_0
+  - ptw_s2_only_walk_0
+  - ptw_s2_walk_from_s1_0
+  private_event_types:
+  - MMU.L2TLBHit
+  - MMU.L2TLBInvalidate
+  - MMU.L2TLBLookup
+  - MMU.L2TLBMiss
+  - MMU.L2TLBRefill
+  - MMU.PTWResolved
+  - MMU.PTWStageComplete
+  - MMU.PTWWalk
+  - MMU.ProtectionCheck
+  - MMU.TranslationFault
+  private_state_names:
+  - L2TLB.entry[ldtlb.MAP_X].valid
+  private_transformation_names:
+  - access_fault_returns_to_l1_0
+  - guest_page_fault_returns_to_l1_0
+  - invalid_g_stage_l2_hit_raises_guest_fault_0
+  - invalid_l2_hit_raises_page_fault_0
+  - l2_hit_resolves_valid_mapping_0
+  - l2_lookup_hits_0
+  - l2_lookup_misses_0
+  - l2_miss_starts_s1_walk_0
+  - l2_miss_starts_s2_only_walk_0
+  - page_fault_returns_to_l1_0
+  - protection_allows_response_0
+  - protection_denial_raises_access_fault_0
+  - ptw_request_looks_up_l2_0
+  - refill_precedes_success_response_0
+  - resolved_translation_checks_bitmap_0
+  - resolved_translation_checks_mpt_0
+  - resolved_translation_checks_pma_0
+  - resolved_translation_checks_pmp_0
+  - s1_failure_raises_page_fault_0
+  - s1_walk_completes_0
+  - s2_failure_raises_guest_page_fault_0
+  - s2_walk_completes_0
+  - sfence_invalidates_l2_entry_0
+  - sfence_precedes_later_l2_lookup_0
+  - successful_walk_refills_l2_0
+  - valid_s1_only_resolves_0
+  - valid_s1_starts_g_stage_0
+  - valid_s2_resolves_0

@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: normal-retire, expected: FEASIBLE}
+events:
+- id: normal_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SQ0, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 4096, write_value: 1, size: 8, byte_mask: 255, sq_idx: 0, vector: false}
+- id: normal_store_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 8
+  fields: {op_id: SQ0, hart: 0, rob_idx: 0, mem_kind: store}
+constraints: []

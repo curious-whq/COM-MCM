@@ -1,0 +1,790 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: coverage-mshr-primary
+  input_contract: public MSHR request only
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.15.0
+      purpose: Standalone bounded BOOM MSHR/RPQ/SDQ/IOMSHR regression composition.
+      composition:
+        name: boom-mshr-standalone
+        resolved_roles:
+          mshr_requests:
+          - event_id: req0
+            event_type: DCache.MSHRRequest
+            op_id: Ld0
+            queue_kind: ldq
+            queue_idx: 5
+            address: x
+            value: 0
+            mem_kind: load
+            mshr_id: 2
+            tag_match: false
+            old_line_dirty: false
+            needs_acquire: true
+            grant_has_data: true
+            secondary: false
+            requires_second_acquire: false
+            is_hit_again: false
+            is_probe: false
+            sdq_id: 0
+          mshr_instances:
+          - event_id: req0
+            event_type: DCache.MSHRRequest
+            op_id: Ld0
+            address: x
+            mshr_id: 2
+            grant_has_data: true
+            needs_acquire: true
+          io_requests: []
+        modules:
+        - mshr
+        connections: []
+        generated_transformations: []
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          mshr:
+            public_ports:
+            - name: request
+              direction: input
+              event_type: DCache.MSHRRequest
+              required_connection: false
+            - name: branch_kill
+              direction: input
+              event_type: Core.BranchKill
+              required_connection: false
+            - name: exception
+              direction: input
+              event_type: Core.Exception
+              required_connection: false
+            - name: grant_data
+              direction: output
+              event_type: MSHR.GrantData
+              required_connection: false
+            - name: grant_no_data
+              direction: output
+              event_type: MSHR.GrantNoData
+              required_connection: false
+            - name: response
+              direction: output
+              event_type: MSHR.ResponseDequeue
+              required_connection: false
+            - name: replay
+              direction: output
+              event_type: MSHR.Replay
+              required_connection: false
+            - name: refill
+              direction: output
+              event_type: MSHR.RefillWrite
+              required_connection: false
+            - name: meta_write
+              direction: output
+              event_type: MSHR.MetaWrite
+              required_connection: false
+            - name: wb_req
+              direction: output
+              event_type: MSHR.WritebackRequest
+              required_connection: false
+            - name: mem_finish
+              direction: output
+              event_type: MSHR.MemFinish
+              required_connection: false
+            - name: probe_blocked
+              direction: output
+              event_type: MSHR.ProbeBlocked
+              required_connection: false
+            - name: fence_blocked
+              direction: output
+              event_type: MSHR.FenceBlocked
+              required_connection: false
+            - name: io_request
+              direction: input
+              event_type: IOMSHR.Request
+              required_connection: false
+            - name: io_response
+              direction: output
+              event_type: IOMSHR.Response
+              required_connection: false
+            public_event_types:
+            - Core.BranchKill
+            - Core.Exception
+            - DCache.MSHRRequest
+            - IOMSHR.Request
+            - IOMSHR.Response
+            - MSHR.FenceBlocked
+            - MSHR.GrantData
+            - MSHR.GrantNoData
+            - MSHR.MemFinish
+            - MSHR.MetaWrite
+            - MSHR.ProbeBlocked
+            - MSHR.RefillWrite
+            - MSHR.Replay
+            - MSHR.ResponseDequeue
+            - MSHR.WritebackRequest
+            private_slot_ids:
+            - deq_direct_0
+            - deq_replay_0
+            - direct_0
+            - mshr_acquire_0
+            - mshr_commit_line_0
+            - mshr_lb_write_0
+            - mshr_meta_clear_0
+            - mshr_meta_read_0
+            - mshr_meta_resp_clean_0
+            - mshr_meta_resp_dirty_0
+            - mshr_refill_complete_0
+            - mshr_wb_done_0
+            - primary_0
+            - resp_enq_0
+            - rpq_insert_primary_0
+            - rpq_insert_secondary_0
+            - rpq_kill_branch_0
+            - rpq_kill_exception_0
+            - sdq_alloc_0
+            - sdq_free_0
+            - secondary_0
+            private_event_types:
+            - MSHR.AcquireBlock
+            - MSHR.CommitLine
+            - MSHR.DirectLoadResponse
+            - MSHR.LineBufferWrite
+            - MSHR.MetaClear
+            - MSHR.MetaReadRequest
+            - MSHR.MetaReadResponse
+            - MSHR.PrimaryAccept
+            - MSHR.RPQDequeue
+            - MSHR.RPQInsert
+            - MSHR.RPQKill
+            - MSHR.RefillComplete
+            - MSHR.ResponseEnqueue
+            - MSHR.SDQAllocate
+            - MSHR.SDQFree
+            - MSHR.SecondaryMissAccept
+            - MSHR.WritebackDone
+            private_state_names:
+            - MSHR.req[Ld0].killed
+            - MSHR.req[Ld0].responseq_valid
+            - MSHR.req[Ld0].rpq_valid
+            - MSHR.req[Ld0].sdq_valid
+            - MSHR[2].commit_line
+            - MSHR[2].grant_had_data
+            - MSHR[2].grantack_valid
+            - MSHR[2].line_source_op_id
+            - MSHR[2].line_value
+            - MSHR[2].probe_rdy
+            - MSHR[2].req_address
+            - MSHR[2].req_kind
+            - MSHR[2].req_needs_wb
+            - MSHR[2].req_op_id
+            - MSHR[2].state
+            private_transformation_names:
+            - acquire_2
+            - clean_meta_commit_2
+            - commit_after_wb_2
+            - commit_refill_2
+            - direct_dequeue_Ld0
+            - direct_load_response_Ld0
+            - direct_load_response_state_Ld0
+            - dirty_meta_clear_2
+            - fence_blocked_2
+            - grant_data_2
+            - grant_no_data_2
+            - grant_writes_lb_2
+            - mem_finish_2
+            - meta_read_when_rpq_empty_2
+            - meta_write_after_refill_2
+            - primary_accept_Ld0
+            - primary_rpq_insert_Ld0
+            - probe_blocked_2
+            - refill_complete_2
+            - replay_Ld0
+            - replay_dequeue_Ld0
+            - replay_state_Ld0
+            - respq_dequeue_Ld0
+            - respq_enqueue_Ld0
+            - rpq_branch_kill_Ld0
+            - rpq_branch_kill_state_Ld0
+            - rpq_exception_kill_Ld0
+            - rpq_exception_kill_state_Ld0
+            - sdq_alloc_Ld0
+            - sdq_free_Ld0
+            - secondary_accept_Ld0
+            - secondary_rpq_insert_Ld0
+            - wb_done_2
+            - wb_request_2
+    selected_slots:
+    - mshr_acquire_0
+    - mshr_grant_data_0
+    - mshr_lb_write_0
+    - mshr_refill_complete_0
+    - primary_0
+    - rpq_insert_primary_0
+    - direct_0
+    - deq_direct_0
+    - resp_enq_0
+    - resp_deq_0
+    state:
+      initial:
+        MSHR[2].state: INVALID
+        MSHR[2].req_op_id: EMPTY
+        MSHR[2].req_address: EMPTY_ADDR
+        MSHR[2].req_kind: NONE
+        MSHR[2].req_needs_wb: false
+        MSHR[2].grant_had_data: false
+        MSHR[2].line_value: UNSET_VALUE
+        MSHR[2].line_source_op_id: EMPTY
+        MSHR[2].grantack_valid: false
+        MSHR[2].commit_line: false
+        MSHR[2].probe_rdy: true
+        MSHR.req[Ld0].rpq_valid: false
+        MSHR.req[Ld0].killed: false
+        MSHR.req[Ld0].responseq_valid: false
+        MSHR.req[Ld0].sdq_valid: false
+      final:
+        MSHR[2].state: DRAIN_RPQ_LOADS
+        MSHR[2].req_op_id: Ld0
+        MSHR[2].req_address: x
+        MSHR[2].req_kind: load
+        MSHR[2].req_needs_wb: false
+        MSHR[2].grant_had_data: true
+        MSHR[2].line_value: UNSET_VALUE
+        MSHR[2].line_source_op_id: Ld0
+        MSHR[2].grantack_valid: true
+        MSHR[2].commit_line: true
+        MSHR[2].probe_rdy: true
+        MSHR.req[Ld0].rpq_valid: false
+        MSHR.req[Ld0].killed: false
+        MSHR.req[Ld0].responseq_valid: false
+        MSHR.req[Ld0].sdq_valid: false
+      steps:
+      - cycle: 0
+        before:
+          MSHR[2].state: INVALID
+          MSHR[2].req_op_id: EMPTY
+          MSHR[2].req_address: EMPTY_ADDR
+          MSHR[2].req_kind: NONE
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: false
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: EMPTY
+          MSHR[2].grantack_valid: false
+          MSHR[2].commit_line: false
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: false
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        after:
+          MSHR[2].state: REFILL_REQ
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: false
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: EMPTY
+          MSHR[2].grantack_valid: false
+          MSHR[2].commit_line: false
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: true
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        active_requirements:
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.requirement.0
+        - transformation.primary_rpq_insert_Ld0.forward.0.primary_0.instance.0.rpq_insert_primary_0.requirement.0
+        active_updates:
+        - transformation.primary_rpq_insert_Ld0.forward.0.primary_0.instance.0.rpq_insert_primary_0.update.0
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.5
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.6
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.2
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.3
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.4
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.1
+        - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.0
+        changes:
+        - state: MSHR.req[Ld0].rpq_valid
+          before: false
+          after: true
+          origins:
+          - transformation.primary_rpq_insert_Ld0.forward.0.primary_0.instance.0.rpq_insert_primary_0.update.0
+        - state: MSHR[2].req_address
+          before: EMPTY_ADDR
+          after: x
+          origins:
+          - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.2
+        - state: MSHR[2].req_kind
+          before: NONE
+          after: load
+          origins:
+          - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.3
+        - state: MSHR[2].req_op_id
+          before: EMPTY
+          after: Ld0
+          origins:
+          - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.1
+        - state: MSHR[2].state
+          before: INVALID
+          after: REFILL_REQ
+          origins:
+          - transformation.primary_accept_Ld0.forward.0.req0.instance.0.primary_0.update.0
+      - cycle: 1
+        before:
+          MSHR[2].state: REFILL_REQ
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: false
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: EMPTY
+          MSHR[2].grantack_valid: false
+          MSHR[2].commit_line: false
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: true
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        after:
+          MSHR[2].state: REFILL_RESP
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: false
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: EMPTY
+          MSHR[2].grantack_valid: false
+          MSHR[2].commit_line: false
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: true
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        active_requirements:
+        - transformation.acquire_2.forward.0.primary_0.instance.0.mshr_acquire_0.requirement.0
+        active_updates:
+        - transformation.acquire_2.forward.0.primary_0.instance.0.mshr_acquire_0.update.1
+        - transformation.acquire_2.forward.0.primary_0.instance.0.mshr_acquire_0.update.0
+        changes:
+        - state: MSHR[2].state
+          before: REFILL_REQ
+          after: REFILL_RESP
+          origins:
+          - transformation.acquire_2.forward.0.primary_0.instance.0.mshr_acquire_0.update.0
+      - cycle: 2
+        before:
+          MSHR[2].state: REFILL_RESP
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: false
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: EMPTY
+          MSHR[2].grantack_valid: false
+          MSHR[2].commit_line: false
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: true
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        after:
+          MSHR[2].state: DRAIN_RPQ_LOADS
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: true
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: Ld0
+          MSHR[2].grantack_valid: true
+          MSHR[2].commit_line: false
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: true
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        active_requirements:
+        - transformation.grant_data_2.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.requirement.0
+        - transformation.refill_complete_2.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.requirement.0
+        active_updates:
+        - transformation.refill_complete_2.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.2
+        - transformation.grant_data_2.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.0
+        - transformation.refill_complete_2.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.1
+        - transformation.grant_data_2.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.2
+        - transformation.grant_data_2.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.1
+        - transformation.refill_complete_2.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.3
+        - transformation.refill_complete_2.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.0
+        changes:
+        - state: MSHR[2].grant_had_data
+          before: false
+          after: true
+          origins:
+          - transformation.grant_data_2.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.0
+        - state: MSHR[2].grantack_valid
+          before: false
+          after: true
+          origins:
+          - transformation.refill_complete_2.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.1
+        - state: MSHR[2].line_source_op_id
+          before: EMPTY
+          after: Ld0
+          origins:
+          - transformation.grant_data_2.forward.0.mshr_acquire_0.instance.0.mshr_grant_data_0.update.2
+        - state: MSHR[2].state
+          before: REFILL_RESP
+          after: DRAIN_RPQ_LOADS
+          origins:
+          - transformation.refill_complete_2.forward.0.mshr_grant_data_0.instance.0.mshr_refill_complete_0.update.0
+      - cycle: 3
+        before:
+          MSHR[2].state: DRAIN_RPQ_LOADS
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: true
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: Ld0
+          MSHR[2].grantack_valid: true
+          MSHR[2].commit_line: false
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: true
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        after:
+          MSHR[2].state: DRAIN_RPQ_LOADS
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: true
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: Ld0
+          MSHR[2].grantack_valid: true
+          MSHR[2].commit_line: true
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: false
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: true
+          MSHR.req[Ld0].sdq_valid: false
+        active_requirements:
+        - coverage.mshr_primary_refill.4.activation.0.state.0
+        - coverage.mshr_primary_refill.4.activation.0.state.1
+        - coverage.mshr_primary_refill.4.activation.0.state.2
+        active_updates:
+        - transformation.respq_enqueue_Ld0.forward.0.direct_0.instance.0.resp_enq_0.update.0
+        - transformation.direct_load_response_state_Ld0.forward.0.direct_0.instance.0.no-output.update.0
+        - transformation.direct_load_response_state_Ld0.forward.0.direct_0.instance.0.no-output.update.1
+        changes:
+        - state: MSHR.req[Ld0].responseq_valid
+          before: false
+          after: true
+          origins:
+          - transformation.respq_enqueue_Ld0.forward.0.direct_0.instance.0.resp_enq_0.update.0
+        - state: MSHR.req[Ld0].rpq_valid
+          before: true
+          after: false
+          origins:
+          - transformation.direct_load_response_state_Ld0.forward.0.direct_0.instance.0.no-output.update.0
+        - state: MSHR[2].commit_line
+          before: false
+          after: true
+          origins:
+          - transformation.direct_load_response_state_Ld0.forward.0.direct_0.instance.0.no-output.update.1
+      - cycle: 4
+        before:
+          MSHR[2].state: DRAIN_RPQ_LOADS
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: true
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: Ld0
+          MSHR[2].grantack_valid: true
+          MSHR[2].commit_line: true
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: false
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: true
+          MSHR.req[Ld0].sdq_valid: false
+        after:
+          MSHR[2].state: DRAIN_RPQ_LOADS
+          MSHR[2].req_op_id: Ld0
+          MSHR[2].req_address: x
+          MSHR[2].req_kind: load
+          MSHR[2].req_needs_wb: false
+          MSHR[2].grant_had_data: true
+          MSHR[2].line_value: UNSET_VALUE
+          MSHR[2].line_source_op_id: Ld0
+          MSHR[2].grantack_valid: true
+          MSHR[2].commit_line: true
+          MSHR[2].probe_rdy: true
+          MSHR.req[Ld0].rpq_valid: false
+          MSHR.req[Ld0].killed: false
+          MSHR.req[Ld0].responseq_valid: false
+          MSHR.req[Ld0].sdq_valid: false
+        active_requirements:
+        - transformation.respq_dequeue_Ld0.forward.0.resp_enq_0.instance.0.resp_deq_0.requirement.0
+        - transformation.respq_dequeue_Ld0.forward.0.resp_enq_0.instance.0.resp_deq_0.requirement.1
+        active_updates:
+        - transformation.respq_dequeue_Ld0.forward.0.resp_enq_0.instance.0.resp_deq_0.update.0
+        changes:
+        - state: MSHR.req[Ld0].responseq_valid
+          before: true
+          after: false
+          origins:
+          - transformation.respq_dequeue_Ld0.forward.0.resp_enq_0.instance.0.resp_deq_0.update.0
+    active_transformations:
+    - name: transformation.acquire_2.activation.0.0
+      transformation: acquire_2
+      binding:
+        accept: primary_0
+        acquire: mshr_acquire_0
+    - name: transformation.direct_dequeue_Ld0.activation.0.0
+      transformation: direct_dequeue_Ld0
+      binding:
+        response: direct_0
+        deq: deq_direct_0
+    - name: transformation.direct_load_response_Ld0.activation.0.0
+      transformation: direct_load_response_Ld0
+      binding:
+        complete: mshr_refill_complete_0
+        insert: rpq_insert_primary_0
+        response: direct_0
+    - name: transformation.direct_load_response_state_Ld0.activation.0.0
+      transformation: direct_load_response_state_Ld0
+      binding:
+        response: direct_0
+    - name: transformation.grant_data_2.activation.0.0
+      transformation: grant_data_2
+      binding:
+        acquire: mshr_acquire_0
+        grant: mshr_grant_data_0
+    - name: transformation.grant_writes_lb_2.activation.0.0
+      transformation: grant_writes_lb_2
+      binding:
+        grant: mshr_grant_data_0
+        write: mshr_lb_write_0
+    - name: transformation.primary_accept_Ld0.activation.0.0
+      transformation: primary_accept_Ld0
+      binding:
+        request: req0
+        accept: primary_0
+    - name: transformation.primary_rpq_insert_Ld0.activation.0.0
+      transformation: primary_rpq_insert_Ld0
+      binding:
+        accept: primary_0
+        insert: rpq_insert_primary_0
+    - name: transformation.refill_complete_2.activation.0.0
+      transformation: refill_complete_2
+      binding:
+        grant: mshr_grant_data_0
+        complete: mshr_refill_complete_0
+    - name: transformation.respq_dequeue_Ld0.activation.0.0
+      transformation: respq_dequeue_Ld0
+      binding:
+        enq: resp_enq_0
+        deq: resp_deq_0
+    - name: transformation.respq_enqueue_Ld0.activation.0.0
+      transformation: respq_enqueue_Ld0
+      binding:
+        response: direct_0
+        enq: resp_enq_0
+events:
+- id: req0
+  type: DCache.MSHRRequest
+  occurs: true
+  fields:
+    op_id: Ld0
+    queue_kind: ldq
+    queue_idx: 5
+    address: x
+    value: 0
+    mem_kind: load
+    mshr_id: 2
+    tag_match: false
+    old_line_dirty: false
+    needs_acquire: true
+    grant_has_data: true
+    secondary: false
+    requires_second_acquire: false
+    is_hit_again: false
+    is_probe: false
+    sdq_id: 0
+  cycle: 0
+- id: mshr_acquire_0
+  type: MSHR.AcquireBlock
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    address: x
+  cycle: 1
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mshr_grant_data_0
+  type: MSHR.GrantData
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    source_op_id: Ld0
+    address: x
+    value: UNSET_VALUE
+  cycle: 2
+  annotations:
+    module_spec: mshr
+    module_visibility: public
+    interface_ports:
+    - grant_data
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mshr_lb_write_0
+  type: MSHR.LineBufferWrite
+  occurs: true
+  fields:
+    mshr_id: 2
+    address: x
+    value: UNSET_VALUE
+  cycle: 2
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mshr_refill_complete_0
+  type: MSHR.RefillComplete
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    source_op_id: Ld0
+    address: x
+    value: UNSET_VALUE
+  cycle: 2
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: primary_0
+  type: MSHR.PrimaryAccept
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    queue_kind: ldq
+    queue_idx: 5
+    address: x
+    mem_kind: load
+    needs_acquire: true
+    old_line_dirty: false
+    grant_has_data: true
+  cycle: 0
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rpq_insert_primary_0
+  type: MSHR.RPQInsert
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    queue_kind: ldq
+    queue_idx: 5
+    address: x
+    mem_kind: load
+    admission: primary
+  cycle: 0
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: direct_0
+  type: MSHR.DirectLoadResponse
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    queue_idx: 5
+    address: x
+    value: UNSET_VALUE
+  cycle: 3
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: deq_direct_0
+  type: MSHR.RPQDequeue
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    queue_kind: ldq
+    queue_idx: 5
+    address: x
+    disposition: direct
+  cycle: 3
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: resp_enq_0
+  type: MSHR.ResponseEnqueue
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    queue_idx: 5
+    address: x
+    value: UNSET_VALUE
+  cycle: 3
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: resp_deq_0
+  type: MSHR.ResponseDequeue
+  occurs: true
+  fields:
+    mshr_id: 2
+    op_id: Ld0
+    queue_idx: 5
+    address: x
+    value: UNSET_VALUE
+  cycle: 4
+  annotations:
+    module_spec: mshr
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

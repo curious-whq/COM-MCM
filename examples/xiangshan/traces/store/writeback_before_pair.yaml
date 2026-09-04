@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: writeback-before-pair, expected: INFEASIBLE}
+events:
+- id: early_writeback_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SEARLY, hart: 0, program_index: 5, rob_idx: 5, mem_kind: store, vaddr: 393216, write_value: 15, size: 8, byte_mask: 255, sq_idx: 5, vector: false, tlb_instance: sttlb, vpn: 96, asid: 1, vmid: 0, translation_stage: s1}
+- id: early_writeback_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: SEARLY, hart: 0, tlb_instance: sttlb, vaddr: 393216, vpn: 96, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 24576, hit_level: l1, replay: false, fault: false, cause: none}
+- id: forbidden_early_writeback
+  type: Core.MemoryWriteback
+  occurs: true
+  cycle: 2
+  fields: {op_id: SEARLY, hart: 0, rob_idx: 5, mem_kind: store, value: 15, success: true}
+constraints: []

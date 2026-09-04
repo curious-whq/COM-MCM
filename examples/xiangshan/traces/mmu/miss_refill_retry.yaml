@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 3, case: miss-refill-retry, expected: FEASIBLE}
+events:
+- id: page_x
+  type: MMU.PageMap
+  occurs: true
+  cycle: 0
+  fields: {map_id: MAP_X, hart: 0, entry_id: e0, tlb_instance: ldtlb, vpn: 16, paddr: 8192, asid: 1, vmid: 0, translation_stage: s1, initial_valid: false}
+- id: load_0_translate_first
+  type: MMU.TranslateRequest
+  occurs: true
+  cycle: 1
+  fields: {op_id: L0, hart: 0, tlb_instance: ldtlb, vaddr: 65540, vpn: 16, attempt: 0, access_kind: load, size: 8, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_0_ptw_response
+  type: MMU.PTWResponse
+  occurs: true
+  cycle: 9
+  fields: {txn_id: L0.a0, op_id: L0, hart: 0, tlb_instance: ldtlb, vaddr: 65540, vpn: 16, access_kind: load, asid: 1, vmid: 0, translation_stage: s1, paddr: 8192, fault: false}
+- id: load_0_translate_retry
+  type: MMU.TranslateRequest
+  occurs: true
+  cycle: 13
+  fields: {op_id: L0, hart: 0, tlb_instance: ldtlb, vaddr: 65540, vpn: 16, attempt: 1, access_kind: load, size: 8, asid: 1, vmid: 0, translation_stage: s1}
+constraints: []

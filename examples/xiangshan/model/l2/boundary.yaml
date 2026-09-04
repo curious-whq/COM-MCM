@@ -1,0 +1,30 @@
+schema_version: umcm.module.v0.15.0
+name: coupled_l2
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: XSCache coupledL2/CoupledL2.scala and Slice.scala
+ports:
+- {name: tl_a, direction: input, event_type: TL.A}
+- {name: tl_b, direction: output, event_type: TL.B}
+- {name: tl_c, direction: input, event_type: TL.C}
+- {name: tl_d, direction: output, event_type: TL.D}
+- {name: tl_e, direction: input, event_type: TL.E}
+- {name: chi_txreq, direction: output, event_type: CHI.TXREQ}
+- {name: chi_txdat, direction: output, event_type: CHI.TXDAT}
+- {name: chi_txrsp, direction: output, event_type: CHI.TXRSP}
+- {name: chi_rxsnp, direction: input, event_type: CHI.RXSNP}
+- {name: chi_rxdat, direction: input, event_type: CHI.RXDAT}
+- {name: chi_rxrsp, direction: input, event_type: CHI.RXRSP}
+- {name: prefetch_request, direction: input, event_type: Prefetch.Request}
+- {name: prefetch_train, direction: output, event_type: Prefetch.Train}
+internal_events:
+- L2.DirectoryLookup
+- L2.MSHRAllocate
+- L2.ProbeIssue
+- L2.GrantIssue
+slots: []
+state_variables: []
+transformations: []
+constraints: []

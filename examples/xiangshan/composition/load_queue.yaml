@@ -1,0 +1,43 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-load-queue-v0.6
+horizon: 48
+metadata:
+  version: 0.6.0
+  stage: 6
+  purpose: Executable virtual LQ lifetime plus bounded RAR/RAW violation detection and redirect recovery.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: load_queue_lifecycle, path: ../model/load/queue_lifecycle.yaml}
+connections: []
+roles:
+- name: load_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: load
+    fields.vector: false
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    lq_idx: fields.lq_idx
+    mem_kind: fields.mem_kind
+- name: store_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: store
+    fields.vector: false
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    sq_idx: fields.sq_idx
+    address: fields.address
+    byte_mask: fields.byte_mask
+constraints: []

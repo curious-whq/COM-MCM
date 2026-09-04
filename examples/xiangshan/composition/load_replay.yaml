@@ -1,0 +1,28 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-load-replay-v0.7
+horizon: 40
+metadata:
+  version: 0.7.0
+  stage: 7
+  purpose: Executable scalar LoadQueueReplay cause, wakeup, issue, feedback, and cancellation slice.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: load_replay_queue, path: ../model/load/replay_queue.yaml}
+connections: []
+roles:
+- name: load_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: load
+    fields.vector: false
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    lq_idx: fields.lq_idx
+    vaddr: fields.vaddr
+constraints: []

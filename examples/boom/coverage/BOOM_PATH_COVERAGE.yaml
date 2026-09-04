@@ -1,0 +1,2354 @@
+schema_version: umcm.coverage-report.v0.19.0
+suite: boom-path-coverage-v0.19
+status: complete
+summary:
+  covered: 27
+  uncovered: 1
+  unreachable: 0
+  unknown: 0
+  total: 28
+  required: 27
+  required_covered: 27
+metadata:
+  version: 0.19.0
+  purpose: Reachability witnesses for memory-relevant BOOM µMCM transitions.
+  scope: Independent LSQ, MSHR, core-side, and coherence compositions plus public-interface
+    checks.
+  witness_policy: Inputs may contain only the declared architectural/environment/public-interface
+    event types; private outcomes are solver-selected.
+  backend: z3
+  input_policy: declared-public-events-only
+goals:
+- id: lsq_ldq_allocate
+  model: lsq
+  category: LSQ
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: An architectural load allocates a live LDQ entry.
+  input: load
+  witness:
+    event_count: 2
+    hidden_event_count: 1
+    active_transformations:
+    - ldq_allocate_L0
+    path: examples/boom/coverage/witnesses/lsq_ldq_allocate.yaml
+  explored_nodes: 1
+- id: lsq_tlb_retry
+  model: lsq
+  category: LSQ
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: The LSQ records a miss, enqueues it, and later issues the retry.
+  input: load
+  witness:
+    event_count: 5
+    hidden_event_count: 4
+    active_transformations:
+    - ldq_allocate_L0
+    - retry_enqueue_clears_ldq_address_L0
+    - retry_enqueue_requires_tlb_miss_L0
+    - retry_issue_requires_enqueue_L0
+    - tlb_miss_records_virtual_address_L0
+    path: examples/boom/coverage/witnesses/lsq_tlb_retry.yaml
+  explored_nodes: 1
+- id: lsq_store_forward
+  model: lsq
+  category: LSQ
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: An older same-address store forwards its data to the load.
+  input: store-forward
+  witness:
+    event_count: 8
+    hidden_event_count: 6
+    active_transformations:
+    - ldq_allocate_L0
+    - selected_store_load_forward_S0_L0
+    - store_address_generates_stld_search_S0
+    - store_address_ready_S0
+    - store_data_ready_S0
+    - stq_allocate_S0
+    path: examples/boom/coverage/witnesses/lsq_store_forward.yaml
+  explored_nodes: 1
+- id: lsq_nack_wakeup
+  model: lsq
+  category: LSQ
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: A public DCache nack clears executed state and a sleeping entry can
+    wake.
+  input: nack
+  witness:
+    event_count: 8
+    hidden_event_count: 5
+    active_transformations:
+    - accepted_request_marks_executed_L0
+    - dcache_fire_records_load_address_L0
+    - dcache_nack_clears_executed_L0
+    - executed_load_generates_ldld_search_L0
+    - ldld_search_ends_executing_window_L0
+    - ldq_allocate_L0
+    - load_executed_sets_ldq_bit_L0
+    - load_wakeup_requires_sleeping_entry_L0
+    - nack_seen_L0
+    path: examples/boom/coverage/witnesses/lsq_nack_wakeup.yaml
+  explored_nodes: 1
+- id: mshr_primary_refill
+  model: mshr
+  category: MSHR
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: A primary miss acquires data, refills, and returns a load response.
+  input: primary
+  witness:
+    event_count: 11
+    hidden_event_count: 10
+    active_transformations:
+    - acquire_2
+    - direct_dequeue_Ld0
+    - direct_load_response_Ld0
+    - direct_load_response_state_Ld0
+    - grant_data_2
+    - grant_writes_lb_2
+    - primary_accept_Ld0
+    - primary_rpq_insert_Ld0
+    - refill_complete_2
+    - respq_dequeue_Ld0
+    - respq_enqueue_Ld0
+    path: examples/boom/coverage/witnesses/mshr_primary_refill.yaml
+  explored_nodes: 1
+- id: mshr_secondary_merge
+  model: mshr
+  category: MSHR
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: A secondary request joins an occupied MSHR/RPQ.
+  input: secondary
+  witness:
+    event_count: 10
+    hidden_event_count: 8
+    active_transformations:
+    - acquire_2
+    - grant_data_2
+    - grant_writes_lb_2
+    - primary_accept_Ld0
+    - primary_rpq_insert_Ld0
+    - refill_complete_2
+    - secondary_accept_Ld1
+    - secondary_rpq_insert_Ld1
+    path: examples/boom/coverage/witnesses/mshr_secondary_merge.yaml
+  explored_nodes: 1
+- id: mshr_dirty_writeback
+  model: mshr
+  category: MSHR
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Dirty victim metadata causes clear, writeback, refill commit, and finish.
+  input: primary
+  witness:
+    event_count: 16
+    hidden_event_count: 15
+    active_transformations:
+    - acquire_2
+    - commit_after_wb_2
+    - commit_refill_2
+    - dirty_meta_clear_2
+    - grant_data_2
+    - grant_writes_lb_2
+    - mem_finish_2
+    - meta_read_when_rpq_empty_2
+    - meta_write_after_refill_2
+    - primary_accept_Ld0
+    - primary_rpq_insert_Ld0
+    - refill_complete_2
+    - wb_done_2
+    - wb_request_2
+    path: examples/boom/coverage/witnesses/mshr_dirty_writeback.yaml
+  explored_nodes: 1
+- id: mshr_store_replay
+  model: mshr
+  category: MSHR
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: A no-data store miss replays and frees its SDQ entry.
+  input: store-replay
+  witness:
+    event_count: 9
+    hidden_event_count: 8
+    active_transformations:
+    - acquire_1
+    - grant_no_data_1
+    - primary_accept_St0
+    - primary_rpq_insert_St0
+    - replay_St0
+    - replay_dequeue_St0
+    - replay_state_St0
+    - sdq_alloc_St0
+    - sdq_free_St0
+    path: examples/boom/coverage/witnesses/mshr_store_replay.yaml
+  explored_nodes: 1
+- id: mshr_probe_fence_blocked
+  model: mshr
+  category: MSHR
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Occupied/post-refill states expose both fence and probe blocking.
+  input: primary
+  witness:
+    event_count: 10
+    hidden_event_count: 9
+    active_transformations:
+    - acquire_2
+    - fence_blocked_2
+    - grant_data_2
+    - grant_writes_lb_2
+    - meta_read_when_rpq_empty_2
+    - primary_accept_Ld0
+    - primary_rpq_insert_Ld0
+    - probe_blocked_2
+    - refill_complete_2
+    path: examples/boom/coverage/witnesses/mshr_probe_fence_blocked.yaml
+  explored_nodes: 1
+- id: iomshr_load
+  model: mshr
+  category: MSHR
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: An uncacheable load traverses the IOMSHR state machine.
+  input: io
+  witness:
+    event_count: 4
+    hidden_event_count: 3
+    active_transformations:
+    - io_access_IO0
+    - io_ack_IO0
+    - io_response_IO0
+    path: examples/boom/coverage/witnesses/iomshr_load.yaml
+  explored_nodes: 1
+- id: core_tlb_miss_retry
+  model: core
+  category: TLB
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Invalid TLB entry selects miss/PTW/refill/retry without a miss input
+    event.
+  input: tlb-retry
+  witness:
+    event_count: 25
+    hidden_event_count: 23
+    active_transformations:
+    - initial_decision_returns_response_0
+    - initial_request_reads_entry_0
+    - iomshr_access_0
+    - iomshr_ack_0
+    - iomshr_load_completion_0
+    - iomshr_load_response_0
+    - lsu_issues_initial_tlb_request_0
+    - lsu_reissues_tlb_request_0
+    - miss_captures_refill_tag_0
+    - miss_issues_ptw_request_0
+    - ptw_result_refills_entry_0
+    - ptw_returns_bounded_mapping_0
+    - ready_after_refill_0
+    - retire_load_0
+    - retire_read_value_0
+    - retry_decision_returns_response_0
+    - retry_request_reads_refilled_entry_0
+    - retry_response_translates_0
+    - rob_allocates_memory_op_0
+    - rob_captures_completion_0
+    - rob_commits_completed_op_0
+    - tlb_miss_round_trips_through_lsu_retry_queue_0
+    - uncacheable_routes_to_iomshr_0
+    path: examples/boom/coverage/witnesses/core_tlb_miss_retry.yaml
+  explored_nodes: 1
+- id: core_sfence_retry
+  model: core
+  category: TLB
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: SFENCE invalidates a matching entry and a subsequent lookup refills
+    it.
+  input: sfence-retry
+  witness:
+    event_count: 27
+    hidden_event_count: 24
+    active_transformations:
+    - initial_decision_returns_response_0
+    - initial_request_reads_entry_0
+    - iomshr_access_0
+    - iomshr_ack_0
+    - iomshr_load_completion_0
+    - iomshr_load_response_0
+    - lsu_issues_initial_tlb_request_0
+    - lsu_reissues_tlb_request_0
+    - miss_captures_refill_tag_0
+    - miss_issues_ptw_request_0
+    - ptw_result_refills_entry_0
+    - ptw_returns_bounded_mapping_0
+    - ready_after_refill_0
+    - retire_load_0
+    - retire_read_value_0
+    - retry_decision_returns_response_0
+    - retry_request_reads_refilled_entry_0
+    - retry_response_translates_0
+    - rob_allocates_memory_op_0
+    - rob_captures_completion_0
+    - rob_commits_completed_op_0
+    - sfence_invalidates_entry_0
+    - sfence_precedes_subsequent_lookup_0
+    - tlb_miss_round_trips_through_lsu_retry_queue_0
+    - uncacheable_routes_to_iomshr_0
+    path: examples/boom/coverage/witnesses/core_sfence_retry.yaml
+  explored_nodes: 1
+- id: core_amo
+  model: core
+  category: Atomic
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: AMO read and serialized write both occur.
+  input: amo
+  witness:
+    event_count: 14
+    hidden_event_count: 12
+    active_transformations:
+    - amo_read_precedes_write_0
+    - amo_starts_read_0
+    - amo_write_completes_0
+    - hit_response_translates_0
+    - initial_decision_returns_response_0
+    - initial_request_reads_entry_0
+    - lsu_issues_initial_tlb_request_0
+    - retire_amo_0
+    - retire_read_value_0
+    - rob_allocates_memory_op_0
+    - rob_captures_completion_0
+    - rob_commits_completed_op_0
+    path: examples/boom/coverage/witnesses/core_amo.yaml
+  explored_nodes: 1
+- id: core_lr_sc_success
+  model: core
+  category: Atomic
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: LR establishes a reservation and SC consumes it successfully.
+  input: lr-sc-success
+  witness:
+    event_count: 28
+    hidden_event_count: 25
+    active_transformations:
+    - commit_waits_for_older_1
+    - hit_response_translates_0
+    - hit_response_translates_1
+    - initial_decision_returns_response_0
+    - initial_decision_returns_response_1
+    - initial_request_reads_entry_0
+    - initial_request_reads_entry_1
+    - lr_completion_0
+    - lr_reads_line_0
+    - lr_sets_reservation_0
+    - lsu_issues_initial_tlb_request_0
+    - lsu_issues_initial_tlb_request_1
+    - retire_lr_0
+    - retire_lrsc_pair_0
+    - retire_read_value_0
+    - retire_successful_sc_1
+    - retire_write_1
+    - rob_allocates_memory_op_0
+    - rob_allocates_memory_op_1
+    - rob_captures_completion_0
+    - rob_captures_completion_1
+    - rob_commits_completed_op_0
+    - rob_commits_completed_op_1
+    - sc_checks_reservation_1
+    - successful_sc_completes_1
+    - successful_sc_writes_1
+    path: examples/boom/coverage/witnesses/core_lr_sc_success.yaml
+  explored_nodes: 1
+- id: core_lr_probe_sc_fail
+  model: core
+  category: Atomic
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: A probe invalidates the LR reservation and SC fails without writing.
+  input: lr-probe-sc-fail
+  witness:
+    event_count: 27
+    hidden_event_count: 23
+    active_transformations:
+    - commit_waits_for_older_1
+    - failed_sc_completes_without_write_1
+    - hit_response_translates_0
+    - hit_response_translates_1
+    - initial_decision_returns_response_0
+    - initial_decision_returns_response_1
+    - initial_request_reads_entry_0
+    - initial_request_reads_entry_1
+    - lr_completion_0
+    - lr_reads_line_0
+    - lr_sets_reservation_0
+    - lsu_issues_initial_tlb_request_0
+    - lsu_issues_initial_tlb_request_1
+    - probe_invalidates_matching_line_0
+    - probe_invalidates_reservation_0
+    - retire_failed_sc_1
+    - retire_lr_0
+    - retire_read_value_0
+    - rob_allocates_memory_op_0
+    - rob_allocates_memory_op_1
+    - rob_captures_completion_0
+    - rob_captures_completion_1
+    - rob_commits_completed_op_0
+    - rob_commits_completed_op_1
+    - sc_checks_reservation_1
+    path: examples/boom/coverage/witnesses/core_lr_probe_sc_fail.yaml
+  explored_nodes: 1
+- id: core_mmio
+  model: core
+  category: MMIO
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Uncacheable translation routes through the core-side IOMSHR path.
+  input: mmio-store
+  witness:
+    event_count: 15
+    hidden_event_count: 13
+    active_transformations:
+    - hit_response_translates_0
+    - initial_decision_returns_response_0
+    - initial_request_reads_entry_0
+    - iomshr_access_0
+    - iomshr_ack_0
+    - iomshr_store_completion_0
+    - lsu_issues_initial_tlb_request_0
+    - retire_store_0
+    - retire_write_0
+    - rob_allocates_memory_op_0
+    - rob_captures_completion_0
+    - rob_commits_completed_op_0
+    - uncacheable_routes_to_iomshr_0
+    path: examples/boom/coverage/witnesses/core_mmio.yaml
+  explored_nodes: 1
+- id: core_fence
+  model: core
+  category: Fence
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Fence waits for and is released by DCache.Ordered.
+  input: fence
+  witness:
+    event_count: 9
+    hidden_event_count: 6
+    active_transformations:
+    - decode_fence_0
+    - fence_waits_for_ordered_0
+    - retire_fence_0
+    - rob_allocates_memory_op_0
+    - rob_captures_completion_0
+    - rob_commits_completed_op_0
+    path: examples/boom/coverage/witnesses/core_fence.yaml
+  explored_nodes: 1
+- id: core_precise_exception
+  model: core
+  category: ROB
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: The ROB records a memory fault and raises a precise exception.
+  input: page-fault
+  witness:
+    event_count: 38
+    hidden_event_count: 33
+    active_transformations:
+    - hit_response_translates_0
+    - initial_decision_returns_response_1
+    - initial_decision_returns_response_2
+    - initial_request_reads_entry_1
+    - initial_request_reads_entry_2
+    - iomshr_access_0
+    - iomshr_ack_0
+    - iomshr_load_completion_0
+    - iomshr_load_response_0
+    - lsu_issues_initial_tlb_request_0
+    - lsu_issues_initial_tlb_request_1
+    - lsu_reissues_tlb_request_1
+    - miss_captures_refill_tag_2
+    - miss_issues_ptw_request_2
+    - page_fault_response_reaches_rob_1
+    - precise_exception_squashes_younger_4
+    - precise_exception_squashes_younger_5
+    - precise_exception_waits_for_older_1
+    - ptw_result_refills_entry_2
+    - ptw_returns_bounded_mapping_2
+    - ready_after_refill_2
+    - retire_load_0
+    - retire_read_value_0
+    - retry_decision_returns_response_2
+    - retry_request_reads_refilled_entry_2
+    - rob_allocates_memory_op_0
+    - rob_allocates_memory_op_1
+    - rob_allocates_memory_op_2
+    - rob_captures_completion_0
+    - rob_commits_completed_op_0
+    - rob_raises_precise_exception_1
+    - rob_records_memory_fault_1
+    - squash_marks_entry_1
+    - squash_marks_entry_2
+    - tlb_miss_round_trips_through_lsu_retry_queue_1
+    - uncacheable_routes_to_iomshr_0
+    path: examples/boom/coverage/witnesses/core_precise_exception.yaml
+  explored_nodes: 1
+- id: core_branch_recovery
+  model: core
+  category: ROB
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Branch recovery squashes younger memory work and broadcasts kill.
+  input: branch-recovery
+  witness:
+    event_count: 6
+    hidden_event_count: 3
+    active_transformations:
+    - branch_recovery_broadcasts_kill_0
+    - branch_recovery_squashes_younger_0
+    - rob_allocates_memory_op_0
+    - squash_marks_entry_0
+    path: examples/boom/coverage/witnesses/core_branch_recovery.yaml
+  explored_nodes: 1
+- id: coherence_cold_refill
+  model: coherence
+  category: Coherence
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: A cold load issues Acquire, gets outer data, and installs B permission.
+  input: cold-read
+  witness:
+    event_count: 10
+    hidden_event_count: 8
+    active_transformations:
+    - acquire_allocates_line_mshr_0
+    - acquire_has_one_architectural_source_0
+    - apply_grant_t_h0_0
+    - directory_lookup_obligation_0
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - grant_ack_0
+    - grant_ack_retires_transaction_0
+    - grant_obligation_0
+    - grant_to_t_h0_0
+    - install_grant_data_h0_0
+    - load_access_must_complete_0
+    - load_completes_0
+    - load_miss_acquire_h0_0
+    - load_refill_0
+    - outer_memory_grants_0
+    path: examples/boom/coverage/witnesses/coherence_cold_refill.yaml
+  explored_nodes: 1
+- id: coherence_l1_hit
+  model: coherence
+  category: Coherence
+  required: false
+  status: uncovered
+  reason: 'bindings exist but guards/state/bounds reject them: l1-hit: SMT constraints
+    are unsatisfiable'
+  description: A second same-hart read reaches an L1 hit after the first fill.
+  explored_nodes: 1
+- id: coherence_dirty_handoff
+  model: coherence
+  category: Coherence
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Dirty owner supplies ProbeAckData and L2 publishes it before granting
+    the reader.
+  input: dirty-handoff
+  witness:
+    event_count: 20
+    hidden_event_count: 17
+    active_transformations:
+    - accept_probe_data_h0_1
+    - acquire_allocates_line_mshr_0
+    - acquire_allocates_line_mshr_1
+    - acquire_has_one_architectural_source_0
+    - acquire_has_one_architectural_source_1
+    - apply_grant_b_h1_1
+    - apply_grant_t_h0_0
+    - consume_probe_ack_h0_1
+    - directory_hit_is_ready_1
+    - directory_hit_support_1
+    - directory_lookup_obligation_0
+    - directory_lookup_obligation_1
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - explicit_access_dependency_1
+    - grant_ack_0
+    - grant_ack_1
+    - grant_ack_retires_transaction_0
+    - grant_ack_retires_transaction_1
+    - grant_obligation_0
+    - grant_obligation_1
+    - grant_to_b_h1_1
+    - grant_to_t_h0_0
+    - install_grant_data_h0_0
+    - install_grant_data_h1_1
+    - load_access_must_complete_1
+    - load_completes_1
+    - load_miss_acquire_h1_1
+    - load_refill_1
+    - outer_memory_grants_0
+    - probe_ack_dirty_h0_1
+    - probe_data_is_published_before_grant_1
+    - probe_h0_to_b_1
+    - store_access_must_complete_0
+    - store_completes_0
+    - store_from_n_h0_0
+    - store_refill_0
+    - store_updates_h0_0
+    path: examples/boom/coverage/witnesses/coherence_dirty_handoff.yaml
+  explored_nodes: 1
+- id: coherence_write_upgrade
+  model: coherence
+  category: Coherence
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: A B-state writer probes the other sharer and upgrades to T.
+  input: write-upgrade
+  witness:
+    event_count: 28
+    hidden_event_count: 24
+    active_transformations:
+    - accept_probe_clean_h0_1
+    - accept_probe_clean_h1_2
+    - acquire_allocates_line_mshr_0
+    - acquire_allocates_line_mshr_1
+    - acquire_allocates_line_mshr_2
+    - acquire_has_one_architectural_source_0
+    - acquire_has_one_architectural_source_1
+    - acquire_has_one_architectural_source_2
+    - apply_grant_b_h1_1
+    - apply_grant_t_h0_0
+    - apply_grant_t_h0_2
+    - consume_probe_ack_h0_1
+    - consume_probe_ack_h1_2
+    - directory_hit_is_ready_1
+    - directory_hit_is_ready_2
+    - directory_hit_support_1
+    - directory_hit_support_2
+    - directory_lookup_obligation_0
+    - directory_lookup_obligation_1
+    - directory_lookup_obligation_2
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - explicit_access_dependency_1
+    - explicit_access_dependency_5
+    - grant_ack_0
+    - grant_ack_1
+    - grant_ack_2
+    - grant_ack_retires_transaction_0
+    - grant_ack_retires_transaction_1
+    - grant_ack_retires_transaction_2
+    - grant_obligation_0
+    - grant_obligation_1
+    - grant_obligation_2
+    - grant_to_b_h1_1
+    - grant_to_t_h0_0
+    - grant_to_t_h0_2
+    - install_grant_data_h0_0
+    - install_grant_data_h1_1
+    - install_grant_nodata_h0_2
+    - load_access_must_complete_0
+    - load_access_must_complete_1
+    - load_completes_0
+    - load_completes_1
+    - load_miss_acquire_h0_0
+    - load_miss_acquire_h1_1
+    - load_refill_0
+    - load_refill_1
+    - outer_memory_grants_0
+    - probe_ack_clean_h0_1
+    - probe_ack_clean_h1_2
+    - probe_h0_to_b_1
+    - probe_h1_to_n_2
+    - store_access_must_complete_2
+    - store_completes_2
+    - store_from_b_h0_2
+    - store_refill_2
+    - store_updates_h0_2
+    path: examples/boom/coverage/witnesses/coherence_write_upgrade.yaml
+  explored_nodes: 1
+- id: coherence_dirty_release
+  model: coherence
+  category: Coherence
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Dirty eviction publishes ReleaseData and retires on ReleaseAck.
+  input: dirty-release
+  witness:
+    event_count: 21
+    hidden_event_count: 17
+    active_transformations:
+    - acquire_allocates_line_mshr_0
+    - acquire_allocates_line_mshr_1
+    - acquire_has_one_architectural_source_0
+    - acquire_has_one_architectural_source_1
+    - apply_grant_t_h0_0
+    - apply_grant_t_h1_1
+    - directory_hit_is_ready_1
+    - directory_hit_support_1
+    - directory_lookup_obligation_0
+    - directory_lookup_obligation_1
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - eviction_must_issue_release_0
+    - explicit_access_dependency_1
+    - explicit_eviction_dependency_0
+    - grant_ack_0
+    - grant_ack_1
+    - grant_ack_retires_transaction_0
+    - grant_ack_retires_transaction_1
+    - grant_obligation_0
+    - grant_obligation_1
+    - grant_to_t_h0_0
+    - grant_to_t_h1_1
+    - install_grant_data_h0_0
+    - install_grant_data_h1_1
+    - l2_release_data_h0_0
+    - load_access_must_complete_1
+    - load_completes_1
+    - load_miss_acquire_h1_1
+    - load_refill_1
+    - outer_memory_grants_0
+    - publish_release_data_0
+    - release_ack_clears_h0_0
+    - release_ack_retires_eviction_0
+    - release_ack_support_0
+    - release_data_is_published_before_ack_0
+    - release_dirty_h0_0
+    - store_access_must_complete_0
+    - store_completes_0
+    - store_from_n_h0_0
+    - store_refill_0
+    - store_updates_h0_0
+    path: examples/boom/coverage/witnesses/coherence_dirty_release.yaml
+  explored_nodes: 1
+- id: auto_coherence_public_interface_sifive_inclusive_l2_probe
+  model: coherence
+  category: Coherence-interface
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Automatically generated public_interface reachability goal
+  input: dirty-handoff
+  witness:
+    event_count: 20
+    hidden_event_count: 17
+    active_transformations:
+    - accept_probe_data_h0_1
+    - acquire_allocates_line_mshr_0
+    - acquire_allocates_line_mshr_1
+    - acquire_has_one_architectural_source_0
+    - acquire_has_one_architectural_source_1
+    - apply_grant_b_h1_1
+    - apply_grant_t_h0_0
+    - consume_probe_ack_h0_1
+    - directory_hit_is_ready_1
+    - directory_hit_support_1
+    - directory_lookup_obligation_0
+    - directory_lookup_obligation_1
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - explicit_access_dependency_1
+    - grant_ack_0
+    - grant_ack_1
+    - grant_ack_retires_transaction_0
+    - grant_ack_retires_transaction_1
+    - grant_obligation_0
+    - grant_obligation_1
+    - grant_to_b_h1_1
+    - grant_to_t_h0_0
+    - install_grant_data_h0_0
+    - install_grant_data_h1_1
+    - load_access_must_complete_1
+    - load_completes_1
+    - load_miss_acquire_h1_1
+    - load_refill_1
+    - outer_memory_grants_0
+    - probe_ack_dirty_h0_1
+    - probe_data_is_published_before_grant_1
+    - probe_h0_to_b_1
+    - store_access_must_complete_0
+    - store_completes_0
+    - store_from_n_h0_0
+    - store_refill_0
+    - store_updates_h0_0
+    path: examples/boom/coverage/witnesses/auto_coherence_public_interface_sifive_inclusive_l2_probe.yaml
+  explored_nodes: 1
+- id: auto_coherence_public_interface_sifive_inclusive_l2_grant
+  model: coherence
+  category: Coherence-interface
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Automatically generated public_interface reachability goal
+  input: cold-read
+  witness:
+    event_count: 10
+    hidden_event_count: 8
+    active_transformations:
+    - acquire_allocates_line_mshr_0
+    - acquire_has_one_architectural_source_0
+    - apply_grant_t_h0_0
+    - directory_lookup_obligation_0
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - grant_ack_0
+    - grant_ack_retires_transaction_0
+    - grant_obligation_0
+    - grant_to_t_h0_0
+    - install_grant_data_h0_0
+    - load_access_must_complete_0
+    - load_completes_0
+    - load_miss_acquire_h0_0
+    - load_refill_0
+    - outer_memory_grants_0
+    path: examples/boom/coverage/witnesses/auto_coherence_public_interface_sifive_inclusive_l2_grant.yaml
+  explored_nodes: 1
+- id: auto_coherence_public_interface_boom_l1_coherence_client_release
+  model: coherence
+  category: Coherence-interface
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Automatically generated public_interface reachability goal
+  input: dirty-release
+  witness:
+    event_count: 21
+    hidden_event_count: 17
+    active_transformations:
+    - acquire_allocates_line_mshr_0
+    - acquire_allocates_line_mshr_1
+    - acquire_has_one_architectural_source_0
+    - acquire_has_one_architectural_source_1
+    - apply_grant_t_h0_0
+    - apply_grant_t_h1_1
+    - directory_hit_is_ready_1
+    - directory_hit_support_1
+    - directory_lookup_obligation_0
+    - directory_lookup_obligation_1
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - eviction_must_issue_release_0
+    - explicit_access_dependency_1
+    - explicit_eviction_dependency_0
+    - grant_ack_0
+    - grant_ack_1
+    - grant_ack_retires_transaction_0
+    - grant_ack_retires_transaction_1
+    - grant_obligation_0
+    - grant_obligation_1
+    - grant_to_t_h0_0
+    - grant_to_t_h1_1
+    - install_grant_data_h0_0
+    - install_grant_data_h1_1
+    - l2_release_data_h0_0
+    - load_access_must_complete_1
+    - load_completes_1
+    - load_miss_acquire_h1_1
+    - load_refill_1
+    - outer_memory_grants_0
+    - publish_release_data_0
+    - release_ack_clears_h0_0
+    - release_ack_retires_eviction_0
+    - release_ack_support_0
+    - release_data_is_published_before_ack_0
+    - release_dirty_h0_0
+    - store_access_must_complete_0
+    - store_completes_0
+    - store_from_n_h0_0
+    - store_refill_0
+    - store_updates_h0_0
+    path: examples/boom/coverage/witnesses/auto_coherence_public_interface_boom_l1_coherence_client_release.yaml
+  explored_nodes: 1
+- id: auto_coherence_public_interface_sifive_inclusive_l2_release_ack
+  model: coherence
+  category: Coherence-interface
+  required: true
+  status: covered
+  reason: bounded witness found
+  description: Automatically generated public_interface reachability goal
+  input: dirty-release
+  witness:
+    event_count: 21
+    hidden_event_count: 17
+    active_transformations:
+    - acquire_allocates_line_mshr_0
+    - acquire_allocates_line_mshr_1
+    - acquire_has_one_architectural_source_0
+    - acquire_has_one_architectural_source_1
+    - apply_grant_t_h0_0
+    - apply_grant_t_h1_1
+    - directory_hit_is_ready_1
+    - directory_hit_support_1
+    - directory_lookup_obligation_0
+    - directory_lookup_obligation_1
+    - directory_miss_requests_outer_0
+    - directory_miss_support_0
+    - eviction_must_issue_release_0
+    - explicit_access_dependency_1
+    - explicit_eviction_dependency_0
+    - grant_ack_0
+    - grant_ack_1
+    - grant_ack_retires_transaction_0
+    - grant_ack_retires_transaction_1
+    - grant_obligation_0
+    - grant_obligation_1
+    - grant_to_t_h0_0
+    - grant_to_t_h1_1
+    - install_grant_data_h0_0
+    - install_grant_data_h1_1
+    - l2_release_data_h0_0
+    - load_access_must_complete_1
+    - load_completes_1
+    - load_miss_acquire_h1_1
+    - load_refill_1
+    - outer_memory_grants_0
+    - publish_release_data_0
+    - release_ack_clears_h0_0
+    - release_ack_retires_eviction_0
+    - release_ack_support_0
+    - release_data_is_published_before_ack_0
+    - release_dirty_h0_0
+    - store_access_must_complete_0
+    - store_completes_0
+    - store_from_n_h0_0
+    - store_refill_0
+    - store_updates_h0_0
+    path: examples/boom/coverage/witnesses/auto_coherence_public_interface_sifive_inclusive_l2_release_ack.yaml
+  explored_nodes: 1
+structural:
+  models:
+    coherence:
+      inputs:
+      - cold-read
+      - dirty-handoff
+      - dirty-release
+      - l1-hit
+      - shared-read
+      - write-upgrade
+      transformations:
+      - accept_probe_clean_h0_0
+      - accept_probe_clean_h0_1
+      - accept_probe_clean_h0_2
+      - accept_probe_clean_h1_0
+      - accept_probe_clean_h1_1
+      - accept_probe_clean_h1_2
+      - accept_probe_data_h0_0
+      - accept_probe_data_h0_1
+      - accept_probe_data_h0_2
+      - accept_probe_data_h1_0
+      - accept_probe_data_h1_1
+      - accept_probe_data_h1_2
+      - acquire_allocates_line_mshr_0
+      - acquire_allocates_line_mshr_1
+      - acquire_allocates_line_mshr_2
+      - acquire_has_one_architectural_source_0
+      - acquire_has_one_architectural_source_1
+      - acquire_has_one_architectural_source_2
+      - apply_grant_b_h0_0
+      - apply_grant_b_h0_1
+      - apply_grant_b_h0_2
+      - apply_grant_b_h1_0
+      - apply_grant_b_h1_1
+      - apply_grant_b_h1_2
+      - apply_grant_t_h0_0
+      - apply_grant_t_h0_1
+      - apply_grant_t_h0_2
+      - apply_grant_t_h1_0
+      - apply_grant_t_h1_1
+      - apply_grant_t_h1_2
+      - consume_probe_ack_h0_0
+      - consume_probe_ack_h0_1
+      - consume_probe_ack_h0_2
+      - consume_probe_ack_h1_0
+      - consume_probe_ack_h1_1
+      - consume_probe_ack_h1_2
+      - directory_hit_is_ready_0
+      - directory_hit_is_ready_1
+      - directory_hit_is_ready_2
+      - directory_hit_support_0
+      - directory_hit_support_1
+      - directory_hit_support_2
+      - directory_lookup_obligation_0
+      - directory_lookup_obligation_1
+      - directory_lookup_obligation_2
+      - directory_miss_requests_outer_0
+      - directory_miss_requests_outer_1
+      - directory_miss_requests_outer_2
+      - directory_miss_support_0
+      - directory_miss_support_1
+      - directory_miss_support_2
+      - eviction_must_issue_release_0
+      - explicit_access_dependency_0
+      - explicit_access_dependency_1
+      - explicit_access_dependency_2
+      - explicit_access_dependency_3
+      - explicit_access_dependency_4
+      - explicit_access_dependency_5
+      - explicit_access_dependency_6
+      - explicit_access_dependency_7
+      - explicit_access_dependency_8
+      - explicit_eviction_dependency_0
+      - explicit_eviction_dependency_1
+      - grant_ack_0
+      - grant_ack_1
+      - grant_ack_2
+      - grant_ack_retires_transaction_0
+      - grant_ack_retires_transaction_1
+      - grant_ack_retires_transaction_2
+      - grant_obligation_0
+      - grant_obligation_1
+      - grant_obligation_2
+      - grant_to_b_h0_0
+      - grant_to_b_h0_1
+      - grant_to_b_h0_2
+      - grant_to_b_h1_0
+      - grant_to_b_h1_1
+      - grant_to_b_h1_2
+      - grant_to_t_h0_0
+      - grant_to_t_h0_1
+      - grant_to_t_h0_2
+      - grant_to_t_h1_0
+      - grant_to_t_h1_1
+      - grant_to_t_h1_2
+      - install_grant_data_h0_0
+      - install_grant_data_h0_1
+      - install_grant_data_h0_2
+      - install_grant_data_h1_0
+      - install_grant_data_h1_1
+      - install_grant_data_h1_2
+      - install_grant_nodata_h0_0
+      - install_grant_nodata_h0_1
+      - install_grant_nodata_h0_2
+      - install_grant_nodata_h1_0
+      - install_grant_nodata_h1_1
+      - install_grant_nodata_h1_2
+      - l2_release_clean_h0_0
+      - l2_release_clean_h1_0
+      - l2_release_data_h0_0
+      - l2_release_data_h1_0
+      - load_access_must_complete_0
+      - load_access_must_complete_1
+      - load_access_must_complete_2
+      - load_completes_0
+      - load_completes_1
+      - load_completes_2
+      - load_hit_h0_0
+      - load_hit_h0_1
+      - load_hit_h0_2
+      - load_hit_h1_0
+      - load_hit_h1_1
+      - load_hit_h1_2
+      - load_miss_acquire_h0_0
+      - load_miss_acquire_h0_1
+      - load_miss_acquire_h0_2
+      - load_miss_acquire_h1_0
+      - load_miss_acquire_h1_1
+      - load_miss_acquire_h1_2
+      - load_refill_0
+      - load_refill_1
+      - load_refill_2
+      - outer_memory_grants_0
+      - outer_memory_grants_1
+      - outer_memory_grants_2
+      - probe_ack_clean_h0_0
+      - probe_ack_clean_h0_1
+      - probe_ack_clean_h0_2
+      - probe_ack_clean_h1_0
+      - probe_ack_clean_h1_1
+      - probe_ack_clean_h1_2
+      - probe_ack_dirty_h0_0
+      - probe_ack_dirty_h0_1
+      - probe_ack_dirty_h0_2
+      - probe_ack_dirty_h1_0
+      - probe_ack_dirty_h1_1
+      - probe_ack_dirty_h1_2
+      - probe_data_is_published_before_grant_0
+      - probe_data_is_published_before_grant_1
+      - probe_data_is_published_before_grant_2
+      - probe_h0_to_b_0
+      - probe_h0_to_b_1
+      - probe_h0_to_b_2
+      - probe_h0_to_n_0
+      - probe_h0_to_n_1
+      - probe_h0_to_n_2
+      - probe_h1_to_b_0
+      - probe_h1_to_b_1
+      - probe_h1_to_b_2
+      - probe_h1_to_n_0
+      - probe_h1_to_n_1
+      - probe_h1_to_n_2
+      - publish_release_data_0
+      - release_ack_clears_h0_0
+      - release_ack_clears_h1_0
+      - release_ack_retires_eviction_0
+      - release_ack_support_0
+      - release_clean_h0_0
+      - release_clean_h1_0
+      - release_data_is_published_before_ack_0
+      - release_dirty_h0_0
+      - release_dirty_h1_0
+      - store_access_must_complete_0
+      - store_access_must_complete_1
+      - store_access_must_complete_2
+      - store_completes_0
+      - store_completes_1
+      - store_completes_2
+      - store_from_b_h0_0
+      - store_from_b_h0_1
+      - store_from_b_h0_2
+      - store_from_b_h1_0
+      - store_from_b_h1_1
+      - store_from_b_h1_2
+      - store_from_n_h0_0
+      - store_from_n_h0_1
+      - store_from_n_h0_2
+      - store_from_n_h1_0
+      - store_from_n_h1_1
+      - store_from_n_h1_2
+      - store_hit_h0_0
+      - store_hit_h0_1
+      - store_hit_h0_2
+      - store_hit_h1_0
+      - store_hit_h1_1
+      - store_hit_h1_2
+      - store_refill_0
+      - store_refill_1
+      - store_refill_2
+      - store_updates_h0_0
+      - store_updates_h0_1
+      - store_updates_h0_2
+      - store_updates_h1_0
+      - store_updates_h1_1
+      - store_updates_h1_2
+      state_variables:
+      - L1.h0.line[x].dirty
+      - L1.h0.line[x].perm
+      - L1.h0.line[x].source
+      - L1.h0.line[x].value
+      - L1.h0.line[x].version
+      - L1.h1.line[x].dirty
+      - L1.h1.line[x].perm
+      - L1.h1.line[x].source
+      - L1.h1.line[x].value
+      - L1.h1.line[x].version
+      - L2.line[x].busy
+      - L2.line[x].current_txn
+      - L2.line[x].directory_checked
+      - L2.line[x].dirty
+      - L2.line[x].grant_pending
+      - L2.line[x].h0_perm
+      - L2.line[x].h1_perm
+      - L2.line[x].outer_ready
+      - L2.line[x].owner
+      - L2.line[x].source
+      - L2.line[x].state
+      - L2.line[x].value
+      - L2.line[x].version
+      public_interfaces:
+      - boom_l1_coherence_client.access
+      - boom_l1_coherence_client.access_complete
+      - boom_l1_coherence_client.acquire
+      - boom_l1_coherence_client.evict
+      - boom_l1_coherence_client.grant
+      - boom_l1_coherence_client.grant_ack
+      - boom_l1_coherence_client.line_init
+      - boom_l1_coherence_client.load_result
+      - boom_l1_coherence_client.probe
+      - boom_l1_coherence_client.probe_ack
+      - boom_l1_coherence_client.release
+      - boom_l1_coherence_client.release_ack
+      - boom_l1_coherence_client.store_performed
+      - sifive_inclusive_l2.acquire
+      - sifive_inclusive_l2.grant
+      - sifive_inclusive_l2.grant_ack
+      - sifive_inclusive_l2.line_init
+      - sifive_inclusive_l2.probe
+      - sifive_inclusive_l2.probe_ack
+      - sifive_inclusive_l2.release
+      - sifive_inclusive_l2.release_ack
+      - sifive_inclusive_l2.version_publish
+      private_events:
+      - L2.DirectoryResult
+      - L2.OuterAcquire
+      - L2.OuterGrant
+      event_producers:
+        Coherence.AccessComplete:
+        - load_completes_0
+        - load_completes_1
+        - load_completes_2
+        - store_completes_0
+        - store_completes_1
+        - store_completes_2
+        Coherence.LoadResult:
+        - load_access_must_complete_0
+        - load_access_must_complete_1
+        - load_access_must_complete_2
+        - load_hit_h0_0
+        - load_hit_h0_1
+        - load_hit_h0_2
+        - load_hit_h1_0
+        - load_hit_h1_1
+        - load_hit_h1_2
+        - load_refill_0
+        - load_refill_1
+        - load_refill_2
+        Coherence.StorePerformed:
+        - store_access_must_complete_0
+        - store_access_must_complete_1
+        - store_access_must_complete_2
+        - store_hit_h0_0
+        - store_hit_h0_1
+        - store_hit_h0_2
+        - store_hit_h1_0
+        - store_hit_h1_1
+        - store_hit_h1_2
+        - store_refill_0
+        - store_refill_1
+        - store_refill_2
+        Coherence.VersionPublish:
+        - accept_probe_data_h0_0
+        - accept_probe_data_h0_1
+        - accept_probe_data_h0_2
+        - accept_probe_data_h1_0
+        - accept_probe_data_h1_1
+        - accept_probe_data_h1_2
+        - publish_release_data_0
+        L2.DirectoryResult:
+        - directory_hit_support_0
+        - directory_hit_support_1
+        - directory_hit_support_2
+        - directory_lookup_obligation_0
+        - directory_lookup_obligation_1
+        - directory_lookup_obligation_2
+        - directory_miss_support_0
+        - directory_miss_support_1
+        - directory_miss_support_2
+        L2.OuterAcquire:
+        - directory_miss_requests_outer_0
+        - directory_miss_requests_outer_1
+        - directory_miss_requests_outer_2
+        L2.OuterGrant:
+        - outer_memory_grants_0
+        - outer_memory_grants_1
+        - outer_memory_grants_2
+        TL.Acquire:
+        - acquire_has_one_architectural_source_0
+        - acquire_has_one_architectural_source_1
+        - acquire_has_one_architectural_source_2
+        - load_miss_acquire_h0_0
+        - load_miss_acquire_h0_1
+        - load_miss_acquire_h0_2
+        - load_miss_acquire_h1_0
+        - load_miss_acquire_h1_1
+        - load_miss_acquire_h1_2
+        - store_from_b_h0_0
+        - store_from_b_h0_1
+        - store_from_b_h0_2
+        - store_from_b_h1_0
+        - store_from_b_h1_1
+        - store_from_b_h1_2
+        - store_from_n_h0_0
+        - store_from_n_h0_1
+        - store_from_n_h0_2
+        - store_from_n_h1_0
+        - store_from_n_h1_1
+        - store_from_n_h1_2
+        TL.Grant:
+        - grant_obligation_0
+        - grant_obligation_1
+        - grant_obligation_2
+        - grant_to_b_h0_0
+        - grant_to_b_h0_1
+        - grant_to_b_h0_2
+        - grant_to_b_h1_0
+        - grant_to_b_h1_1
+        - grant_to_b_h1_2
+        - grant_to_t_h0_0
+        - grant_to_t_h0_1
+        - grant_to_t_h0_2
+        - grant_to_t_h1_0
+        - grant_to_t_h1_1
+        - grant_to_t_h1_2
+        TL.GrantAck:
+        - grant_ack_0
+        - grant_ack_1
+        - grant_ack_2
+        TL.Probe:
+        - probe_h0_to_b_0
+        - probe_h0_to_b_1
+        - probe_h0_to_b_2
+        - probe_h0_to_n_0
+        - probe_h0_to_n_1
+        - probe_h0_to_n_2
+        - probe_h1_to_b_0
+        - probe_h1_to_b_1
+        - probe_h1_to_b_2
+        - probe_h1_to_n_0
+        - probe_h1_to_n_1
+        - probe_h1_to_n_2
+        TL.ProbeAck:
+        - probe_ack_clean_h0_0
+        - probe_ack_clean_h0_1
+        - probe_ack_clean_h0_2
+        - probe_ack_clean_h1_0
+        - probe_ack_clean_h1_1
+        - probe_ack_clean_h1_2
+        - probe_ack_dirty_h0_0
+        - probe_ack_dirty_h0_1
+        - probe_ack_dirty_h0_2
+        - probe_ack_dirty_h1_0
+        - probe_ack_dirty_h1_1
+        - probe_ack_dirty_h1_2
+        TL.Release:
+        - eviction_must_issue_release_0
+        - release_clean_h0_0
+        - release_clean_h1_0
+        - release_dirty_h0_0
+        - release_dirty_h1_0
+        TL.ReleaseAck:
+        - l2_release_clean_h0_0
+        - l2_release_clean_h1_0
+        - l2_release_data_h0_0
+        - l2_release_data_h1_0
+        - release_ack_support_0
+      orphan_private_event_types: []
+      no_bounded_transformation_binding: []
+    core:
+      inputs:
+      - amo
+      - branch-recovery
+      - fence
+      - lr-probe-sc-fail
+      - lr-sc-success
+      - mmio-store
+      - page-fault
+      - sfence-retry
+      - tlb-retry
+      transformations:
+      - amo_read_precedes_write_0
+      - amo_read_precedes_write_1
+      - amo_starts_read_0
+      - amo_starts_read_1
+      - amo_write_completes_0
+      - amo_write_completes_1
+      - branch_recovery_broadcasts_kill_0
+      - branch_recovery_squashes_younger_0
+      - commit_waits_for_older_0
+      - commit_waits_for_older_1
+      - commit_waits_for_older_2
+      - commit_waits_for_older_3
+      - commit_waits_for_older_4
+      - commit_waits_for_older_5
+      - commit_waits_for_older_6
+      - commit_waits_for_older_7
+      - commit_waits_for_older_8
+      - decode_fence_0
+      - failed_sc_completes_without_write_0
+      - failed_sc_completes_without_write_1
+      - fence_waits_for_ordered_0
+      - hit_response_translates_0
+      - hit_response_translates_1
+      - initial_decision_returns_response_0
+      - initial_decision_returns_response_1
+      - initial_decision_returns_response_2
+      - initial_decision_returns_response_3
+      - initial_request_reads_entry_0
+      - initial_request_reads_entry_1
+      - initial_request_reads_entry_2
+      - initial_request_reads_entry_3
+      - iomshr_access_0
+      - iomshr_ack_0
+      - iomshr_load_completion_0
+      - iomshr_load_response_0
+      - iomshr_store_completion_0
+      - lr_completion_0
+      - lr_completion_1
+      - lr_reads_line_0
+      - lr_reads_line_1
+      - lr_sets_reservation_0
+      - lr_sets_reservation_1
+      - lsu_issues_initial_tlb_request_0
+      - lsu_issues_initial_tlb_request_1
+      - lsu_reissues_tlb_request_0
+      - lsu_reissues_tlb_request_1
+      - miss_captures_refill_tag_0
+      - miss_captures_refill_tag_1
+      - miss_captures_refill_tag_2
+      - miss_captures_refill_tag_3
+      - miss_issues_ptw_request_0
+      - miss_issues_ptw_request_1
+      - miss_issues_ptw_request_2
+      - miss_issues_ptw_request_3
+      - page_fault_response_reaches_rob_0
+      - page_fault_response_reaches_rob_1
+      - precise_exception_squashes_younger_0
+      - precise_exception_squashes_younger_1
+      - precise_exception_squashes_younger_2
+      - precise_exception_squashes_younger_3
+      - precise_exception_squashes_younger_4
+      - precise_exception_squashes_younger_5
+      - precise_exception_squashes_younger_6
+      - precise_exception_squashes_younger_7
+      - precise_exception_squashes_younger_8
+      - precise_exception_waits_for_older_0
+      - precise_exception_waits_for_older_1
+      - precise_exception_waits_for_older_2
+      - precise_exception_waits_for_older_3
+      - precise_exception_waits_for_older_4
+      - precise_exception_waits_for_older_5
+      - precise_exception_waits_for_older_6
+      - precise_exception_waits_for_older_7
+      - precise_exception_waits_for_older_8
+      - probe_invalidates_matching_line_0
+      - probe_invalidates_reservation_0
+      - ptw_result_refills_entry_0
+      - ptw_result_refills_entry_1
+      - ptw_result_refills_entry_2
+      - ptw_result_refills_entry_3
+      - ptw_returns_bounded_mapping_0
+      - ptw_returns_bounded_mapping_1
+      - ptw_returns_bounded_mapping_2
+      - ptw_returns_bounded_mapping_3
+      - ready_after_refill_0
+      - ready_after_refill_1
+      - ready_after_refill_2
+      - ready_after_refill_3
+      - retire_amo_0
+      - retire_amo_1
+      - retire_amo_2
+      - retire_failed_sc_0
+      - retire_failed_sc_1
+      - retire_failed_sc_2
+      - retire_fence_0
+      - retire_fence_1
+      - retire_fence_2
+      - retire_load_0
+      - retire_load_1
+      - retire_load_2
+      - retire_lr_0
+      - retire_lr_1
+      - retire_lr_2
+      - retire_lrsc_pair_0
+      - retire_read_value_0
+      - retire_read_value_1
+      - retire_read_value_2
+      - retire_store_0
+      - retire_store_1
+      - retire_store_2
+      - retire_successful_sc_0
+      - retire_successful_sc_1
+      - retire_successful_sc_2
+      - retire_write_0
+      - retire_write_1
+      - retire_write_2
+      - retry_decision_returns_response_0
+      - retry_decision_returns_response_1
+      - retry_decision_returns_response_2
+      - retry_decision_returns_response_3
+      - retry_request_reads_refilled_entry_0
+      - retry_request_reads_refilled_entry_1
+      - retry_request_reads_refilled_entry_2
+      - retry_request_reads_refilled_entry_3
+      - retry_response_translates_0
+      - retry_response_translates_1
+      - rob_allocates_memory_op_0
+      - rob_allocates_memory_op_1
+      - rob_allocates_memory_op_2
+      - rob_captures_completion_0
+      - rob_captures_completion_1
+      - rob_captures_completion_2
+      - rob_commits_completed_op_0
+      - rob_commits_completed_op_1
+      - rob_commits_completed_op_2
+      - rob_raises_precise_exception_0
+      - rob_raises_precise_exception_1
+      - rob_raises_precise_exception_2
+      - rob_records_memory_fault_0
+      - rob_records_memory_fault_1
+      - rob_records_memory_fault_2
+      - sc_checks_reservation_0
+      - sc_checks_reservation_1
+      - sfence_invalidates_entry_0
+      - sfence_invalidates_entry_1
+      - sfence_precedes_subsequent_lookup_0
+      - sfence_precedes_subsequent_lookup_1
+      - sfence_precedes_subsequent_lookup_2
+      - sfence_precedes_subsequent_lookup_3
+      - squash_marks_entry_0
+      - squash_marks_entry_1
+      - squash_marks_entry_2
+      - successful_sc_completes_0
+      - successful_sc_completes_1
+      - successful_sc_writes_0
+      - successful_sc_writes_1
+      - tlb_miss_round_trips_through_lsu_retry_queue_0
+      - tlb_miss_round_trips_through_lsu_retry_queue_1
+      - uncacheable_routes_to_iomshr_0
+      state_variables:
+      - Atomic.line[h0_x].busy
+      - Atomic.reservation[h0_x].valid
+      - IOMSHR.busy
+      - NBDTLB.entry[h0_v0].valid
+      - NBDTLB.entry[h0_v10].valid
+      - NBDTLB.entry[h0_v1].valid
+      - NBDTLB.entry[h0_v2].valid
+      - NBDTLB.entry[h0_v3].valid
+      - NBDTLB.entry[h0_v4].valid
+      - NBDTLB.entry[h0_v5].valid
+      - NBDTLB.entry[h0_v6].valid
+      - NBDTLB.entry[h0_v8].valid
+      - NBDTLB[0].state
+      - ROB.entry[A0].allocated
+      - ROB.entry[A0].committed
+      - ROB.entry[A0].completed
+      - ROB.entry[A0].faulted
+      - ROB.entry[A0].squashed
+      - ROB.entry[AFTER_SFENCE].allocated
+      - ROB.entry[AFTER_SFENCE].committed
+      - ROB.entry[AFTER_SFENCE].completed
+      - ROB.entry[AFTER_SFENCE].faulted
+      - ROB.entry[AFTER_SFENCE].squashed
+      - ROB.entry[F0].allocated
+      - ROB.entry[F0].committed
+      - ROB.entry[F0].completed
+      - ROB.entry[F0].faulted
+      - ROB.entry[F0].squashed
+      - ROB.entry[FAULT].allocated
+      - ROB.entry[FAULT].committed
+      - ROB.entry[FAULT].completed
+      - ROB.entry[FAULT].faulted
+      - ROB.entry[FAULT].squashed
+      - ROB.entry[IO_LOAD].allocated
+      - ROB.entry[IO_LOAD].committed
+      - ROB.entry[IO_LOAD].completed
+      - ROB.entry[IO_LOAD].faulted
+      - ROB.entry[IO_LOAD].squashed
+      - ROB.entry[IO_STORE].allocated
+      - ROB.entry[IO_STORE].committed
+      - ROB.entry[IO_STORE].completed
+      - ROB.entry[IO_STORE].faulted
+      - ROB.entry[IO_STORE].squashed
+      - ROB.entry[LR0].allocated
+      - ROB.entry[LR0].committed
+      - ROB.entry[LR0].completed
+      - ROB.entry[LR0].faulted
+      - ROB.entry[LR0].squashed
+      - ROB.entry[LR1].allocated
+      - ROB.entry[LR1].committed
+      - ROB.entry[LR1].completed
+      - ROB.entry[LR1].faulted
+      - ROB.entry[LR1].squashed
+      - ROB.entry[OLD].allocated
+      - ROB.entry[OLD].committed
+      - ROB.entry[OLD].completed
+      - ROB.entry[OLD].faulted
+      - ROB.entry[OLD].squashed
+      - ROB.entry[SC0].allocated
+      - ROB.entry[SC0].committed
+      - ROB.entry[SC0].completed
+      - ROB.entry[SC0].faulted
+      - ROB.entry[SC0].squashed
+      - ROB.entry[SC1].allocated
+      - ROB.entry[SC1].committed
+      - ROB.entry[SC1].completed
+      - ROB.entry[SC1].faulted
+      - ROB.entry[SC1].squashed
+      - ROB.entry[SPEC].allocated
+      - ROB.entry[SPEC].committed
+      - ROB.entry[SPEC].completed
+      - ROB.entry[SPEC].faulted
+      - ROB.entry[SPEC].squashed
+      - ROB.entry[YOUNG].allocated
+      - ROB.entry[YOUNG].committed
+      - ROB.entry[YOUNG].completed
+      - ROB.entry[YOUNG].faulted
+      - ROB.entry[YOUNG].squashed
+      public_interfaces:
+      - atomic_core.memory_complete
+      - atomic_core.reservation_invalidate
+      - atomic_core.translated_memory
+      - boom_v4_lsu_translation.memory_fault
+      - boom_v4_lsu_translation.memory_instruction
+      - boom_v4_lsu_translation.miss_ready
+      - boom_v4_lsu_translation.tlb_request
+      - boom_v4_lsu_translation.tlb_response
+      - boom_v4_lsu_translation.translated_memory
+      - boom_v4_nbdtlb.miss
+      - boom_v4_nbdtlb.miss_ready
+      - boom_v4_nbdtlb.ptw_request
+      - boom_v4_nbdtlb.ptw_result
+      - boom_v4_nbdtlb.request
+      - boom_v4_nbdtlb.response
+      - boom_v4_nbdtlb.sfence
+      - bounded_ptw_environment.page_map
+      - bounded_ptw_environment.ptw_request
+      - bounded_ptw_environment.ptw_result
+      - fence_core.arch_fence
+      - fence_core.dcache_ordered
+      - fence_core.memory_complete
+      - fence_core.memory_instruction
+      - mmio_core.io_access
+      - mmio_core.io_ack
+      - mmio_core.io_request
+      - mmio_core.io_response
+      - mmio_core.memory_complete
+      - mmio_core.translated_memory
+      - reservation_bridge.probe_release
+      - reservation_bridge.reservation_invalidate
+      - retire_core.arch_amo
+      - retire_core.arch_load
+      - retire_core.arch_lr
+      - retire_core.arch_sc
+      - retire_core.arch_sc_failure
+      - retire_core.arch_store
+      - retire_core.commit
+      - retire_core.commit_fence
+      - retire_core.commit_load
+      - retire_core.commit_store
+      - retire_core.lrsc_pair
+      - rob_core.branch_kill
+      - rob_core.branch_mispredict
+      - rob_core.commit
+      - rob_core.memory_complete
+      - rob_core.memory_fault
+      - rob_core.memory_instruction
+      - rob_core.precise_exception
+      - rob_core.squash_memory
+      private_events:
+      - Atomic.AMORead
+      - Atomic.AMOWrite
+      - Atomic.LRRead
+      - Atomic.ReservationSet
+      - Atomic.SCDecision
+      - Atomic.SCWrite
+      - ROB.Allocate
+      - ROB.ExceptionRecord
+      - ROB.Writeback
+      - TLB.Decision
+      - TLB.Invalidate
+      - TLB.Refill
+      - TLB.Retry
+      event_producers:
+        Arch.AMO:
+        - retire_amo_0
+        - retire_amo_1
+        - retire_amo_2
+        Arch.CommitFence:
+        - retire_fence_0
+        - retire_fence_1
+        - retire_fence_2
+        Arch.CommitLoad:
+        - retire_read_value_0
+        - retire_read_value_1
+        - retire_read_value_2
+        Arch.CommitStore:
+        - retire_write_0
+        - retire_write_1
+        - retire_write_2
+        Arch.Fence:
+        - decode_fence_0
+        Arch.LR:
+        - retire_lr_0
+        - retire_lr_1
+        - retire_lr_2
+        Arch.LRSCPair:
+        - retire_lrsc_pair_0
+        Arch.Load:
+        - retire_load_0
+        - retire_load_1
+        - retire_load_2
+        Arch.SC:
+        - retire_successful_sc_0
+        - retire_successful_sc_1
+        - retire_successful_sc_2
+        Arch.SCFailure:
+        - retire_failed_sc_0
+        - retire_failed_sc_1
+        - retire_failed_sc_2
+        Arch.Store:
+        - retire_store_0
+        - retire_store_1
+        - retire_store_2
+        Atomic.AMORead:
+        - amo_starts_read_0
+        - amo_starts_read_1
+        Atomic.AMOWrite:
+        - amo_read_precedes_write_0
+        - amo_read_precedes_write_1
+        Atomic.LRRead:
+        - lr_reads_line_0
+        - lr_reads_line_1
+        Atomic.ReservationSet:
+        - lr_sets_reservation_0
+        - lr_sets_reservation_1
+        Atomic.SCDecision:
+        - sc_checks_reservation_0
+        - sc_checks_reservation_1
+        Atomic.SCWrite:
+        - successful_sc_writes_0
+        - successful_sc_writes_1
+        Core.BranchKill:
+        - branch_recovery_broadcasts_kill_0
+        Core.MemoryComplete:
+        - amo_write_completes_0
+        - amo_write_completes_1
+        - failed_sc_completes_without_write_0
+        - failed_sc_completes_without_write_1
+        - fence_waits_for_ordered_0
+        - iomshr_load_completion_0
+        - iomshr_store_completion_0
+        - lr_completion_0
+        - lr_completion_1
+        - successful_sc_completes_0
+        - successful_sc_completes_1
+        Core.MemoryFault:
+        - page_fault_response_reaches_rob_0
+        - page_fault_response_reaches_rob_1
+        Core.ReservationInvalidate:
+        - probe_invalidates_matching_line_0
+        Core.SquashMemory:
+        - branch_recovery_squashes_younger_0
+        - precise_exception_squashes_younger_0
+        - precise_exception_squashes_younger_1
+        - precise_exception_squashes_younger_2
+        - precise_exception_squashes_younger_3
+        - precise_exception_squashes_younger_4
+        - precise_exception_squashes_younger_5
+        - precise_exception_squashes_younger_6
+        - precise_exception_squashes_younger_7
+        - precise_exception_squashes_younger_8
+        Core.TranslatedMemory:
+        - hit_response_translates_0
+        - hit_response_translates_1
+        - retry_response_translates_0
+        - retry_response_translates_1
+        IOMSHR.MemAccess:
+        - iomshr_access_0
+        IOMSHR.MemAck:
+        - iomshr_ack_0
+        IOMSHR.Request:
+        - uncacheable_routes_to_iomshr_0
+        IOMSHR.Response:
+        - iomshr_load_response_0
+        ROB.Allocate:
+        - rob_allocates_memory_op_0
+        - rob_allocates_memory_op_1
+        - rob_allocates_memory_op_2
+        ROB.Commit:
+        - rob_commits_completed_op_0
+        - rob_commits_completed_op_1
+        - rob_commits_completed_op_2
+        ROB.ExceptionRecord:
+        - rob_records_memory_fault_0
+        - rob_records_memory_fault_1
+        - rob_records_memory_fault_2
+        ROB.PreciseException:
+        - rob_raises_precise_exception_0
+        - rob_raises_precise_exception_1
+        - rob_raises_precise_exception_2
+        ROB.Writeback:
+        - rob_captures_completion_0
+        - rob_captures_completion_1
+        - rob_captures_completion_2
+        TLB.Decision:
+        - initial_request_reads_entry_0
+        - initial_request_reads_entry_1
+        - initial_request_reads_entry_2
+        - initial_request_reads_entry_3
+        - retry_request_reads_refilled_entry_0
+        - retry_request_reads_refilled_entry_1
+        - retry_request_reads_refilled_entry_2
+        - retry_request_reads_refilled_entry_3
+        TLB.Invalidate:
+        - sfence_invalidates_entry_0
+        - sfence_invalidates_entry_1
+        TLB.Miss:
+        - miss_captures_refill_tag_0
+        - miss_captures_refill_tag_1
+        - miss_captures_refill_tag_2
+        - miss_captures_refill_tag_3
+        TLB.MissReady:
+        - ready_after_refill_0
+        - ready_after_refill_1
+        - ready_after_refill_2
+        - ready_after_refill_3
+        TLB.PTWRequest:
+        - miss_issues_ptw_request_0
+        - miss_issues_ptw_request_1
+        - miss_issues_ptw_request_2
+        - miss_issues_ptw_request_3
+        TLB.PTWResult:
+        - ptw_returns_bounded_mapping_0
+        - ptw_returns_bounded_mapping_1
+        - ptw_returns_bounded_mapping_2
+        - ptw_returns_bounded_mapping_3
+        TLB.Refill:
+        - ptw_result_refills_entry_0
+        - ptw_result_refills_entry_1
+        - ptw_result_refills_entry_2
+        - ptw_result_refills_entry_3
+        TLB.Request:
+        - lsu_issues_initial_tlb_request_0
+        - lsu_issues_initial_tlb_request_1
+        - lsu_reissues_tlb_request_0
+        - lsu_reissues_tlb_request_1
+        TLB.Response:
+        - initial_decision_returns_response_0
+        - initial_decision_returns_response_1
+        - initial_decision_returns_response_2
+        - initial_decision_returns_response_3
+        - retry_decision_returns_response_0
+        - retry_decision_returns_response_1
+        - retry_decision_returns_response_2
+        - retry_decision_returns_response_3
+        TLB.Retry:
+        - tlb_miss_round_trips_through_lsu_retry_queue_0
+        - tlb_miss_round_trips_through_lsu_retry_queue_1
+      orphan_private_event_types: []
+      no_bounded_transformation_binding:
+      - sfence_invalidates_entry_1
+    lsq:
+      inputs:
+      - load
+      - nack
+      - store-forward
+      transformations:
+      - accepted_request_marks_executed_L0
+      - acked_committed_store_can_clear_S0
+      - amo_block_clears_executed_S0_L0
+      - architectural_store_commit_S0
+      - branch_kill_invalidates_load_L0
+      - branch_kill_invalidates_store_S0
+      - buggy_ldld_assert_L0_L0
+      - commit_requires_valid_executed_succeeded_L0
+      - dcache_fire_records_load_address_L0
+      - dcache_nack_clears_executed_L0
+      - dcache_response_to_success_L0
+      - dcache_valid_requires_tlb_hit_L0
+      - exception_flush_invalidates_load_L0
+      - exception_flushes_uncommitted_store_S0
+      - executed_load_generates_ldld_search_L0
+      - ldld_conflict_L0_L0
+      - ldld_search_ends_executing_window_L0
+      - ldq_allocate_L0
+      - ll_response_to_success_L0
+      - load_executed_sets_ldq_bit_L0
+      - load_observed_sets_ldq_bit_L0
+      - load_order_fail_raises_memory_ordering_exception_L0
+      - load_order_fail_sets_ldq_bit_L0
+      - load_succeeded_sets_value_L0
+      - load_wakeup_requires_sleeping_entry_L0
+      - matching_release_marks_observed_L0
+      - nack_seen_L0
+      - older_amo_blocks_load_S0_L0
+      - retry_enqueue_clears_ldq_address_L0
+      - retry_enqueue_requires_tlb_miss_L0
+      - retry_issue_requires_enqueue_L0
+      - selected_store_load_forward_S0_L0
+      - squash_invalidates_load_L0
+      - stld_unforwarded_violation_S0_L0
+      - stld_violation_marks_order_fail_S0_L0
+      - stld_wrong_forward_violation_S0_L0
+      - store_ack_sets_succeeded_S0
+      - store_address_generates_stld_search_S0
+      - store_address_ready_S0
+      - store_clear_deallocates_S0
+      - store_data_ready_S0
+      - store_drain_requires_ready_committed_S0
+      - store_flush_invalidates_entry_S0
+      - store_retry_enqueue_clears_address_S0
+      - store_retry_enqueue_requires_miss_S0
+      - store_retry_issue_requires_enqueue_S0
+      - store_tlb_hit_exposes_physical_address_S0
+      - store_tlb_hit_requires_retry_issue_S0
+      - store_tlb_miss_records_virtual_S0
+      - stq_allocate_S0
+      - tlb_hit_records_physical_address_L0
+      - tlb_miss_records_virtual_address_L0
+      state_variables:
+      - LSU.ldq[0].addr_is_uncacheable
+      - LSU.ldq[0].addr_is_virtual
+      - LSU.ldq[0].addr_valid
+      - LSU.ldq[0].address
+      - LSU.ldq[0].commit_eligible
+      - LSU.ldq[0].executed
+      - LSU.ldq[0].executing_now
+      - LSU.ldq[0].forward_std_val
+      - LSU.ldq[0].forward_store_program_index
+      - LSU.ldq[0].forward_stq_idx
+      - LSU.ldq[0].hart
+      - LSU.ldq[0].ld_byte_mask
+      - LSU.ldq[0].observed
+      - LSU.ldq[0].order_fail
+      - LSU.ldq[0].performed
+      - LSU.ldq[0].program_index
+      - LSU.ldq[0].squashed
+      - LSU.ldq[0].succeeded
+      - LSU.ldq[0].valid
+      - LSU.ldq[0].value
+      - LSU.ldq[1].addr_is_uncacheable
+      - LSU.ldq[1].addr_is_virtual
+      - LSU.ldq[1].addr_valid
+      - LSU.ldq[1].address
+      - LSU.ldq[1].commit_eligible
+      - LSU.ldq[1].executed
+      - LSU.ldq[1].executing_now
+      - LSU.ldq[1].forward_std_val
+      - LSU.ldq[1].forward_store_program_index
+      - LSU.ldq[1].forward_stq_idx
+      - LSU.ldq[1].hart
+      - LSU.ldq[1].ld_byte_mask
+      - LSU.ldq[1].observed
+      - LSU.ldq[1].order_fail
+      - LSU.ldq[1].performed
+      - LSU.ldq[1].program_index
+      - LSU.ldq[1].squashed
+      - LSU.ldq[1].succeeded
+      - LSU.ldq[1].valid
+      - LSU.ldq[1].value
+      - LSU.stq[0].addr_is_virtual
+      - LSU.stq[0].addr_valid
+      - LSU.stq[0].address
+      - LSU.stq[0].byte_mask
+      - LSU.stq[0].can_execute
+      - LSU.stq[0].cleared
+      - LSU.stq[0].committed
+      - LSU.stq[0].data
+      - LSU.stq[0].data_valid
+      - LSU.stq[0].hart
+      - LSU.stq[0].is_amo
+      - LSU.stq[0].program_index
+      - LSU.stq[0].succeeded
+      - LSU.stq[0].valid
+      public_interfaces:
+      - lsu.arch_fence
+      - lsu.arch_load
+      - lsu.arch_store
+      - lsu.branch_kill
+      - lsu.commit_fence
+      - lsu.commit_load
+      - lsu.commit_store
+      - lsu.dcache_ll_response
+      - lsu.dcache_load_nack
+      - lsu.dcache_load_response
+      - lsu.dcache_long_latency_response
+      - lsu.dcache_ordered
+      - lsu.dcache_probe_release
+      - lsu.dcache_req_fire
+      - lsu.dcache_req_ready
+      - lsu.dcache_req_valid
+      - lsu.dcache_store_ack
+      - lsu.exception
+      - lsu.fence_release
+      - lsu.memory_order_exception
+      - lsu.probe_release
+      - lsu.squash_load
+      - lsu.store_drain
+      private_events:
+      - LSU.AssertViolation
+      - LSU.LDLDConflict
+      - LSU.LDLDSearch
+      - LSU.LDQAllocate
+      - LSU.LoadBlockedByOlderAMO
+      - LSU.LoadExecuted
+      - LSU.LoadNackSeen
+      - LSU.LoadObserved
+      - LSU.LoadOrderFail
+      - LSU.LoadSleep
+      - LSU.LoadSucceeded
+      - LSU.LoadWakeup
+      - LSU.RetryEnqueue
+      - LSU.RetryIssue
+      - LSU.STLDSearch
+      - LSU.STLDViolation
+      - LSU.STQAllocate
+      - LSU.StoreAddressReady
+      - LSU.StoreCleared
+      - LSU.StoreCommitted
+      - LSU.StoreDataReady
+      - LSU.StoreFlushed
+      - LSU.StoreLoadForward
+      - LSU.StoreRetryEnqueue
+      - LSU.StoreRetryIssue
+      - LSU.StoreTLBHit
+      - LSU.StoreTLBMiss
+      - LSU.TLBHit
+      - LSU.TLBMiss
+      event_producers:
+        Core.MemoryOrderingException:
+        - load_order_fail_raises_memory_ordering_exception_L0
+        LSU.AssertViolation:
+        - buggy_ldld_assert_L0_L0
+        LSU.LDLDConflict:
+        - ldld_conflict_L0_L0
+        LSU.LDLDSearch:
+        - executed_load_generates_ldld_search_L0
+        LSU.LDQAllocate:
+        - ldq_allocate_L0
+        LSU.LoadBlockedByOlderAMO:
+        - older_amo_blocks_load_S0_L0
+        LSU.LoadExecuted:
+        - accepted_request_marks_executed_L0
+        LSU.LoadNackSeen:
+        - nack_seen_L0
+        LSU.LoadObserved:
+        - matching_release_marks_observed_L0
+        LSU.LoadOrderFail:
+        - stld_violation_marks_order_fail_S0_L0
+        LSU.LoadSucceeded:
+        - dcache_response_to_success_L0
+        - ll_response_to_success_L0
+        LSU.RetryEnqueue:
+        - retry_issue_requires_enqueue_L0
+        LSU.STLDSearch:
+        - store_address_generates_stld_search_S0
+        LSU.STLDViolation:
+        - stld_unforwarded_violation_S0_L0
+        - stld_wrong_forward_violation_S0_L0
+        LSU.STQAllocate:
+        - stq_allocate_S0
+        LSU.StoreAddressReady:
+        - store_tlb_hit_exposes_physical_address_S0
+        LSU.StoreCleared:
+        - acked_committed_store_can_clear_S0
+        LSU.StoreCommitted:
+        - architectural_store_commit_S0
+        LSU.StoreFlushed:
+        - exception_flushes_uncommitted_store_S0
+        LSU.StoreRetryEnqueue:
+        - store_retry_issue_requires_enqueue_S0
+        LSU.StoreRetryIssue:
+        - store_tlb_hit_requires_retry_issue_S0
+        LSU.StoreTLBMiss:
+        - store_retry_enqueue_requires_miss_S0
+        LSU.TLBHit:
+        - dcache_valid_requires_tlb_hit_L0
+        LSU.TLBMiss:
+        - retry_enqueue_requires_tlb_miss_L0
+      orphan_private_event_types:
+      - LSU.LoadSleep
+      - LSU.LoadWakeup
+      - LSU.RetryIssue
+      - LSU.StoreDataReady
+      - LSU.StoreLoadForward
+      - LSU.StoreTLBHit
+      no_bounded_transformation_binding:
+      - acked_committed_store_can_clear_S0
+      - architectural_store_commit_S0
+      - branch_kill_invalidates_load_L0
+      - branch_kill_invalidates_store_S0
+      - commit_requires_valid_executed_succeeded_L0
+      - dcache_response_to_success_L0
+      - exception_flush_invalidates_load_L0
+      - exception_flushes_uncommitted_store_S0
+      - ll_response_to_success_L0
+      - matching_release_marks_observed_L0
+      - squash_invalidates_load_L0
+      - store_ack_sets_succeeded_S0
+    mshr:
+      inputs:
+      - io
+      - primary
+      - secondary
+      - store-replay
+      transformations:
+      - acquire_1
+      - acquire_2
+      - clean_meta_commit_1
+      - clean_meta_commit_2
+      - commit_after_wb_1
+      - commit_after_wb_2
+      - commit_refill_1
+      - commit_refill_2
+      - direct_dequeue_Ld0
+      - direct_dequeue_Ld1
+      - direct_dequeue_St0
+      - direct_load_response_Ld0
+      - direct_load_response_Ld1
+      - direct_load_response_St0
+      - direct_load_response_state_Ld0
+      - direct_load_response_state_Ld1
+      - direct_load_response_state_St0
+      - dirty_meta_clear_1
+      - dirty_meta_clear_2
+      - fence_blocked_1
+      - fence_blocked_2
+      - grant_data_1
+      - grant_data_2
+      - grant_no_data_1
+      - grant_no_data_2
+      - grant_writes_lb_1
+      - grant_writes_lb_2
+      - io_access_IO0
+      - io_ack_IO0
+      - io_response_IO0
+      - mem_finish_1
+      - mem_finish_2
+      - meta_read_when_rpq_empty_1
+      - meta_read_when_rpq_empty_2
+      - meta_write_after_refill_1
+      - meta_write_after_refill_2
+      - primary_accept_Ld0
+      - primary_accept_Ld1
+      - primary_accept_St0
+      - primary_rpq_insert_Ld0
+      - primary_rpq_insert_Ld1
+      - primary_rpq_insert_St0
+      - probe_blocked_1
+      - probe_blocked_2
+      - refill_complete_1
+      - refill_complete_2
+      - replay_Ld0
+      - replay_Ld1
+      - replay_St0
+      - replay_dequeue_Ld0
+      - replay_dequeue_Ld1
+      - replay_dequeue_St0
+      - replay_state_Ld0
+      - replay_state_Ld1
+      - replay_state_St0
+      - respq_dequeue_Ld0
+      - respq_dequeue_Ld1
+      - respq_dequeue_St0
+      - respq_enqueue_Ld0
+      - respq_enqueue_Ld1
+      - respq_enqueue_St0
+      - rpq_branch_kill_Ld0
+      - rpq_branch_kill_Ld1
+      - rpq_branch_kill_St0
+      - rpq_branch_kill_state_Ld0
+      - rpq_branch_kill_state_Ld1
+      - rpq_branch_kill_state_St0
+      - rpq_exception_kill_Ld0
+      - rpq_exception_kill_Ld1
+      - rpq_exception_kill_St0
+      - rpq_exception_kill_state_Ld0
+      - rpq_exception_kill_state_Ld1
+      - rpq_exception_kill_state_St0
+      - sdq_alloc_Ld0
+      - sdq_alloc_Ld1
+      - sdq_alloc_St0
+      - sdq_free_Ld0
+      - sdq_free_Ld1
+      - sdq_free_St0
+      - secondary_accept_Ld0
+      - secondary_accept_Ld1
+      - secondary_accept_St0
+      - secondary_rpq_insert_Ld0
+      - secondary_rpq_insert_Ld1
+      - secondary_rpq_insert_St0
+      - wb_done_1
+      - wb_done_2
+      - wb_request_1
+      - wb_request_2
+      state_variables:
+      - IOMSHR[5].state
+      - MSHR.req[Ld0].killed
+      - MSHR.req[Ld0].responseq_valid
+      - MSHR.req[Ld0].rpq_valid
+      - MSHR.req[Ld0].sdq_valid
+      - MSHR.req[Ld1].killed
+      - MSHR.req[Ld1].responseq_valid
+      - MSHR.req[Ld1].rpq_valid
+      - MSHR.req[Ld1].sdq_valid
+      - MSHR.req[St0].killed
+      - MSHR.req[St0].responseq_valid
+      - MSHR.req[St0].rpq_valid
+      - MSHR.req[St0].sdq_valid
+      - MSHR[1].commit_line
+      - MSHR[1].grant_had_data
+      - MSHR[1].grantack_valid
+      - MSHR[1].line_source_op_id
+      - MSHR[1].line_value
+      - MSHR[1].probe_rdy
+      - MSHR[1].req_address
+      - MSHR[1].req_kind
+      - MSHR[1].req_needs_wb
+      - MSHR[1].req_op_id
+      - MSHR[1].state
+      - MSHR[2].commit_line
+      - MSHR[2].grant_had_data
+      - MSHR[2].grantack_valid
+      - MSHR[2].line_source_op_id
+      - MSHR[2].line_value
+      - MSHR[2].probe_rdy
+      - MSHR[2].req_address
+      - MSHR[2].req_kind
+      - MSHR[2].req_needs_wb
+      - MSHR[2].req_op_id
+      - MSHR[2].state
+      public_interfaces:
+      - mshr.branch_kill
+      - mshr.exception
+      - mshr.fence_blocked
+      - mshr.grant_data
+      - mshr.grant_no_data
+      - mshr.io_request
+      - mshr.io_response
+      - mshr.mem_finish
+      - mshr.meta_write
+      - mshr.probe_blocked
+      - mshr.refill
+      - mshr.replay
+      - mshr.request
+      - mshr.response
+      - mshr.wb_req
+      private_events:
+      - IOMSHR.MemAccess
+      - IOMSHR.MemAck
+      - MSHR.AcquireBlock
+      - MSHR.CommitLine
+      - MSHR.DirectLoadResponse
+      - MSHR.LineBufferWrite
+      - MSHR.MetaClear
+      - MSHR.MetaReadRequest
+      - MSHR.MetaReadResponse
+      - MSHR.PrimaryAccept
+      - MSHR.RPQDequeue
+      - MSHR.RPQInsert
+      - MSHR.RPQKill
+      - MSHR.RefillComplete
+      - MSHR.ResponseEnqueue
+      - MSHR.SDQAllocate
+      - MSHR.SDQFree
+      - MSHR.SecondaryMissAccept
+      - MSHR.WritebackDone
+      event_producers:
+        IOMSHR.MemAccess:
+        - io_access_IO0
+        IOMSHR.MemAck:
+        - io_ack_IO0
+        IOMSHR.Response:
+        - io_response_IO0
+        MSHR.AcquireBlock:
+        - acquire_1
+        - acquire_2
+        MSHR.CommitLine:
+        - clean_meta_commit_1
+        - clean_meta_commit_2
+        - commit_after_wb_1
+        - commit_after_wb_2
+        MSHR.DirectLoadResponse:
+        - direct_load_response_Ld0
+        - direct_load_response_Ld1
+        - direct_load_response_St0
+        MSHR.GrantData:
+        - grant_data_1
+        - grant_data_2
+        MSHR.GrantNoData:
+        - grant_no_data_1
+        - grant_no_data_2
+        MSHR.LineBufferWrite:
+        - grant_writes_lb_1
+        - grant_writes_lb_2
+        MSHR.MemFinish:
+        - mem_finish_1
+        - mem_finish_2
+        MSHR.MetaClear:
+        - dirty_meta_clear_1
+        - dirty_meta_clear_2
+        MSHR.MetaWrite:
+        - meta_write_after_refill_1
+        - meta_write_after_refill_2
+        MSHR.PrimaryAccept:
+        - primary_accept_Ld0
+        - primary_accept_Ld1
+        - primary_accept_St0
+        MSHR.RPQDequeue:
+        - direct_dequeue_Ld0
+        - direct_dequeue_Ld1
+        - direct_dequeue_St0
+        - replay_dequeue_Ld0
+        - replay_dequeue_Ld1
+        - replay_dequeue_St0
+        MSHR.RPQInsert:
+        - primary_rpq_insert_Ld0
+        - primary_rpq_insert_Ld1
+        - primary_rpq_insert_St0
+        - secondary_rpq_insert_Ld0
+        - secondary_rpq_insert_Ld1
+        - secondary_rpq_insert_St0
+        MSHR.RPQKill:
+        - rpq_branch_kill_Ld0
+        - rpq_branch_kill_Ld1
+        - rpq_branch_kill_St0
+        - rpq_exception_kill_Ld0
+        - rpq_exception_kill_Ld1
+        - rpq_exception_kill_St0
+        MSHR.RefillComplete:
+        - refill_complete_1
+        - refill_complete_2
+        MSHR.RefillWrite:
+        - commit_refill_1
+        - commit_refill_2
+        MSHR.Replay:
+        - replay_Ld0
+        - replay_Ld1
+        - replay_St0
+        MSHR.ResponseDequeue:
+        - respq_dequeue_Ld0
+        - respq_dequeue_Ld1
+        - respq_dequeue_St0
+        MSHR.ResponseEnqueue:
+        - respq_enqueue_Ld0
+        - respq_enqueue_Ld1
+        - respq_enqueue_St0
+        MSHR.SDQAllocate:
+        - sdq_alloc_Ld0
+        - sdq_alloc_Ld1
+        - sdq_alloc_St0
+        MSHR.SDQFree:
+        - sdq_free_Ld0
+        - sdq_free_Ld1
+        - sdq_free_St0
+        MSHR.SecondaryMissAccept:
+        - secondary_accept_Ld0
+        - secondary_accept_Ld1
+        - secondary_accept_St0
+        MSHR.WritebackDone:
+        - wb_done_1
+        - wb_done_2
+        MSHR.WritebackRequest:
+        - wb_request_1
+        - wb_request_2
+      orphan_private_event_types:
+      - MSHR.MetaReadRequest
+      - MSHR.MetaReadResponse
+      no_bounded_transformation_binding:
+      - rpq_branch_kill_Ld0
+      - rpq_branch_kill_Ld1
+      - rpq_branch_kill_St0
+      - rpq_exception_kill_Ld0
+      - rpq_exception_kill_Ld1
+      - rpq_exception_kill_St0

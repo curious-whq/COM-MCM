@@ -1,0 +1,10 @@
+schema_version: umcm.trace.v0.19.0
+partial: true
+metadata:
+  case: coverage-coherence-l1-hit
+  input_contract: line initialization and two same-hart architectural accesses only
+events:
+- {id: init_x, type: Coherence.LineInit, occurs: true, cycle: 0, fields: {line_id: x, address: x, value: 0, version: 0, source_op_id: InitX}}
+- {id: load_0, type: Coherence.Access, occurs: true, cycle: 1, fields: {op_id: L0, hart: 0, program_index: 0, line_id: x, address: x, mem_kind: load, write_value: 0, after_op_id: NONE}}
+- {id: load_1, type: Coherence.Access, occurs: true, cycle: 12, fields: {op_id: L1, hart: 0, program_index: 1, line_id: x, address: x, mem_kind: load, write_value: 0, after_op_id: L0}}
+constraints: []

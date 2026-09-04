@@ -1,0 +1,56 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage2-core-lifecycle
+catalog: ../events.yaml
+metadata:
+  version: 0.2.0
+  purpose: Reachability coverage for the Stage 2 Dispatch/ROB/ExceptionGen lifecycle.
+  witness_policy: Inputs contain only public dispatch, writeback and fault observations; private outcomes are solver-derived.
+models:
+- name: core_lifecycle
+  composition: ../composition/core_lifecycle.yaml
+  input_event_types: [Core.MemoryInstruction, Core.MemoryWriteback, Core.MemoryFault]
+  inputs:
+  - {name: normal-commit, path: ../traces/core/normal_commit.yaml}
+  - {name: precise-exception, path: ../traces/core/precise_exception.yaml}
+goals:
+- id: dispatch_allocate_issue
+  model: core_lifecycle
+  category: Dispatch
+  inputs: [normal-commit]
+  description: Accepted scalar memory uop allocates a ROB entry and issues to MemBlock.
+  require:
+  - {transformation: "dispatch_allocates_*"}
+  - {transformation: "allocated_op_issues_*"}
+  - {event: Core.MemoryIssue}
+  - state_transition: {state: "Core.ROB[L0].allocated", from: false, to: true}
+- id: rob_writeback_commit
+  model: core_lifecycle
+  category: ROB
+  inputs: [normal-commit]
+  description: Successful writeback makes the entry complete and produces an in-order commit.
+  require:
+  - {transformation: "rob_captures_successful_writeback_*"}
+  - {transformation: "rob_selects_completed_op_*"}
+  - {transformation: "rob_commits_selected_op_*"}
+  - {event: Core.MemoryCommit}
+  - state_transition: {state: "Core.ROB[L0].committed", from: false, to: true}
+- id: precise_memory_exception
+  model: core_lifecycle
+  category: ExceptionGen
+  inputs: [precise-exception]
+  description: Fault recording raises a redirect only after the older entry commits.
+  require:
+  - {transformation: "exception_gen_records_fault_*"}
+  - {transformation: "rob_raises_precise_redirect_*"}
+  - {transformation: "precise_redirect_waits_for_older_*"}
+  - {event: Core.Redirect}
+- id: redirect_squashes_tail
+  model: core_lifecycle
+  category: Recovery
+  inputs: [precise-exception]
+  description: Precise redirect applies to the faulting instruction and younger same-hart tail.
+  require:
+  - {transformation: "redirect_squashes_self_and_younger_*"}
+  - {event: Core.RedirectApply}
+  - state_transition: {state: "Core.ROB[YOUNG].squashed", from: false, to: true}
+auto_goals: []

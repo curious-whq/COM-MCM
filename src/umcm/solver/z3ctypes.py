@@ -159,8 +159,17 @@ class _Codec:
             if x.function=='same_block':
                 # Current µMCM address tokens identify abstract cache-line locations.
                 return f'(= {args[0]} {args[1]})'
-            if x.function=='mask_overlap': return f'(not (= (bvand {args[0]} {args[1]}) (_ bv0 8)))'
+            if x.function=='mask_overlap':
+                width = x.arguments[0].sort.width
+                if width is None:
+                    raise SolverError('mask_overlap requires fixed-width bitvectors')
+                return f'(not (= (bvand {args[0]} {args[1]}) (_ bv0 {width})))'
             if x.function=='mask_covers': return f'(= (bvand {args[0]} {args[1]}) {args[1]})'
+            if x.function=='mask_intersection':
+                width = x.arguments[0].sort.width
+                if width is None or x.arguments[1].sort.width != width or x.return_sort.width != width:
+                    raise SolverError('mask_intersection requires equal-width bitvectors')
+                return f'(bvand {args[0]} {args[1]})'
             raise SolverError(f'unsupported SMT call {x.function}')
         raise SolverError(f'unsupported SMT expression {type(x).__name__}')
 
@@ -192,7 +201,15 @@ class _Codec:
 
 
 def _libz3():
+    import importlib.util
+    from pathlib import Path
+
     candidates=['/lib/x86_64-linux-gnu/libz3.so.4','libz3.so.4','libz3.so']
+    package = importlib.util.find_spec('z3')
+    if package is not None and package.submodule_search_locations:
+        for root in package.submodule_search_locations:
+            candidates.insert(0, str(Path(root) / 'lib' / 'libz3.so'))
+            candidates.insert(0, str(Path(root) / 'lib' / 'libz3.so.4'))
     last=None
     for path in candidates:
         try: lib=ctypes.CDLL(path); break

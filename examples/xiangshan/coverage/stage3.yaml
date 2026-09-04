@@ -1,0 +1,68 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage3-l1-dtlb
+catalog: ../events.yaml
+metadata:
+  version: 0.3.0
+  purpose: Reachability coverage for the Stage 3 nonblocking L1 DTLB slice.
+  witness_policy: Inputs contain only public mappings, translation attempts, PTW responses, and SFENCE observations; private DTLB outcomes are solver-derived.
+models:
+- name: l1_dtlb
+  composition: ../composition/dtlb_l1.yaml
+  input_event_types: [MMU.PageMap, MMU.TranslateRequest, MMU.PTWResponse, Core.SFence]
+  inputs:
+  - {name: l1-hit, path: ../traces/mmu/l1_hit.yaml}
+  - {name: miss-refill-retry, path: ../traces/mmu/miss_refill_retry.yaml}
+  - {name: sfence-forces-miss, path: ../traces/mmu/sfence_forces_miss.yaml}
+  - {name: sfence-drops-inflight-refill, path: ../traces/mmu/sfence_drops_inflight_refill.yaml}
+goals:
+- id: valid_entry_hits
+  model: l1_dtlb
+  category: L1 DTLB lookup
+  inputs: [l1-hit]
+  description: A matching valid entry returns an L1 translation without replay.
+  require:
+  - {transformation: "request_looks_up_entry_*"}
+  - {transformation: "lookup_hit_*"}
+  - {transformation: "hit_returns_translation_*"}
+  - {event: MMU.L1TLBHit}
+- id: miss_replays_and_requests_ptw
+  model: l1_dtlb
+  category: L1 DTLB miss
+  inputs: [miss-refill-retry]
+  description: An invalid entry reports replay and emits an identity-preserving PTW request.
+  require:
+  - {transformation: "lookup_miss_*"}
+  - {transformation: "miss_returns_replay_*"}
+  - {transformation: "miss_issues_ptw_request_*"}
+  - {event: MMU.PTWRequest}
+- id: ptw_refill_enables_retry_hit
+  model: l1_dtlb
+  category: PTW refill and retry
+  inputs: [miss-refill-retry]
+  description: An accepted PTW response refills the entry before the explicit LSU retry hits.
+  require:
+  - {transformation: "ptw_response_is_filtered_*"}
+  - {transformation: "accepted_ptw_response_refills_*"}
+  - {transformation: "retry_requires_earlier_refill_*"}
+  - state_transition: {state: "DTLB.ldtlb.entry[e0].valid", from: false, to: true}
+- id: sfence_invalidates_before_lookup
+  model: l1_dtlb
+  category: SFENCE invalidation
+  inputs: [sfence-forces-miss]
+  description: A matching SFENCE clears the entry before a later lookup, forcing replay.
+  require:
+  - {transformation: "sfence_invalidates_entry_*"}
+  - {transformation: "sfence_precedes_subsequent_lookup_*"}
+  - {event: MMU.L1TLBMiss}
+  - state_transition: {state: "DTLB.ldtlb.entry[e0].valid", from: true, to: false}
+- id: sfence_cancels_inflight_ptw
+  model: l1_dtlb
+  category: PTW filter recovery
+  inputs: [sfence-drops-inflight-refill]
+  description: A flush between PTW request and response clears the pending filter entry and drops the stale refill.
+  require:
+  - {transformation: "sfence_cancels_inflight_ptw_*"}
+  - {transformation: "cancelled_ptw_response_drops_*"}
+  - {event: MMU.L1TLBPTWDrop}
+  - state_transition: {state: "DTLB.ldtlb.walk[L0.a0.e0].live", from: true, to: false}
+auto_goals: []

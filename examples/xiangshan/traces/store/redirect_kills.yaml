@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: redirect-kills, expected: FEASIBLE}
+events:
+- id: killed_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SKILL, hart: 0, program_index: 7, rob_idx: 7, mem_kind: store, vaddr: 458752, write_value: 17, size: 8, byte_mask: 255, sq_idx: 7, vector: false, tlb_instance: sttlb, vpn: 112, asid: 1, vmid: 0, translation_stage: s1}
+- id: older_redirect
+  type: Core.Redirect
+  occurs: true
+  cycle: 4
+  fields: {source_op_id: OLD, target_op_id: OLD, hart: 0, program_index: 6, rob_idx: 6, cause: branch_mispredict, origin: branch, flush_self: false}
+constraints: []

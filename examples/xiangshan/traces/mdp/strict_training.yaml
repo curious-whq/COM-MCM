@@ -1,0 +1,9 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: strict-training, expected: FEASIBLE}
+events:
+- {id: load_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: ESL, hart: 0, pc: 1024, initial_valid: true, initial_ssid: 12, initial_strict: false}}
+- {id: store_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: ESS, hart: 0, pc: 1280, initial_valid: true, initial_ssid: 12, initial_strict: false}}
+- {id: train, type: MDP.Train, occurs: true, cycle: 1, fields: {txn_id: TS, hart: 0, load_pc: 1024, store_pc: 1280}}
+- {id: load_lookup, type: MDP.Lookup, occurs: true, cycle: 6, fields: {op_id: LS, hart: 0, program_index: 1, rob_idx: 3, pc: 1024, mem_kind: load}}
+constraints: []

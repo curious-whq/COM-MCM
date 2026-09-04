@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: immediate-nack, expected: FEASIBLE}
+events:
+- id: issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: RIMM, hart: 0, program_index: 1, rob_idx: 4, mem_kind: load, vaddr: 4096, size: 8, byte_mask: 255, lq_idx: 4, vector: false}
+- id: failed
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 5
+  fields: {op_id: RIMM, lq_idx: 4, address: 4096, byte_mask: 255, executed: true, succeeded: false, replay_cause: mshr_nack, attempt: 0, fault: false}
+constraints: []

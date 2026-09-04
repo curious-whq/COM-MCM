@@ -1,0 +1,181 @@
+schema_version: umcm.module.v0.15.0
+name: virtual_store_queue
+metadata:
+  version: 0.8.0
+  stage: 8
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/mem/lsqueue/VirtualStoreQueue.scala:30-206,238-389,413-417
+  - src/main/scala/xiangshan/Parameters.scala:101-112,794-797
+  - src/main/scala/top/Configs.scala:541-546
+  scope: bounded scalar VirtualStoreQueue allocation, age-ordered ROB retirement, and redirect cancellation/recovery-pointer publication
+  hierarchy: virtual allocation bits, circular pointers, walk/release state, and physical-pointer snapshots are private; issue, commit, and redirect use public core ports
+  parameters:
+    physical_store_queue_size: 64
+    virtual_store_queue_multiple: 2
+    virtual_store_queue_size: 128
+    snapshot_interval: 1
+  abstractions:
+  - program_index is the unwrapped finite age while sq_idx and rob_idx retain hardware identities; concrete circular arithmetic is replaced by equivalent bounded order constraints
+  - Core.MemoryIssue is the executable proxy for accepted dispatch allocation; the real VSQ allocation precedes execution issue
+  - Core.MemoryCommit summarizes the ROB-head relation that drives retirement; the private retire event preserves in-order release to the physical SQ
+  - physical SQ address/data valid bits, precommit drain, forwarding, and data visibility are not owned by VSQ and remain in Stages 9 and 10
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: memory_commit, direction: input, event_type: Core.MemoryCommit, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+internal_events:
+- SQ.Allocate
+- SQ.Retire
+- SQ.RedirectRecover
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: store_ops
+  as: op
+  include:
+    state_variables:
+    - {name: "VSQ[${op.op_id}].allocated", sort: {name: bool}, initial: false}
+    slots:
+    - id: vsq_allocate_${op.repeat_index}
+      type: SQ.Allocate
+      required: false
+      fields: &vsq_op_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        sq_idx: ${op.sq_idx}
+        mem_kind: store
+        queue_kind: virtual
+        path: issue
+    - id: vsq_retire_${op.repeat_index}
+      type: SQ.Retire
+      required: false
+      fields:
+        <<: *vsq_op_fields
+        path: rob_retire
+        cause: committed
+    - id: vsq_redirect_recover_${op.repeat_index}
+      type: SQ.RedirectRecover
+      required: false
+      fields:
+        <<: *vsq_op_fields
+        path: redirect
+        cause: {$expr: {node: symbol, name: "vsq::${op.op_id}::redirect_cause", sort: {name: string}}}
+    transformations:
+    - name: store_issue_allocates_vsq_${op.repeat_index}
+      inputs: [{role: issue, type: Core.MemoryIssue}]
+      outputs: [{role: allocate, type: SQ.Allocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "VSQ[${op.op_id}].allocated", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "VSQ[${op.op_id}].allocated", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [vsq, allocate, source:VirtualStoreQueue.scala:160-206]
+    - name: committed_store_retires_vsq_${op.repeat_index}
+      inputs:
+      - {role: allocate, type: SQ.Allocate}
+      - {role: commit, type: Core.MemoryCommit}
+      outputs: [{role: retire, type: SQ.Retire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: retire, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: retire, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: rob_retire}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: retire, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "VSQ[${op.op_id}].allocated", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "VSQ[${op.op_id}].allocated", at: retire, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [vsq, retire, rob-head, source:VirtualStoreQueue.scala:271-318,351-365]
+    - name: redirect_selects_live_vsq_entry_${op.repeat_index}
+      inputs:
+      - {role: allocate, type: SQ.Allocate}
+      - {role: redirect, type: Core.Redirect}
+      outputs: [{role: recover, type: SQ.RedirectRecover}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: recover, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: recover, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: recover, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 2}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}, right: {node: event_field, event_id: recover, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "VSQ[${op.op_id}].allocated", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [vsq, redirect, walk, source:VirtualStoreQueue.scala:251-284,367-389]
+    - name: redirect_recovery_reclaims_vsq_${op.repeat_index}
+      inputs: [{role: recover, type: SQ.RedirectRecover}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: recover, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: recover, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+      state_requirements:
+      - {state: "VSQ[${op.op_id}].allocated", at: recover, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "VSQ[${op.op_id}].allocated", at: recover, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [vsq, redirect, state-reclaim]
+
+repeat_product:
+- axes:
+  - {over: store_ops, as: older}
+  - {over: store_ops, as: younger}
+  include:
+    transformations:
+    - name: younger_vsq_retire_waits_for_older_${product.repeat_index}
+      inputs: [{role: retire, type: SQ.Retire}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: retire, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+      state_requirements:
+      - {state: "VSQ[${older.op_id}].allocated", at: retire, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [vsq, in-order-retire, source:VirtualStoreQueue.scala:290-318]

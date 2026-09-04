@@ -54,6 +54,13 @@ def _mask_covers(arguments: tuple[Any, ...]) -> bool:
     return (provider & consumer) == consumer
 
 
+def _mask_intersection(arguments: tuple[Any, ...]) -> int:
+    if len(arguments) != 2:
+        raise SolverError("mask_intersection expects two integer masks")
+    left, right = arguments
+    return int(left) & int(right)
+
+
 DEFAULT_FUNCTIONS: dict[str, Function] = {
     "same_address": _all_equal,
     "same_identity": _all_equal,
@@ -62,6 +69,7 @@ DEFAULT_FUNCTIONS: dict[str, Function] = {
     "same_block": _same_block,
     "mask_overlap": _mask_overlap,
     "mask_covers": _mask_covers,
+    "mask_intersection": _mask_intersection,
 }
 
 

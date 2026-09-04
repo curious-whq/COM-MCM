@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 5, case: nack-cannot-writeback, expected: INFEASIBLE}
+events:
+- id: load_bad_nack_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LBNACK, hart: 0, program_index: 0, rob_idx: 9, mem_kind: load, vaddr: 589824, size: 8, byte_mask: 255, lq_idx: 9, vector: false, tlb_instance: ldtlb, vpn: 144, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_bad_nack_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 5
+  fields: {op_id: LBNACK, hart: 0, tlb_instance: ldtlb, vaddr: 589824, vpn: 144, attempt: 0, access_kind: load, asid: 1, vmid: 0, translation_stage: s1, paddr: 32768, hit_level: l1, replay: false, fault: false, cause: none}
+- id: load_bad_nack_forward
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 10
+  fields: {op_id: LBNACK, value: 0, byte_mask: 0, match: false, data_invalid: false}
+- id: load_bad_nack_response
+  type: L1.Nack
+  occurs: true
+  cycle: 10
+  fields: {txn_id: LBNACK.load.a0, op_id: LBNACK, cause: mshr_nack}
+- id: load_bad_nack_writeback
+  type: Core.MemoryWriteback
+  occurs: true
+  cycle: 30
+  fields: {op_id: LBNACK, hart: 0, rob_idx: 9, mem_kind: load, value: 1, success: true}
+constraints: []

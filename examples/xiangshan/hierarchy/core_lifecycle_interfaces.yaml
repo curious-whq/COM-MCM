@@ -1,0 +1,73 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-core-lifecycle-v0.2
+policy: ports-only-public-surface
+modules:
+- module: core_lifecycle
+  ports:
+  - name: memory_instruction
+    direction: input
+    event_type: Core.MemoryInstruction
+    required_connection: false
+  - name: memory_issue
+    direction: output
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: memory_writeback
+    direction: input
+    event_type: Core.MemoryWriteback
+    required_connection: false
+  - name: memory_fault
+    direction: input
+    event_type: Core.MemoryFault
+    required_connection: false
+  - name: memory_commit
+    direction: output
+    event_type: Core.MemoryCommit
+    required_connection: false
+  - name: redirect
+    direction: output
+    event_type: Core.Redirect
+    required_connection: false
+  - name: memory_order_redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  public_event_types:
+  - Core.MemoryCommit
+  - Core.MemoryFault
+  - Core.MemoryInstruction
+  - Core.MemoryIssue
+  - Core.MemoryWriteback
+  - Core.Redirect
+  private_slot_ids:
+  - dispatch_allocate_0
+  - exception_record_0
+  - redirect_apply_0
+  - rob_commit_select_0
+  - rob_writeback_0
+  private_event_types:
+  - Core.DispatchAllocate
+  - Core.ExceptionRecord
+  - Core.ROBCommitSelect
+  - Core.ROBWriteback
+  - Core.RedirectApply
+  private_state_names:
+  - Core.ROB[L0].allocated
+  - Core.ROB[L0].committed
+  - Core.ROB[L0].completed
+  - Core.ROB[L0].faulted
+  - Core.ROB[L0].issued
+  - Core.ROB[L0].squashed
+  private_transformation_names:
+  - allocated_op_issues_0
+  - commit_waits_for_older_0
+  - dispatch_allocates_0
+  - exception_gen_records_fault_0
+  - precise_redirect_waits_for_older_0
+  - redirect_squashes_self_and_younger_0
+  - redirected_op_cannot_commit_late_0
+  - redirected_op_cannot_write_back_late_0
+  - rob_captures_successful_writeback_0
+  - rob_commits_selected_op_0
+  - rob_raises_precise_redirect_0
+  - rob_selects_completed_op_0

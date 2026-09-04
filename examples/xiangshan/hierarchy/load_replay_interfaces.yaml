@@ -1,0 +1,60 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-load-replay-v0.7
+policy: ports-only-public-surface
+modules:
+- module: load_replay_queue
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: pipeline_update
+    direction: input
+    event_type: Load.PipelineUpdate
+    required_connection: false
+  - name: wakeup
+    direction: input
+    event_type: Load.ReplayWakeup
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: replay_issue
+    direction: output
+    event_type: Load.ReplayIssue
+    required_connection: false
+  public_event_types:
+  - Core.MemoryIssue
+  - Core.Redirect
+  - Load.PipelineUpdate
+  - Load.ReplayIssue
+  - Load.ReplayWakeup
+  private_slot_ids:
+  - replay_complete_0
+  - replay_enqueue_0
+  - replay_ready_immediate_0
+  - replay_ready_wakeup_0
+  - replay_redirect_0
+  - replay_requeue_0
+  - replay_select_0
+  private_event_types:
+  - LQ.ReplayDeallocate
+  - LQ.ReplayEnqueue
+  - LQ.ReplayReady
+  - LQ.ReplayRequeue
+  - LQ.ReplaySelect
+  private_state_names:
+  - Replay[RDM].allocated
+  - Replay[RDM].issued
+  private_transformation_names:
+  - failed_load_enters_replay_queue_0
+  - failed_replay_feedback_reuses_entry_0
+  - matching_hardware_wakeup_unblocks_entry_0
+  - nonblocking_entry_is_ready_0
+  - ready_entry_is_selected_0
+  - redirect_cancels_replay_entry_0
+  - redirected_replay_entry_is_freed_0
+  - replay_cause_encoding_0
+  - selected_entry_issues_once_0
+  - successful_replay_feedback_frees_entry_0

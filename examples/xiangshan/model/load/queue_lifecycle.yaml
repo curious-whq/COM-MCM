@@ -1,0 +1,636 @@
+schema_version: umcm.module.v0.15.0
+name: load_queue_lifecycle
+metadata:
+  version: 0.6.0
+  stage: 6
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/mem/lsqueue/VirtualLoadQueue.scala:34-257
+  - src/main/scala/xiangshan/mem/lsqueue/LoadQueueRAR.scala:29-285
+  - src/main/scala/xiangshan/mem/lsqueue/LoadQueueRAW.scala:32-400
+  - src/main/scala/xiangshan/mem/lsqueue/LoadQueue.scala:167-343
+  - src/main/scala/xiangshan/mem/pipeline/NewLoadUnit.scala:1409-1447
+  - src/main/scala/xiangshan/mem/MemBlock.scala:1036-1047,1115-1119
+  scope: bounded scalar virtual-load-queue allocation/release plus one relevant RAR or RAW dependency pair and precise recovery
+  hierarchy: allocation, tracking, release state, violation detection, and victim selection are private; load/store progress, release notices, violation summaries, and redirects use public ports
+  abstractions:
+  - program_index is the unwrapped bounded age; lq_idx, sq_idx, and rob_idx remain hardware identities without circular wrap arithmetic
+  - successful or faulting pipeline updates release a virtual LQ entry in age order; replay updates retain it; redirect recovery may cancel entries out of dequeue order
+  - one relevant older/younger pair is instantiated per witness, matching the finite-entry style used by the translation slices
+  - release addresses are abstract cache-line tokens for RAR release matching; the later load-to-load query still requires the same load address
+  - replay scheduling and wakeup are deferred to Stage 7; vector flow counts and unaligned duplicate monitors are deferred to Stage 12
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: pipeline_update, direction: input, event_type: Load.PipelineUpdate, required_connection: false}
+- {name: order_query, direction: input, event_type: Load.OrderQuery, required_connection: false}
+- {name: store_address_ready, direction: input, event_type: Store.AddressReady, required_connection: false}
+- {name: release_notice, direction: input, event_type: L1.ReleaseNotice, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+- {name: memory_violation, direction: output, event_type: Core.MemoryViolation}
+- {name: violation_redirect, direction: output, event_type: Core.Redirect}
+internal_events:
+- LQ.Allocate
+- LQ.Deallocate
+- LQ.RARTrack
+- LQ.RAWTrack
+- LQ.RARViolation
+- LQ.RAWViolation
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: load_ops
+  as: op
+  include:
+    state_variables:
+    - {name: "VLQ[${op.op_id}].allocated", sort: {name: bool}, initial: false}
+    - {name: "VLQ[${op.op_id}].completed", sort: {name: bool}, initial: false}
+    slots:
+    - id: vlq_allocate_${op.repeat_index}
+      type: LQ.Allocate
+      required: false
+      fields: &vlq_op_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        lq_idx: ${op.lq_idx}
+        mem_kind: load
+        queue_kind: virtual
+        path: issue
+    - id: vlq_complete_deallocate_${op.repeat_index}
+      type: LQ.Deallocate
+      required: false
+      fields:
+        <<: *vlq_op_fields
+        path: completion
+        cause: completed
+    - id: vlq_redirect_deallocate_${op.repeat_index}
+      type: LQ.Deallocate
+      required: false
+      fields:
+        <<: *vlq_op_fields
+        path: redirect
+        cause: {$expr: {node: symbol, name: "vlq::${op.op_id}::redirect_cause", sort: {name: string}}}
+    transformations:
+    - name: load_issue_allocates_vlq_${op.repeat_index}
+      inputs: [{role: issue, type: Core.MemoryIssue}]
+      outputs: [{role: allocate, type: LQ.Allocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}
+        right:
+          node: binary
+          op: add
+          left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}
+          right: {node: literal, sort: {name: int}, value: 1}
+      state_requirements:
+      - {state: "VLQ[${op.op_id}].allocated", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "VLQ[${op.op_id}].allocated", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [vlq, allocate, source:VirtualLoadQueue.scala:77-133,151-201]
+    - name: completed_load_releases_vlq_${op.repeat_index}
+      inputs:
+      - {role: allocate, type: LQ.Allocate}
+      - {role: update, type: Load.PipelineUpdate}
+      outputs: [{role: deallocate, type: LQ.Deallocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: update, field: executed, sort: {name: bool}}
+        - node: nary
+          op: or
+          operands:
+          - {node: event_field, event_id: update, field: succeeded, sort: {name: bool}}
+          - {node: event_field, event_id: update, field: fault, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: completion}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: update, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: update, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: deallocate, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "VLQ[${op.op_id}].allocated", at: update, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "VLQ[${op.op_id}].completed", at: update, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "VLQ[${op.op_id}].allocated", at: deallocate, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [vlq, complete, dequeue, source:VirtualLoadQueue.scala:115-133,206-254]
+    - name: redirect_cancels_live_vlq_${op.repeat_index}
+      inputs:
+      - {role: allocate, type: LQ.Allocate}
+      - {role: redirect, type: Core.Redirect}
+      outputs: [{role: deallocate, type: LQ.Deallocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: deallocate, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}, right: {node: event_field, event_id: deallocate, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "VLQ[${op.op_id}].allocated", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [vlq, redirect, reclaim, source:VirtualLoadQueue.scala:88-104,214-221]
+    - name: redirected_deallocation_reclaims_vlq_${op.repeat_index}
+      inputs: [{role: deallocate, type: LQ.Deallocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+      state_requirements:
+      - {state: "VLQ[${op.op_id}].allocated", at: deallocate, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "VLQ[${op.op_id}].allocated", at: deallocate, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [vlq, redirect, state-reclaim]
+
+repeat_product:
+- axes:
+  - {over: load_ops, as: older}
+  - {over: load_ops, as: younger}
+  include:
+    state_variables:
+    - {name: "RAR[${older.op_id}->${younger.op_id}].tracked", sort: {name: bool}, initial: false}
+    - {name: "RAR[${older.op_id}->${younger.op_id}].released", sort: {name: bool}, initial: false}
+    slots:
+    - id: rar_track_${product.repeat_index}
+      type: LQ.RARTrack
+      required: false
+      fields: &rar_track_fields
+        op_id: ${older.op_id}
+        source_op_id: ${older.op_id}
+        target_op_id: ${younger.op_id}
+        hart: ${younger.hart}
+        program_index: ${younger.program_index}
+        rob_idx: ${younger.rob_idx}
+        lq_idx: ${younger.lq_idx}
+        address: {$expr: {node: symbol, name: "rar::${older.op_id}::${younger.op_id}::address", sort: {name: address, width: 64}}}
+        byte_mask: {$expr: {node: symbol, name: "rar::${older.op_id}::${younger.op_id}::mask", sort: {name: bv, width: 64}}}
+        data_valid: true
+        released: false
+        queue_kind: rar
+        path: tracked
+    - id: rar_release_${product.repeat_index}
+      type: LQ.RARTrack
+      required: false
+      fields:
+        <<: *rar_track_fields
+        released: true
+        path: released
+    - id: rar_violation_${product.repeat_index}
+      type: LQ.RARViolation
+      required: false
+      fields: &rar_violation_fields
+        op_id: ${older.op_id}
+        source_op_id: ${older.op_id}
+        target_op_id: ${younger.op_id}
+        hart: ${older.hart}
+        program_index: ${older.program_index}
+        rob_idx: ${older.rob_idx}
+        lq_idx: ${older.lq_idx}
+        address: {$expr: {node: symbol, name: "rar::${older.op_id}::${younger.op_id}::address", sort: {name: address, width: 64}}}
+        byte_mask: {$expr: {node: symbol, name: "rar::${older.op_id}::${younger.op_id}::mask", sort: {name: bv, width: 64}}}
+        cause: rar
+        path: violation
+    - id: rar_memory_violation_${product.repeat_index}
+      type: Core.MemoryViolation
+      required: false
+      fields:
+        op_id: ${younger.op_id}
+        hart: ${younger.hart}
+        source_op_id: ${older.op_id}
+        cause: rar
+        program_index: ${younger.program_index}
+        rob_idx: ${younger.rob_idx}
+        lq_idx: ${younger.lq_idx}
+        address: {$expr: {node: symbol, name: "rar::${older.op_id}::${younger.op_id}::address", sort: {name: address, width: 64}}}
+        byte_mask: {$expr: {node: symbol, name: "rar::${older.op_id}::${younger.op_id}::mask", sort: {name: bv, width: 64}}}
+    - id: rar_redirect_${product.repeat_index}
+      type: Core.Redirect
+      required: false
+      fields:
+        source_op_id: ${older.op_id}
+        target_op_id: ${younger.op_id}
+        hart: ${older.hart}
+        program_index: ${older.program_index}
+        rob_idx: ${older.rob_idx}
+        cause: rar
+        origin: load_queue
+        flush_self: false
+    transformations:
+    - name: younger_load_tracks_unfinished_older_${product.repeat_index}
+      inputs:
+      - {role: older_allocate, type: LQ.Allocate}
+      - {role: younger_allocate, type: LQ.Allocate}
+      - {role: query, type: Load.OrderQuery}
+      outputs: [{role: track, type: LQ.RARTrack}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: older_allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: younger_allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+        - {node: event_field, event_id: query, field: data_valid, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: query, field: nc, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tracked}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: older_allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: query, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: younger_allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: query, field: cycle, sort: {name: int}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: track, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: query, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: track, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: query, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: event_field, event_id: track, field: byte_mask, sort: {name: bv, width: 64}}}
+      state_requirements:
+      - {state: "VLQ[${older.op_id}].allocated", at: query, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "VLQ[${younger.op_id}].allocated", at: query, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [rar, allocate, source:LoadQueueRAR.scala:139-190]
+    - name: rar_track_activates_state_${product.repeat_index}
+      inputs: [{role: track, type: LQ.RARTrack}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tracked}}
+      state_updates:
+      - {state: "RAR[${older.op_id}->${younger.op_id}].tracked", at: track, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [rar, track-state]
+    - name: release_marks_rar_watch_${product.repeat_index}
+      inputs:
+      - {role: track, type: LQ.RARTrack}
+      - {role: release, type: L1.ReleaseNotice}
+      outputs: [{role: marked, type: LQ.RARTrack}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tracked}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - node: call
+          function: same_block
+          arguments:
+          - {node: event_field, event_id: track, field: address, sort: {name: address, width: 64}}
+          - {node: event_field, event_id: release, field: address, sort: {name: address, width: 64}}
+          sort: {name: bool}
+        - {node: binary, op: lt, left: {node: event_field, event_id: track, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: release, field: cycle, sort: {name: int}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: marked, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: marked, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: event_field, event_id: marked, field: released, sort: {name: bool}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: marked, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_requirements:
+      - {state: "RAR[${older.op_id}->${younger.op_id}].tracked", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "RAR[${older.op_id}->${younger.op_id}].released", at: marked, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rar, release, source:LoadQueueRAR.scala:127-137,262-271]
+    - name: older_load_detects_rar_violation_${product.repeat_index}
+      inputs:
+      - {role: marked, type: LQ.RARTrack}
+      - {role: query, type: Load.OrderQuery}
+      outputs: [{role: violation, type: LQ.RARViolation}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: marked, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: marked, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: event_field, event_id: marked, field: released, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: marked, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: query, field: address, sort: {name: address, width: 64}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: marked, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: query, field: cycle, sort: {name: int}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: violation, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_requirements:
+      - {state: "RAR[${older.op_id}->${younger.op_id}].released", at: query, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rar, violation, source:LoadQueueRAR.scala:234-256]
+    - name: rar_violation_is_reported_${product.repeat_index}
+      inputs: [{role: violation, type: LQ.RARViolation}]
+      outputs: [{role: report, type: Core.MemoryViolation}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: rar}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: report, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: violation, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      exact: true
+      tags: [rar, report]
+    - name: rar_report_redirects_after_older_${product.repeat_index}
+      inputs:
+      - {role: report, type: Core.MemoryViolation}
+      - {role: violation, type: LQ.RARViolation}
+      outputs: [{role: redirect, type: Core.Redirect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: rar}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: origin, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load_queue}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: report, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      exact: true
+      tags: [rar, redirect, flush-after, source:NewLoadUnit.scala:1430-1461]
+    - name: completed_dequeue_waits_for_older_${product.repeat_index}
+      inputs: [{role: deallocate, type: LQ.Deallocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: completion}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+      state_requirements:
+      - {state: "VLQ[${older.op_id}].allocated", at: deallocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [vlq, in-order-dequeue, source:VirtualLoadQueue.scala:108-133]
+- axes:
+  - {over: store_ops, as: store}
+  - {over: load_ops, as: load}
+  include:
+    state_variables:
+    - {name: "RAW[${store.op_id}->${load.op_id}].tracked", sort: {name: bool}, initial: false}
+    slots:
+    - id: raw_track_${product.repeat_index}
+      type: LQ.RAWTrack
+      required: false
+      fields: &raw_track_fields
+        op_id: ${load.op_id}
+        source_op_id: ${store.op_id}
+        target_op_id: ${load.op_id}
+        hart: ${load.hart}
+        program_index: ${load.program_index}
+        rob_idx: ${load.rob_idx}
+        lq_idx: ${load.lq_idx}
+        sq_idx: ${store.sq_idx}
+        address: {$expr: {node: symbol, name: "raw::${store.op_id}::${load.op_id}::address", sort: {name: address, width: 64}}}
+        byte_mask: {$expr: {node: symbol, name: "raw::${store.op_id}::${load.op_id}::mask", sort: {name: bv, width: 64}}}
+        data_valid: true
+        queue_kind: raw
+        path: tracked
+    - id: raw_violation_${product.repeat_index}
+      type: LQ.RAWViolation
+      required: false
+      fields: &raw_violation_fields
+        <<: *raw_track_fields
+        cause: raw
+        path: violation
+    - id: raw_memory_violation_${product.repeat_index}
+      type: Core.MemoryViolation
+      required: false
+      fields:
+        op_id: ${load.op_id}
+        hart: ${load.hart}
+        source_op_id: ${store.op_id}
+        cause: raw
+        program_index: ${load.program_index}
+        rob_idx: ${load.rob_idx}
+        lq_idx: ${load.lq_idx}
+        address: {$expr: {node: symbol, name: "raw::${store.op_id}::${load.op_id}::address", sort: {name: address, width: 64}}}
+        byte_mask: {$expr: {node: symbol, name: "raw::${store.op_id}::${load.op_id}::mask", sort: {name: bv, width: 64}}}
+    - id: raw_redirect_${product.repeat_index}
+      type: Core.Redirect
+      required: false
+      fields:
+        source_op_id: ${load.op_id}
+        target_op_id: ${load.op_id}
+        hart: ${load.hart}
+        program_index: ${load.program_index}
+        rob_idx: ${load.rob_idx}
+        cause: raw
+        origin: load_queue
+        flush_self: true
+    transformations:
+    - name: load_tracks_unresolved_older_store_${product.repeat_index}
+      inputs:
+      - {role: store_issue, type: Core.MemoryIssue}
+      - {role: load_allocate, type: LQ.Allocate}
+      - {role: query, type: Load.OrderQuery}
+      outputs: [{role: track, type: LQ.RAWTrack}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store_issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: load_allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${store.hart}"}, right: {node: literal, sort: {name: int}, value: "${load.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${store.program_index}"}, right: {node: literal, sort: {name: int}, value: "${load.program_index}"}}
+        - {node: event_field, event_id: query, field: data_valid, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: query, field: nc, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: store_issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: query, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: load_allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: query, field: cycle, sort: {name: int}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: track, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: query, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: track, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: query, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: event_field, event_id: track, field: byte_mask, sort: {name: bv, width: 64}}}
+      state_requirements:
+      - {state: "VLQ[${load.op_id}].allocated", at: query, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [raw, allocate, source:LoadQueueRAW.scala:121-177]
+    - name: raw_track_activates_state_${product.repeat_index}
+      inputs: [{role: track, type: LQ.RAWTrack}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      state_updates:
+      - {state: "RAW[${store.op_id}->${load.op_id}].tracked", at: track, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [raw, track-state]
+    - name: resolved_store_detects_raw_violation_${product.repeat_index}
+      inputs:
+      - {role: track, type: LQ.RAWTrack}
+      - {role: ready, type: Store.AddressReady}
+      outputs: [{role: violation, type: LQ.RAWViolation}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: track, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: ready, field: address, sort: {name: address, width: 64}}}
+        - node: call
+          function: mask_overlap
+          arguments:
+          - {node: event_field, event_id: track, field: byte_mask, sort: {name: bv, width: 64}}
+          - {node: event_field, event_id: ready, field: byte_mask, sort: {name: bv, width: 64}}
+          sort: {name: bool}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: track, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: violation, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_requirements:
+      - {state: "RAW[${store.op_id}->${load.op_id}].tracked", at: ready, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [raw, violation, oldest-select, source:LoadQueueRAW.scala:212-386]
+    - name: raw_violation_is_reported_${product.repeat_index}
+      inputs: [{role: violation, type: LQ.RAWViolation}]
+      outputs: [{role: report, type: Core.MemoryViolation}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: raw}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: report, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: violation, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      exact: true
+      tags: [raw, report]
+    - name: raw_report_redirects_load_and_younger_${product.repeat_index}
+      inputs:
+      - {role: report, type: Core.MemoryViolation}
+      - {role: violation, type: LQ.RAWViolation}
+      outputs: [{role: redirect, type: Core.Redirect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: report, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: raw}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: violation, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: origin, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load_queue}}
+        - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: report, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      exact: true
+      tags: [raw, redirect, flush-self, source:LoadQueueRAW.scala:347-386]

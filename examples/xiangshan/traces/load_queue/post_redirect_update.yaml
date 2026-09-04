@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 6, case: post-redirect-update, expected: INFEASIBLE}
+events:
+- id: killed_load_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LATE, hart: 0, program_index: 1, rob_idx: 16, mem_kind: load, vaddr: 45056, address: 45056, value: 5, size: 8, byte_mask: 255, lq_idx: 15, vector: false}
+- id: killing_redirect
+  type: Core.Redirect
+  occurs: true
+  cycle: 4
+  fields: {source_op_id: BR1, target_op_id: LATE, hart: 0, program_index: 0, rob_idx: 9, cause: branch_mispredict, origin: core, flush_self: true}
+- id: late_pipeline_update
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 8
+  fields: {op_id: LATE, lq_idx: 15, address: 45056, byte_mask: 255, executed: true, succeeded: true, replay_cause: none, attempt: 0, fault: false}
+constraints: []

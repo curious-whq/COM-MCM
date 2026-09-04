@@ -1,0 +1,50 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 9, case: wrong-forward-source, expected: INFEASIBLE}
+events:
+- id: wo_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: WO, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 4096, write_value: 17, size: 4, byte_mask: 15, sq_idx: 0, vector: false}
+- id: wy_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 1
+  fields: {op_id: WY, hart: 0, program_index: 1, rob_idx: 1, mem_kind: store, vaddr: 4096, write_value: 34, size: 2, byte_mask: 12, sq_idx: 1, vector: false}
+- id: wl_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 2
+  fields: {op_id: WL, hart: 0, program_index: 2, rob_idx: 2, mem_kind: load, vaddr: 4096, size: 2, byte_mask: 12, lq_idx: 0, vector: false}
+- id: wo_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 4
+  fields: {op_id: WO, sq_idx: 0, address: 8192, byte_mask: 15}
+- id: wy_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 5
+  fields: {op_id: WY, sq_idx: 1, address: 8192, byte_mask: 12}
+- id: wo_data
+  type: Store.DataReady
+  occurs: true
+  cycle: 4
+  fields: {op_id: WO, sq_idx: 0, value: 17, byte_mask: 15}
+- id: wy_data
+  type: Store.DataReady
+  occurs: true
+  cycle: 5
+  fields: {op_id: WY, sq_idx: 1, value: 34, byte_mask: 12}
+- id: wl_query
+  type: Store.ForwardQuery
+  occurs: true
+  cycle: 9
+  fields: {op_id: WL, lq_idx: 0, address: 8192, byte_mask: 12}
+- id: wrong_response
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 13
+  fields: {op_id: WL, source_op_id: WO, value: 17, byte_mask: 12, match: true, data_invalid: false}
+constraints: []

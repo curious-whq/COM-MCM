@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 6, case: raw-violation, expected: FEASIBLE}
+events:
+- id: raw_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: S0, hart: 0, program_index: 0, rob_idx: 5, mem_kind: store, vaddr: 20480, address: 20480, value: 0, write_value: 9, size: 8, byte_mask: 15, sq_idx: 0, vector: false}
+- id: raw_load_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LRAW, hart: 0, program_index: 1, rob_idx: 6, mem_kind: load, vaddr: 20480, address: 20480, value: 1, size: 8, byte_mask: 15, lq_idx: 5, vector: false}
+- id: raw_load_query
+  type: Load.OrderQuery
+  occurs: true
+  cycle: 8
+  fields: {op_id: LRAW, hart: 0, program_index: 1, rob_idx: 6, lq_idx: 5, address: 20480, byte_mask: 15, data_valid: true, nc: false}
+- id: raw_store_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 16
+  fields: {op_id: S0, sq_idx: 0, hart: 0, program_index: 0, rob_idx: 5, address: 20480, byte_mask: 3}
+constraints: []

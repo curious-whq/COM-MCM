@@ -1,0 +1,257 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: coverage-iomshr-load
+  input_contract: public IOMSHR request only
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.15.0
+      purpose: Standalone bounded BOOM MSHR/RPQ/SDQ/IOMSHR regression composition.
+      composition:
+        name: boom-mshr-standalone
+        resolved_roles:
+          mshr_requests: []
+          mshr_instances: []
+          io_requests:
+          - event_id: io_req
+            event_type: IOMSHR.Request
+            op_id: IO0
+            address: mmio0
+            value: 77
+            mem_kind: load
+            io_id: 5
+        modules:
+        - mshr
+        connections: []
+        generated_transformations: []
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          mshr:
+            public_ports:
+            - name: request
+              direction: input
+              event_type: DCache.MSHRRequest
+              required_connection: false
+            - name: branch_kill
+              direction: input
+              event_type: Core.BranchKill
+              required_connection: false
+            - name: exception
+              direction: input
+              event_type: Core.Exception
+              required_connection: false
+            - name: grant_data
+              direction: output
+              event_type: MSHR.GrantData
+              required_connection: false
+            - name: grant_no_data
+              direction: output
+              event_type: MSHR.GrantNoData
+              required_connection: false
+            - name: response
+              direction: output
+              event_type: MSHR.ResponseDequeue
+              required_connection: false
+            - name: replay
+              direction: output
+              event_type: MSHR.Replay
+              required_connection: false
+            - name: refill
+              direction: output
+              event_type: MSHR.RefillWrite
+              required_connection: false
+            - name: meta_write
+              direction: output
+              event_type: MSHR.MetaWrite
+              required_connection: false
+            - name: wb_req
+              direction: output
+              event_type: MSHR.WritebackRequest
+              required_connection: false
+            - name: mem_finish
+              direction: output
+              event_type: MSHR.MemFinish
+              required_connection: false
+            - name: probe_blocked
+              direction: output
+              event_type: MSHR.ProbeBlocked
+              required_connection: false
+            - name: fence_blocked
+              direction: output
+              event_type: MSHR.FenceBlocked
+              required_connection: false
+            - name: io_request
+              direction: input
+              event_type: IOMSHR.Request
+              required_connection: false
+            - name: io_response
+              direction: output
+              event_type: IOMSHR.Response
+              required_connection: false
+            public_event_types:
+            - Core.BranchKill
+            - Core.Exception
+            - DCache.MSHRRequest
+            - IOMSHR.Request
+            - IOMSHR.Response
+            - MSHR.FenceBlocked
+            - MSHR.GrantData
+            - MSHR.GrantNoData
+            - MSHR.MemFinish
+            - MSHR.MetaWrite
+            - MSHR.ProbeBlocked
+            - MSHR.RefillWrite
+            - MSHR.Replay
+            - MSHR.ResponseDequeue
+            - MSHR.WritebackRequest
+            private_slot_ids:
+            - io_access_0
+            - io_ack_0
+            private_event_types:
+            - IOMSHR.MemAccess
+            - IOMSHR.MemAck
+            private_state_names:
+            - IOMSHR[5].state
+            private_transformation_names:
+            - io_access_IO0
+            - io_ack_IO0
+            - io_response_IO0
+    selected_slots:
+    - io_access_0
+    - io_ack_0
+    - io_resp_0
+    state:
+      initial:
+        IOMSHR[5].state: IDLE
+      final:
+        IOMSHR[5].state: IDLE
+      steps:
+      - cycle: 0
+        before:
+          IOMSHR[5].state: IDLE
+        after:
+          IOMSHR[5].state: IDLE
+        active_requirements:
+        - transformation.io_access_IO0.forward.0.io_req.instance.0.io_access_0.requirement.0
+        active_updates: []
+        changes: []
+      - cycle: 1
+        before:
+          IOMSHR[5].state: IDLE
+        after:
+          IOMSHR[5].state: MEM_ACK
+        active_requirements: []
+        active_updates:
+        - transformation.io_access_IO0.forward.0.io_req.instance.0.io_access_0.update.0
+        changes:
+        - state: IOMSHR[5].state
+          before: IDLE
+          after: MEM_ACK
+          origins:
+          - transformation.io_access_IO0.forward.0.io_req.instance.0.io_access_0.update.0
+      - cycle: 2
+        before:
+          IOMSHR[5].state: MEM_ACK
+        after:
+          IOMSHR[5].state: RESP
+        active_requirements:
+        - transformation.io_ack_IO0.forward.0.io_access_0.instance.0.io_ack_0.requirement.0
+        active_updates:
+        - transformation.io_ack_IO0.forward.0.io_access_0.instance.0.io_ack_0.update.0
+        changes:
+        - state: IOMSHR[5].state
+          before: MEM_ACK
+          after: RESP
+          origins:
+          - transformation.io_ack_IO0.forward.0.io_access_0.instance.0.io_ack_0.update.0
+      - cycle: 3
+        before:
+          IOMSHR[5].state: RESP
+        after:
+          IOMSHR[5].state: IDLE
+        active_requirements:
+        - transformation.io_response_IO0.forward.0.io_ack_0.instance.0.io_resp_0.requirement.0
+        active_updates:
+        - transformation.io_response_IO0.forward.0.io_ack_0.instance.0.io_resp_0.update.0
+        changes:
+        - state: IOMSHR[5].state
+          before: RESP
+          after: IDLE
+          origins:
+          - transformation.io_response_IO0.forward.0.io_ack_0.instance.0.io_resp_0.update.0
+    active_transformations:
+    - name: transformation.io_access_IO0.activation.0.0
+      transformation: io_access_IO0
+      binding:
+        request: io_req
+        access: io_access_0
+    - name: transformation.io_ack_IO0.activation.0.0
+      transformation: io_ack_IO0
+      binding:
+        access: io_access_0
+        ack: io_ack_0
+    - name: transformation.io_response_IO0.activation.0.0
+      transformation: io_response_IO0
+      binding:
+        ack: io_ack_0
+        resp: io_resp_0
+events:
+- id: io_req
+  type: IOMSHR.Request
+  occurs: true
+  fields:
+    op_id: IO0
+    address: mmio0
+    mem_kind: load
+    value: 77
+    io_id: 5
+  cycle: 0
+- id: io_access_0
+  type: IOMSHR.MemAccess
+  occurs: true
+  fields:
+    op_id: IO0
+    address: mmio0
+    mem_kind: load
+    io_id: 5
+  cycle: 1
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: io_ack_0
+  type: IOMSHR.MemAck
+  occurs: true
+  fields:
+    op_id: IO0
+    value: 77
+    io_id: 5
+  cycle: 2
+  annotations:
+    module_spec: mshr
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: io_resp_0
+  type: IOMSHR.Response
+  occurs: true
+  fields:
+    op_id: IO0
+    value: 77
+    io_id: 5
+  cycle: 3
+  annotations:
+    module_spec: mshr
+    module_visibility: public
+    interface_ports:
+    - io_response
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

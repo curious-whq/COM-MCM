@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: replay-success, expected: FEASIBLE}
+events:
+- id: issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: RDONE, hart: 0, program_index: 4, rob_idx: 7, mem_kind: load, vaddr: 16384, size: 8, byte_mask: 255, lq_idx: 7, vector: false}
+- id: failed
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 5
+  fields: {op_id: RDONE, lq_idx: 7, address: 16384, byte_mask: 255, executed: true, succeeded: false, replay_cause: bank_conflict, attempt: 0, fault: false}
+- id: completed
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 12
+  fields: {op_id: RDONE, lq_idx: 7, address: 16384, byte_mask: 255, executed: true, succeeded: true, replay_cause: none, attempt: 1, fault: false}
+constraints: []

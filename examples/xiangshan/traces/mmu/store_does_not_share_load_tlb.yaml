@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 3, case: store-does-not-share-load-tlb, expected: INFEASIBLE}
+events:
+- id: load_page_x
+  type: MMU.PageMap
+  occurs: true
+  cycle: 0
+  fields: {map_id: MAP_LD_X, hart: 0, entry_id: e0, tlb_instance: ldtlb, vpn: 16, paddr: 8192, asid: 1, vmid: 0, translation_stage: s1, initial_valid: true}
+- id: store_page_x
+  type: MMU.PageMap
+  occurs: true
+  cycle: 0
+  fields: {map_id: MAP_ST_X, hart: 0, entry_id: e0, tlb_instance: sttlb, vpn: 16, paddr: 8192, asid: 1, vmid: 0, translation_stage: s1, initial_valid: false}
+- id: store_0_translate
+  type: MMU.TranslateRequest
+  occurs: true
+  cycle: 1
+  fields: {op_id: S0, hart: 0, tlb_instance: sttlb, vaddr: 65540, vpn: 16, attempt: 0, access_kind: store, size: 8, asid: 1, vmid: 0, translation_stage: s1}
+- id: illegal_store_hit
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: S0, hart: 0, tlb_instance: sttlb, vaddr: 65540, vpn: 16, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 8192, hit_level: l1, replay: false, fault: false}
+constraints: []

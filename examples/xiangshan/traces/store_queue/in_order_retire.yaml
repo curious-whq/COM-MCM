@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: in-order-retire, expected: FEASIBLE}
+events:
+- id: store_head_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SQHEAD, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 4096, write_value: 3, size: 8, byte_mask: 255, sq_idx: 0, vector: false}
+- id: store_tail_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 1
+  fields: {op_id: SQTAIL, hart: 0, program_index: 1, rob_idx: 1, mem_kind: store, vaddr: 8192, write_value: 4, size: 8, byte_mask: 255, sq_idx: 1, vector: false}
+- id: store_head_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 8
+  fields: {op_id: SQHEAD, hart: 0, rob_idx: 0, mem_kind: store}
+- id: store_tail_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 10
+  fields: {op_id: SQTAIL, hart: 0, rob_idx: 1, mem_kind: store}
+constraints: []

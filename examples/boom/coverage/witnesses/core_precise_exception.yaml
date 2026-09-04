@@ -1,0 +1,2310 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: precise-page-fault
+  expected: FEASIBLE
+  goal: older commit then precise exception and younger squash
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.17.0
+      purpose: executable BOOM core-side memory slice with source-grounded NBDTLB/LSU
+        retry, atomics, MMIO, fences, ROB, and recovery
+      encapsulation: strict
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          boom_v4_lsu_translation:
+            public_ports:
+            - name: memory_instruction
+              direction: input
+              event_type: Core.MemoryInstruction
+              required_connection: false
+            - name: tlb_response
+              direction: input
+              event_type: TLB.Response
+              required_connection: true
+            - name: miss_ready
+              direction: input
+              event_type: TLB.MissReady
+              required_connection: true
+            - name: tlb_request
+              direction: output
+              event_type: TLB.Request
+              required_connection: false
+            - name: translated_memory
+              direction: output
+              event_type: Core.TranslatedMemory
+              required_connection: false
+            - name: memory_fault
+              direction: output
+              event_type: Core.MemoryFault
+              required_connection: false
+            public_event_types:
+            - Core.MemoryFault
+            - Core.MemoryInstruction
+            - Core.TranslatedMemory
+            - TLB.MissReady
+            - TLB.Request
+            - TLB.Response
+            private_slot_ids:
+            - lsu_tlb_retry_0
+            - lsu_tlb_retry_1
+            private_event_types:
+            - TLB.Retry
+            private_state_names: []
+            private_transformation_names:
+            - hit_response_translates_0
+            - hit_response_translates_1
+            - lsu_issues_initial_tlb_request_0
+            - lsu_issues_initial_tlb_request_1
+            - lsu_reissues_tlb_request_0
+            - lsu_reissues_tlb_request_1
+            - page_fault_response_reaches_rob_0
+            - page_fault_response_reaches_rob_1
+            - retry_response_translates_0
+            - retry_response_translates_1
+            - tlb_miss_round_trips_through_lsu_retry_queue_0
+            - tlb_miss_round_trips_through_lsu_retry_queue_1
+          boom_v4_nbdtlb:
+            public_ports:
+            - name: request
+              direction: input
+              event_type: TLB.Request
+              required_connection: true
+            - name: ptw_result
+              direction: input
+              event_type: TLB.PTWResult
+              required_connection: true
+            - name: sfence
+              direction: input
+              event_type: TLB.SFence
+              required_connection: false
+            - name: response
+              direction: output
+              event_type: TLB.Response
+              required_connection: false
+            - name: miss
+              direction: output
+              event_type: TLB.Miss
+              required_connection: false
+            - name: ptw_request
+              direction: output
+              event_type: TLB.PTWRequest
+              required_connection: false
+            - name: miss_ready
+              direction: output
+              event_type: TLB.MissReady
+              required_connection: false
+            public_event_types:
+            - TLB.Miss
+            - TLB.MissReady
+            - TLB.PTWRequest
+            - TLB.PTWResult
+            - TLB.Request
+            - TLB.Response
+            - TLB.SFence
+            private_slot_ids:
+            - tlb_decision_initial_0
+            - tlb_decision_initial_1
+            - tlb_decision_initial_2
+            - tlb_decision_initial_3
+            - tlb_decision_retry_0
+            - tlb_decision_retry_1
+            - tlb_decision_retry_2
+            - tlb_decision_retry_3
+            - tlb_invalidate_0
+            - tlb_invalidate_1
+            - tlb_refill_0
+            - tlb_refill_1
+            - tlb_refill_2
+            - tlb_refill_3
+            private_event_types:
+            - TLB.Decision
+            - TLB.Invalidate
+            - TLB.Refill
+            private_state_names:
+            - NBDTLB.entry[h0_v5].valid
+            - NBDTLB.entry[h0_v6].valid
+            - NBDTLB[0].state
+            private_transformation_names:
+            - initial_decision_returns_response_0
+            - initial_decision_returns_response_1
+            - initial_decision_returns_response_2
+            - initial_decision_returns_response_3
+            - initial_request_reads_entry_0
+            - initial_request_reads_entry_1
+            - initial_request_reads_entry_2
+            - initial_request_reads_entry_3
+            - miss_captures_refill_tag_0
+            - miss_captures_refill_tag_1
+            - miss_captures_refill_tag_2
+            - miss_captures_refill_tag_3
+            - miss_issues_ptw_request_0
+            - miss_issues_ptw_request_1
+            - miss_issues_ptw_request_2
+            - miss_issues_ptw_request_3
+            - ptw_result_refills_entry_0
+            - ptw_result_refills_entry_1
+            - ptw_result_refills_entry_2
+            - ptw_result_refills_entry_3
+            - ready_after_refill_0
+            - ready_after_refill_1
+            - ready_after_refill_2
+            - ready_after_refill_3
+            - retry_decision_returns_response_0
+            - retry_decision_returns_response_1
+            - retry_decision_returns_response_2
+            - retry_decision_returns_response_3
+            - retry_request_reads_refilled_entry_0
+            - retry_request_reads_refilled_entry_1
+            - retry_request_reads_refilled_entry_2
+            - retry_request_reads_refilled_entry_3
+            - sfence_invalidates_entry_0
+            - sfence_invalidates_entry_1
+            - sfence_precedes_subsequent_lookup_0
+            - sfence_precedes_subsequent_lookup_1
+            - sfence_precedes_subsequent_lookup_2
+            - sfence_precedes_subsequent_lookup_3
+          bounded_ptw_environment:
+            public_ports:
+            - name: ptw_request
+              direction: input
+              event_type: TLB.PTWRequest
+              required_connection: true
+            - name: page_map
+              direction: input
+              event_type: Core.PageMap
+              required_connection: false
+            - name: ptw_result
+              direction: output
+              event_type: TLB.PTWResult
+              required_connection: false
+            public_event_types:
+            - Core.PageMap
+            - TLB.PTWRequest
+            - TLB.PTWResult
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names:
+            - ptw_returns_bounded_mapping_0
+            - ptw_returns_bounded_mapping_1
+            - ptw_returns_bounded_mapping_2
+            - ptw_returns_bounded_mapping_3
+          atomic_core:
+            public_ports:
+            - name: translated_memory
+              direction: input
+              event_type: Core.TranslatedMemory
+              required_connection: true
+            - name: reservation_invalidate
+              direction: input
+              event_type: Core.ReservationInvalidate
+              required_connection: false
+            - name: memory_complete
+              direction: output
+              event_type: Core.MemoryComplete
+              required_connection: false
+            public_event_types:
+            - Core.MemoryComplete
+            - Core.ReservationInvalidate
+            - Core.TranslatedMemory
+            private_slot_ids: []
+            private_event_types:
+            - Atomic.AMORead
+            - Atomic.AMOWrite
+            - Atomic.LRRead
+            - Atomic.ReservationSet
+            - Atomic.SCDecision
+            - Atomic.SCWrite
+            private_state_names: []
+            private_transformation_names: []
+          reservation_bridge:
+            public_ports:
+            - name: probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: reservation_invalidate
+              direction: output
+              event_type: Core.ReservationInvalidate
+              required_connection: false
+            public_event_types:
+            - Core.ReservationInvalidate
+            - DCache.ProbeRelease
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names: []
+          mmio_core:
+            public_ports:
+            - name: translated_memory
+              direction: input
+              event_type: Core.TranslatedMemory
+              required_connection: true
+            - name: io_request
+              direction: output
+              event_type: IOMSHR.Request
+              required_connection: false
+            - name: io_access
+              direction: output
+              event_type: IOMSHR.MemAccess
+              required_connection: false
+            - name: io_ack
+              direction: output
+              event_type: IOMSHR.MemAck
+              required_connection: false
+            - name: io_response
+              direction: output
+              event_type: IOMSHR.Response
+              required_connection: false
+            - name: memory_complete
+              direction: output
+              event_type: Core.MemoryComplete
+              required_connection: false
+            public_event_types:
+            - Core.MemoryComplete
+            - Core.TranslatedMemory
+            - IOMSHR.MemAccess
+            - IOMSHR.MemAck
+            - IOMSHR.Request
+            - IOMSHR.Response
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names:
+            - IOMSHR.busy
+            private_transformation_names:
+            - iomshr_access_0
+            - iomshr_ack_0
+            - iomshr_load_completion_0
+            - iomshr_load_response_0
+            - iomshr_store_completion_0
+            - uncacheable_routes_to_iomshr_0
+          fence_core:
+            public_ports:
+            - name: memory_instruction
+              direction: input
+              event_type: Core.MemoryInstruction
+              required_connection: false
+            - name: dcache_ordered
+              direction: input
+              event_type: DCache.Ordered
+              required_connection: false
+            - name: arch_fence
+              direction: output
+              event_type: Arch.Fence
+              required_connection: false
+            - name: memory_complete
+              direction: output
+              event_type: Core.MemoryComplete
+              required_connection: false
+            public_event_types:
+            - Arch.Fence
+            - Core.MemoryComplete
+            - Core.MemoryInstruction
+            - DCache.Ordered
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names: []
+          rob_core:
+            public_ports:
+            - name: memory_instruction
+              direction: input
+              event_type: Core.MemoryInstruction
+              required_connection: false
+            - name: memory_complete
+              direction: input
+              event_type: Core.MemoryComplete
+              required_connection: false
+            - name: memory_fault
+              direction: input
+              event_type: Core.MemoryFault
+              required_connection: false
+            - name: branch_mispredict
+              direction: input
+              event_type: Core.BranchMispredict
+              required_connection: false
+            - name: commit
+              direction: output
+              event_type: ROB.Commit
+              required_connection: false
+            - name: precise_exception
+              direction: output
+              event_type: ROB.PreciseException
+              required_connection: false
+            - name: squash_memory
+              direction: output
+              event_type: Core.SquashMemory
+              required_connection: false
+            - name: branch_kill
+              direction: output
+              event_type: Core.BranchKill
+              required_connection: false
+            public_event_types:
+            - Core.BranchKill
+            - Core.BranchMispredict
+            - Core.MemoryComplete
+            - Core.MemoryFault
+            - Core.MemoryInstruction
+            - Core.SquashMemory
+            - ROB.Commit
+            - ROB.PreciseException
+            private_slot_ids:
+            - rob_allocate_0
+            - rob_allocate_1
+            - rob_allocate_2
+            - rob_exception_record_0
+            - rob_exception_record_1
+            - rob_exception_record_2
+            - rob_writeback_0
+            - rob_writeback_1
+            - rob_writeback_2
+            private_event_types:
+            - ROB.Allocate
+            - ROB.ExceptionRecord
+            - ROB.Writeback
+            private_state_names:
+            - ROB.entry[FAULT].allocated
+            - ROB.entry[FAULT].committed
+            - ROB.entry[FAULT].completed
+            - ROB.entry[FAULT].faulted
+            - ROB.entry[FAULT].squashed
+            - ROB.entry[OLD].allocated
+            - ROB.entry[OLD].committed
+            - ROB.entry[OLD].completed
+            - ROB.entry[OLD].faulted
+            - ROB.entry[OLD].squashed
+            - ROB.entry[YOUNG].allocated
+            - ROB.entry[YOUNG].committed
+            - ROB.entry[YOUNG].completed
+            - ROB.entry[YOUNG].faulted
+            - ROB.entry[YOUNG].squashed
+            private_transformation_names:
+            - commit_waits_for_older_0
+            - commit_waits_for_older_1
+            - commit_waits_for_older_2
+            - commit_waits_for_older_3
+            - commit_waits_for_older_4
+            - commit_waits_for_older_5
+            - commit_waits_for_older_6
+            - commit_waits_for_older_7
+            - commit_waits_for_older_8
+            - precise_exception_squashes_younger_0
+            - precise_exception_squashes_younger_1
+            - precise_exception_squashes_younger_2
+            - precise_exception_squashes_younger_3
+            - precise_exception_squashes_younger_4
+            - precise_exception_squashes_younger_5
+            - precise_exception_squashes_younger_6
+            - precise_exception_squashes_younger_7
+            - precise_exception_squashes_younger_8
+            - precise_exception_waits_for_older_0
+            - precise_exception_waits_for_older_1
+            - precise_exception_waits_for_older_2
+            - precise_exception_waits_for_older_3
+            - precise_exception_waits_for_older_4
+            - precise_exception_waits_for_older_5
+            - precise_exception_waits_for_older_6
+            - precise_exception_waits_for_older_7
+            - precise_exception_waits_for_older_8
+            - rob_allocates_memory_op_0
+            - rob_allocates_memory_op_1
+            - rob_allocates_memory_op_2
+            - rob_captures_completion_0
+            - rob_captures_completion_1
+            - rob_captures_completion_2
+            - rob_commits_completed_op_0
+            - rob_commits_completed_op_1
+            - rob_commits_completed_op_2
+            - rob_raises_precise_exception_0
+            - rob_raises_precise_exception_1
+            - rob_raises_precise_exception_2
+            - rob_records_memory_fault_0
+            - rob_records_memory_fault_1
+            - rob_records_memory_fault_2
+            - squash_marks_entry_0
+            - squash_marks_entry_1
+            - squash_marks_entry_2
+          retire_core:
+            public_ports:
+            - name: commit
+              direction: input
+              event_type: ROB.Commit
+              required_connection: true
+            - name: arch_load
+              direction: output
+              event_type: Arch.Load
+              required_connection: false
+            - name: arch_store
+              direction: output
+              event_type: Arch.Store
+              required_connection: false
+            - name: arch_amo
+              direction: output
+              event_type: Arch.AMO
+              required_connection: false
+            - name: arch_lr
+              direction: output
+              event_type: Arch.LR
+              required_connection: false
+            - name: arch_sc
+              direction: output
+              event_type: Arch.SC
+              required_connection: false
+            - name: arch_sc_failure
+              direction: output
+              event_type: Arch.SCFailure
+              required_connection: false
+            - name: lrsc_pair
+              direction: output
+              event_type: Arch.LRSCPair
+              required_connection: false
+            - name: commit_load
+              direction: output
+              event_type: Arch.CommitLoad
+              required_connection: false
+            - name: commit_store
+              direction: output
+              event_type: Arch.CommitStore
+              required_connection: false
+            - name: commit_fence
+              direction: output
+              event_type: Arch.CommitFence
+              required_connection: false
+            public_event_types:
+            - Arch.AMO
+            - Arch.CommitFence
+            - Arch.CommitLoad
+            - Arch.CommitStore
+            - Arch.LR
+            - Arch.LRSCPair
+            - Arch.Load
+            - Arch.SC
+            - Arch.SCFailure
+            - Arch.Store
+            - ROB.Commit
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names: []
+            private_transformation_names:
+            - retire_amo_0
+            - retire_amo_1
+            - retire_amo_2
+            - retire_failed_sc_0
+            - retire_failed_sc_1
+            - retire_failed_sc_2
+            - retire_fence_0
+            - retire_fence_1
+            - retire_fence_2
+            - retire_load_0
+            - retire_load_1
+            - retire_load_2
+            - retire_lr_0
+            - retire_lr_1
+            - retire_lr_2
+            - retire_read_value_0
+            - retire_read_value_1
+            - retire_read_value_2
+            - retire_store_0
+            - retire_store_1
+            - retire_store_2
+            - retire_successful_sc_0
+            - retire_successful_sc_1
+            - retire_successful_sc_2
+            - retire_write_0
+            - retire_write_1
+            - retire_write_2
+      exclusions:
+      - cacheable ordinary load/store execution remains owned by the existing detailed
+        LSQ/L1/MSHR composition
+      - real L2 coherence is deferred to v0.18
+      composition:
+        name: boom-core-side-v0.17
+        resolved_roles:
+          tlb_harts:
+          - event_id: older_io
+            event_type: Core.MemoryInstruction
+            hart: 0
+          memory_ops:
+          - event_id: older_io
+            event_type: Core.MemoryInstruction
+            op_id: OLD
+            hart: 0
+            program_index: 0
+            rob_idx: 0
+            mem_kind: load
+            vaddr: va5
+            address: mmio0
+            vpn: 5
+            value: 9
+            write_value: 0
+            byte_mask: 255
+            cacheable: false
+            io_id: 0
+            reservation_id: h0_mmio0
+            uses_tlb: true
+            execution_class: mmio
+          - event_id: faulting_load
+            event_type: Core.MemoryInstruction
+            op_id: FAULT
+            hart: 0
+            program_index: 1
+            rob_idx: 1
+            mem_kind: load
+            vaddr: va6
+            address: bad
+            vpn: 6
+            value: 0
+            write_value: 0
+            byte_mask: 255
+            cacheable: true
+            io_id: 1
+            reservation_id: h0_bad
+            uses_tlb: true
+            execution_class: cache
+          - event_id: younger_load
+            event_type: Core.MemoryInstruction
+            op_id: YOUNG
+            hart: 0
+            program_index: 2
+            rob_idx: 2
+            mem_kind: load
+            vaddr: va7
+            address: y
+            vpn: 7
+            value: 0
+            write_value: 0
+            byte_mask: 255
+            cacheable: true
+            io_id: 2
+            reservation_id: h0_y
+            uses_tlb: false
+            execution_class: cache
+          tlb_ops:
+          - event_id: older_io
+            event_type: Core.MemoryInstruction
+            op_id: OLD
+            hart: 0
+            program_index: 0
+            rob_idx: 0
+            mem_kind: load
+            vaddr: va5
+            address: mmio0
+            vpn: 5
+            value: 9
+            write_value: 0
+            byte_mask: 255
+            cacheable: false
+            io_id: 0
+            reservation_id: h0_mmio0
+            execution_class: mmio
+          - event_id: faulting_load
+            event_type: Core.MemoryInstruction
+            op_id: FAULT
+            hart: 0
+            program_index: 1
+            rob_idx: 1
+            mem_kind: load
+            vaddr: va6
+            address: bad
+            vpn: 6
+            value: 0
+            write_value: 0
+            byte_mask: 255
+            cacheable: true
+            io_id: 1
+            reservation_id: h0_bad
+            execution_class: cache
+          atomic_ops: []
+          mmio_ops:
+          - event_id: older_io
+            event_type: Core.MemoryInstruction
+            op_id: OLD
+            hart: 0
+            program_index: 0
+            rob_idx: 0
+            mem_kind: load
+            address: mmio0
+            value: 9
+            write_value: 0
+            byte_mask: 255
+            io_id: 0
+          lr_ops: []
+          sc_ops: []
+          fence_ops: []
+          pages:
+          - event_id: page_bad
+            event_type: Core.PageMap
+            hart: 0
+            entry_id: h0_v6
+            vpn: 6
+            paddr: bad
+            initial_valid: false
+            accessible: false
+          - event_id: page_ok
+            event_type: Core.PageMap
+            hart: 0
+            entry_id: h0_v5
+            vpn: 5
+            paddr: mmio0
+            initial_valid: true
+            accessible: true
+          sfences: []
+          reservation_lines: []
+          probe_events: []
+          branch_events: []
+          ordered_markers: []
+        modules:
+        - boom_v4_lsu_translation
+        - boom_v4_nbdtlb
+        - bounded_ptw_environment
+        - atomic_core
+        - reservation_bridge
+        - mmio_core
+        - fence_core
+        - rob_core
+        - retire_core
+        connections:
+        - name: lsu_request_to_nbdtlb
+          mode: shared_event
+          source: boom_v4_lsu_translation.tlb_request
+          target: boom_v4_nbdtlb.request
+        - name: nbdtlb_response_to_lsu
+          mode: shared_event
+          source: boom_v4_nbdtlb.response
+          target: boom_v4_lsu_translation.tlb_response
+        - name: nbdtlb_ready_to_lsu_retry
+          mode: shared_event
+          source: boom_v4_nbdtlb.miss_ready
+          target: boom_v4_lsu_translation.miss_ready
+        - name: nbdtlb_request_to_ptw
+          mode: shared_event
+          source: boom_v4_nbdtlb.ptw_request
+          target: bounded_ptw_environment.ptw_request
+        - name: ptw_result_to_nbdtlb
+          mode: shared_event
+          source: bounded_ptw_environment.ptw_result
+          target: boom_v4_nbdtlb.ptw_result
+        - name: tlb_translation_to_atomic
+          mode: shared_event
+          source: boom_v4_lsu_translation.translated_memory
+          target: atomic_core.translated_memory
+        - name: tlb_translation_to_mmio
+          mode: shared_event
+          source: boom_v4_lsu_translation.translated_memory
+          target: mmio_core.translated_memory
+        - name: probe_to_atomic_reservation
+          mode: shared_event
+          source: reservation_bridge.reservation_invalidate
+          target: atomic_core.reservation_invalidate
+        - name: tlb_fault_to_rob
+          mode: shared_event
+          source: boom_v4_lsu_translation.memory_fault
+          target: rob_core.memory_fault
+        - name: rob_commit_to_retire
+          mode: shared_event
+          source: rob_core.commit
+          target: retire_core.commit
+        generated_transformations: []
+    selected_slots:
+    - lsu_tlb_request_initial_0
+    - translated_hit_0
+    - lsu_tlb_request_initial_1
+    - lsu_tlb_retry_1
+    - lsu_tlb_request_retry_1
+    - tlb_fault_1
+    - tlb_decision_initial_1
+    - tlb_response_initial_1
+    - tlb_decision_initial_2
+    - tlb_response_initial_2
+    - tlb_miss_2
+    - ptw_request_2
+    - tlb_refill_2
+    - tlb_miss_ready_2
+    - tlb_decision_retry_2
+    - tlb_response_retry_2
+    - ptw_result_2
+    - core_io_request_0
+    - core_io_access_0
+    - core_io_ack_0
+    - core_io_response_0
+    - mmio_complete_0
+    - rob_allocate_0
+    - rob_writeback_0
+    - rob_commit_0
+    - rob_allocate_1
+    - rob_exception_record_1
+    - rob_precise_exception_1
+    - rob_exception_squash_1
+    - rob_allocate_2
+    - rob_exception_squash_2
+    - retired_arch_load_0
+    - retired_commit_load_0
+    state:
+      initial:
+        NBDTLB[0].state: READY
+        NBDTLB.entry[h0_v6].valid: false
+        NBDTLB.entry[h0_v5].valid: true
+        IOMSHR.busy: false
+        ROB.entry[OLD].allocated: false
+        ROB.entry[OLD].completed: false
+        ROB.entry[OLD].faulted: false
+        ROB.entry[OLD].squashed: false
+        ROB.entry[OLD].committed: false
+        ROB.entry[FAULT].allocated: false
+        ROB.entry[FAULT].completed: false
+        ROB.entry[FAULT].faulted: false
+        ROB.entry[FAULT].squashed: false
+        ROB.entry[FAULT].committed: false
+        ROB.entry[YOUNG].allocated: false
+        ROB.entry[YOUNG].completed: false
+        ROB.entry[YOUNG].faulted: false
+        ROB.entry[YOUNG].squashed: false
+        ROB.entry[YOUNG].committed: false
+      final:
+        NBDTLB[0].state: READY
+        NBDTLB.entry[h0_v6].valid: true
+        NBDTLB.entry[h0_v5].valid: true
+        IOMSHR.busy: false
+        ROB.entry[OLD].allocated: true
+        ROB.entry[OLD].completed: true
+        ROB.entry[OLD].faulted: false
+        ROB.entry[OLD].squashed: false
+        ROB.entry[OLD].committed: true
+        ROB.entry[FAULT].allocated: true
+        ROB.entry[FAULT].completed: false
+        ROB.entry[FAULT].faulted: true
+        ROB.entry[FAULT].squashed: true
+        ROB.entry[FAULT].committed: false
+        ROB.entry[YOUNG].allocated: true
+        ROB.entry[YOUNG].completed: false
+        ROB.entry[YOUNG].faulted: false
+        ROB.entry[YOUNG].squashed: true
+        ROB.entry[YOUNG].committed: false
+      steps:
+      - cycle: 1
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: false
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: false
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: false
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: false
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: false
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.rob_allocates_memory_op_0.forward.0.older_io.instance.0.rob_allocate_0.requirement.0
+        active_updates:
+        - transformation.rob_allocates_memory_op_0.forward.0.older_io.instance.0.rob_allocate_0.update.0
+        changes:
+        - state: ROB.entry[OLD].allocated
+          before: false
+          after: true
+          origins:
+          - transformation.rob_allocates_memory_op_0.forward.0.older_io.instance.0.rob_allocate_0.update.0
+      - cycle: 2
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: false
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: false
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: false
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.initial_request_reads_entry_1.forward.0.lsu_tlb_request_initial_0.instance.2.tlb_decision_initial_1.requirement.0
+        - transformation.rob_allocates_memory_op_1.forward.1.faulting_load.instance.1.rob_allocate_1.requirement.0
+        active_updates:
+        - transformation.rob_allocates_memory_op_1.forward.1.faulting_load.instance.1.rob_allocate_1.update.0
+        changes:
+        - state: ROB.entry[FAULT].allocated
+          before: false
+          after: true
+          origins:
+          - transformation.rob_allocates_memory_op_1.forward.1.faulting_load.instance.1.rob_allocate_1.update.0
+      - cycle: 3
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: false
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.initial_request_reads_entry_2.forward.2.lsu_tlb_request_initial_1.instance.4.tlb_decision_initial_2.requirement.0
+        - transformation.rob_allocates_memory_op_2.forward.2.younger_load.instance.2.rob_allocate_2.requirement.0
+        active_updates:
+        - transformation.rob_allocates_memory_op_2.forward.2.younger_load.instance.2.rob_allocate_2.update.0
+        changes:
+        - state: ROB.entry[YOUNG].allocated
+          before: false
+          after: true
+          origins:
+          - transformation.rob_allocates_memory_op_2.forward.2.younger_load.instance.2.rob_allocate_2.update.0
+      - cycle: 5
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: REQUEST
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: true
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.miss_captures_refill_tag_2.forward.4.tlb_response_initial_2.instance.2.tlb_miss_2.requirement.0
+        - transformation.uncacheable_routes_to_iomshr_0.forward.0.translated_hit_0.instance.0.core_io_request_0.requirement.0
+        active_updates:
+        - transformation.uncacheable_routes_to_iomshr_0.forward.0.translated_hit_0.instance.0.core_io_request_0.update.0
+        - transformation.miss_captures_refill_tag_2.forward.4.tlb_response_initial_2.instance.2.tlb_miss_2.update.0
+        changes:
+        - state: IOMSHR.busy
+          before: false
+          after: true
+          origins:
+          - transformation.uncacheable_routes_to_iomshr_0.forward.0.translated_hit_0.instance.0.core_io_request_0.update.0
+        - state: NBDTLB[0].state
+          before: READY
+          after: REQUEST
+          origins:
+          - transformation.miss_captures_refill_tag_2.forward.4.tlb_response_initial_2.instance.2.tlb_miss_2.update.0
+      - cycle: 6
+        before:
+          NBDTLB[0].state: REQUEST
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: true
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: WAIT
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: true
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.miss_issues_ptw_request_2.forward.2.tlb_miss_2.instance.2.ptw_request_2.requirement.0
+        active_updates:
+        - transformation.miss_issues_ptw_request_2.forward.2.tlb_miss_2.instance.2.ptw_request_2.update.0
+        changes:
+        - state: NBDTLB[0].state
+          before: REQUEST
+          after: WAIT
+          origins:
+          - transformation.miss_issues_ptw_request_2.forward.2.tlb_miss_2.instance.2.ptw_request_2.update.0
+      - cycle: 8
+        before:
+          NBDTLB[0].state: WAIT
+          NBDTLB.entry[h0_v6].valid: false
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: true
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.ptw_result_refills_entry_2.forward.2.ptw_result_2.instance.2.tlb_refill_2.requirement.0
+        - transformation.iomshr_load_response_0.forward.0.core_io_ack_0.instance.0.core_io_response_0.requirement.0
+        active_updates:
+        - transformation.iomshr_load_response_0.forward.0.core_io_ack_0.instance.0.core_io_response_0.update.0
+        - transformation.ptw_result_refills_entry_2.forward.2.ptw_result_2.instance.2.tlb_refill_2.update.0
+        - transformation.ptw_result_refills_entry_2.forward.2.ptw_result_2.instance.2.tlb_refill_2.update.1
+        changes:
+        - state: IOMSHR.busy
+          before: true
+          after: false
+          origins:
+          - transformation.iomshr_load_response_0.forward.0.core_io_ack_0.instance.0.core_io_response_0.update.0
+        - state: NBDTLB.entry[h0_v6].valid
+          before: false
+          after: true
+          origins:
+          - transformation.ptw_result_refills_entry_2.forward.2.ptw_result_2.instance.2.tlb_refill_2.update.0
+        - state: NBDTLB[0].state
+          before: WAIT
+          after: READY
+          origins:
+          - transformation.ptw_result_refills_entry_2.forward.2.ptw_result_2.instance.2.tlb_refill_2.update.1
+      - cycle: 9
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.ready_after_refill_2.forward.2.tlb_refill_2.instance.2.tlb_miss_ready_2.requirement.0
+        active_updates: []
+        changes: []
+      - cycle: 10
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: false
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.rob_captures_completion_0.forward.0.mmio_complete_0.instance.0.rob_writeback_0.requirement.0
+        - transformation.rob_captures_completion_0.forward.0.mmio_complete_0.instance.0.rob_writeback_0.requirement.1
+        active_updates:
+        - transformation.rob_captures_completion_0.forward.0.mmio_complete_0.instance.0.rob_writeback_0.update.0
+        changes:
+        - state: ROB.entry[OLD].completed
+          before: false
+          after: true
+          origins:
+          - transformation.rob_captures_completion_0.forward.0.mmio_complete_0.instance.0.rob_writeback_0.update.0
+      - cycle: 11
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: false
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.rob_commits_completed_op_0.forward.0.mmio_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.0
+        - transformation.rob_commits_completed_op_0.forward.0.mmio_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.1
+        - transformation.rob_commits_completed_op_0.forward.0.mmio_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.2
+        - transformation.rob_commits_completed_op_0.forward.0.mmio_complete_0,rob_writeback_0.instance.0.rob_commit_0.requirement.3
+        active_updates:
+        - transformation.rob_commits_completed_op_0.forward.0.mmio_complete_0,rob_writeback_0.instance.0.rob_commit_0.update.0
+        changes:
+        - state: ROB.entry[OLD].committed
+          before: false
+          after: true
+          origins:
+          - transformation.rob_commits_completed_op_0.forward.0.mmio_complete_0,rob_writeback_0.instance.0.rob_commit_0.update.0
+      - cycle: 12
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.retry_request_reads_refilled_entry_2.forward.3.lsu_tlb_request_retry_1.instance.5.tlb_decision_retry_2.requirement.0
+        active_updates: []
+        changes: []
+      - cycle: 15
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: false
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: true
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.rob_records_memory_fault_1.forward.1.tlb_fault_1.instance.1.rob_exception_record_1.requirement.0
+        active_updates:
+        - transformation.rob_records_memory_fault_1.forward.1.tlb_fault_1.instance.1.rob_exception_record_1.update.0
+        changes:
+        - state: ROB.entry[FAULT].faulted
+          before: false
+          after: true
+          origins:
+          - transformation.rob_records_memory_fault_1.forward.1.tlb_fault_1.instance.1.rob_exception_record_1.update.0
+      - cycle: 16
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: true
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: true
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        active_requirements:
+        - transformation.rob_raises_precise_exception_1.forward.1.rob_exception_record_1.instance.1.rob_precise_exception_1.requirement.0
+        - transformation.rob_raises_precise_exception_1.forward.1.rob_exception_record_1.instance.1.rob_precise_exception_1.requirement.1
+        - transformation.precise_exception_waits_for_older_1.forward.1.rob_precise_exception_1.instance.0.no-output.requirement.0
+        active_updates: []
+        changes: []
+      - cycle: 17
+        before:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: true
+          ROB.entry[FAULT].squashed: false
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: false
+          ROB.entry[YOUNG].committed: false
+        after:
+          NBDTLB[0].state: READY
+          NBDTLB.entry[h0_v6].valid: true
+          NBDTLB.entry[h0_v5].valid: true
+          IOMSHR.busy: false
+          ROB.entry[OLD].allocated: true
+          ROB.entry[OLD].completed: true
+          ROB.entry[OLD].faulted: false
+          ROB.entry[OLD].squashed: false
+          ROB.entry[OLD].committed: true
+          ROB.entry[FAULT].allocated: true
+          ROB.entry[FAULT].completed: false
+          ROB.entry[FAULT].faulted: true
+          ROB.entry[FAULT].squashed: true
+          ROB.entry[FAULT].committed: false
+          ROB.entry[YOUNG].allocated: true
+          ROB.entry[YOUNG].completed: false
+          ROB.entry[YOUNG].faulted: false
+          ROB.entry[YOUNG].squashed: true
+          ROB.entry[YOUNG].committed: false
+        active_requirements: []
+        active_updates:
+        - transformation.squash_marks_entry_1.forward.2.rob_exception_squash_1.instance.0.no-output.update.0
+        - transformation.squash_marks_entry_2.forward.4.rob_exception_squash_2.instance.0.no-output.update.0
+        changes:
+        - state: ROB.entry[FAULT].squashed
+          before: false
+          after: true
+          origins:
+          - transformation.squash_marks_entry_1.forward.2.rob_exception_squash_1.instance.0.no-output.update.0
+        - state: ROB.entry[YOUNG].squashed
+          before: false
+          after: true
+          origins:
+          - transformation.squash_marks_entry_2.forward.4.rob_exception_squash_2.instance.0.no-output.update.0
+    active_transformations:
+    - name: transformation.hit_response_translates_0.activation.2.0
+      transformation: hit_response_translates_0
+      binding:
+        response: tlb_response_initial_1
+        translated: translated_hit_0
+    - name: transformation.initial_decision_returns_response_1.activation.2.2
+      transformation: initial_decision_returns_response_1
+      binding:
+        decision: tlb_decision_initial_1
+        response: tlb_response_initial_1
+    - name: transformation.initial_decision_returns_response_2.activation.4.4
+      transformation: initial_decision_returns_response_2
+      binding:
+        decision: tlb_decision_initial_2
+        response: tlb_response_initial_2
+    - name: transformation.initial_request_reads_entry_1.activation.0.2
+      transformation: initial_request_reads_entry_1
+      binding:
+        request: lsu_tlb_request_initial_0
+        decision: tlb_decision_initial_1
+    - name: transformation.initial_request_reads_entry_2.activation.2.4
+      transformation: initial_request_reads_entry_2
+      binding:
+        request: lsu_tlb_request_initial_1
+        decision: tlb_decision_initial_2
+    - name: transformation.iomshr_access_0.activation.0.0
+      transformation: iomshr_access_0
+      binding:
+        request: core_io_request_0
+        access: core_io_access_0
+    - name: transformation.iomshr_ack_0.activation.0.0
+      transformation: iomshr_ack_0
+      binding:
+        access: core_io_access_0
+        ack: core_io_ack_0
+    - name: transformation.iomshr_load_completion_0.activation.0.0
+      transformation: iomshr_load_completion_0
+      binding:
+        response: core_io_response_0
+        complete: mmio_complete_0
+    - name: transformation.iomshr_load_response_0.activation.0.0
+      transformation: iomshr_load_response_0
+      binding:
+        ack: core_io_ack_0
+        response: core_io_response_0
+    - name: transformation.lsu_issues_initial_tlb_request_0.activation.0.0
+      transformation: lsu_issues_initial_tlb_request_0
+      binding:
+        instruction: older_io
+        request: lsu_tlb_request_initial_0
+    - name: transformation.lsu_issues_initial_tlb_request_1.activation.1.2
+      transformation: lsu_issues_initial_tlb_request_1
+      binding:
+        instruction: faulting_load
+        request: lsu_tlb_request_initial_1
+    - name: transformation.lsu_reissues_tlb_request_1.activation.1.3
+      transformation: lsu_reissues_tlb_request_1
+      binding:
+        retry: lsu_tlb_retry_1
+        request: lsu_tlb_request_retry_1
+    - name: transformation.miss_captures_refill_tag_2.activation.4.2
+      transformation: miss_captures_refill_tag_2
+      binding:
+        response: tlb_response_initial_2
+        miss: tlb_miss_2
+    - name: transformation.miss_issues_ptw_request_2.activation.2.2
+      transformation: miss_issues_ptw_request_2
+      binding:
+        miss: tlb_miss_2
+        request: ptw_request_2
+    - name: transformation.page_fault_response_reaches_rob_1.activation.5.1
+      transformation: page_fault_response_reaches_rob_1
+      binding:
+        response: tlb_response_retry_2
+        fault: tlb_fault_1
+    - name: transformation.precise_exception_squashes_younger_4.activation.1.2
+      transformation: precise_exception_squashes_younger_4
+      binding:
+        precise: rob_precise_exception_1
+        squash: rob_exception_squash_1
+    - name: transformation.precise_exception_squashes_younger_5.activation.1.4
+      transformation: precise_exception_squashes_younger_5
+      binding:
+        precise: rob_precise_exception_1
+        squash: rob_exception_squash_2
+    - name: transformation.precise_exception_waits_for_older_1.activation.1.0
+      transformation: precise_exception_waits_for_older_1
+      binding:
+        precise: rob_precise_exception_1
+    - name: transformation.ptw_result_refills_entry_2.activation.2.2
+      transformation: ptw_result_refills_entry_2
+      binding:
+        result: ptw_result_2
+        refill: tlb_refill_2
+    - name: transformation.ptw_returns_bounded_mapping_2.activation.2.2
+      transformation: ptw_returns_bounded_mapping_2
+      binding:
+        request: ptw_request_2
+        result: ptw_result_2
+    - name: transformation.ready_after_refill_2.activation.2.2
+      transformation: ready_after_refill_2
+      binding:
+        refill: tlb_refill_2
+        ready: tlb_miss_ready_2
+    - name: transformation.retire_load_0.activation.0.0
+      transformation: retire_load_0
+      binding:
+        commit: rob_commit_0
+        arch: retired_arch_load_0
+    - name: transformation.retire_read_value_0.activation.0.0
+      transformation: retire_read_value_0
+      binding:
+        commit: rob_commit_0
+        arch_commit: retired_commit_load_0
+    - name: transformation.retry_decision_returns_response_2.activation.5.5
+      transformation: retry_decision_returns_response_2
+      binding:
+        decision: tlb_decision_retry_2
+        response: tlb_response_retry_2
+    - name: transformation.retry_request_reads_refilled_entry_2.activation.3.5
+      transformation: retry_request_reads_refilled_entry_2
+      binding:
+        request: lsu_tlb_request_retry_1
+        decision: tlb_decision_retry_2
+    - name: transformation.rob_allocates_memory_op_0.activation.0.0
+      transformation: rob_allocates_memory_op_0
+      binding:
+        instruction: older_io
+        allocate: rob_allocate_0
+    - name: transformation.rob_allocates_memory_op_1.activation.1.1
+      transformation: rob_allocates_memory_op_1
+      binding:
+        instruction: faulting_load
+        allocate: rob_allocate_1
+    - name: transformation.rob_allocates_memory_op_2.activation.2.2
+      transformation: rob_allocates_memory_op_2
+      binding:
+        instruction: younger_load
+        allocate: rob_allocate_2
+    - name: transformation.rob_captures_completion_0.activation.0.0
+      transformation: rob_captures_completion_0
+      binding:
+        complete: mmio_complete_0
+        writeback: rob_writeback_0
+    - name: transformation.rob_commits_completed_op_0.activation.0.0
+      transformation: rob_commits_completed_op_0
+      binding:
+        complete: mmio_complete_0
+        writeback: rob_writeback_0
+        commit: rob_commit_0
+    - name: transformation.rob_raises_precise_exception_1.activation.1.1
+      transformation: rob_raises_precise_exception_1
+      binding:
+        record: rob_exception_record_1
+        precise: rob_precise_exception_1
+    - name: transformation.rob_records_memory_fault_1.activation.1.1
+      transformation: rob_records_memory_fault_1
+      binding:
+        fault: tlb_fault_1
+        record: rob_exception_record_1
+    - name: transformation.squash_marks_entry_1.activation.2.0
+      transformation: squash_marks_entry_1
+      binding:
+        squash: rob_exception_squash_1
+    - name: transformation.squash_marks_entry_2.activation.4.0
+      transformation: squash_marks_entry_2
+      binding:
+        squash: rob_exception_squash_2
+    - name: transformation.tlb_miss_round_trips_through_lsu_retry_queue_1.activation.18.1
+      transformation: tlb_miss_round_trips_through_lsu_retry_queue_1
+      binding:
+        response: tlb_response_initial_2
+        ready: tlb_miss_ready_2
+        retry: lsu_tlb_retry_1
+    - name: transformation.uncacheable_routes_to_iomshr_0.activation.0.0
+      transformation: uncacheable_routes_to_iomshr_0
+      binding:
+        translated: translated_hit_0
+        request: core_io_request_0
+events:
+- id: page_ok
+  type: Core.PageMap
+  occurs: true
+  fields:
+    map_id: P_OK
+    hart: 0
+    entry_id: h0_v5
+    vpn: 5
+    paddr: mmio0
+    initial_valid: true
+    accessible: true
+  cycle: 0
+- id: page_bad
+  type: Core.PageMap
+  occurs: true
+  fields:
+    map_id: P_BAD
+    hart: 0
+    entry_id: h0_v6
+    vpn: 6
+    paddr: bad
+    initial_valid: false
+    accessible: false
+  cycle: 0
+- id: older_io
+  type: Core.MemoryInstruction
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    vaddr: va5
+    address: mmio0
+    vpn: 5
+    value: 9
+    write_value: 0
+    byte_mask: 255
+    cacheable: false
+    io_id: 0
+    reservation_id: h0_mmio0
+    uses_tlb: true
+    execution_class: mmio
+  cycle: 0
+- id: faulting_load
+  type: Core.MemoryInstruction
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+    mem_kind: load
+    vaddr: va6
+    address: bad
+    vpn: 6
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    cacheable: true
+    io_id: 1
+    reservation_id: h0_bad
+    uses_tlb: true
+    execution_class: cache
+  cycle: 1
+- id: younger_load
+  type: Core.MemoryInstruction
+  occurs: true
+  fields:
+    op_id: YOUNG
+    hart: 0
+    program_index: 2
+    rob_idx: 2
+    mem_kind: load
+    vaddr: va7
+    address: y
+    vpn: 7
+    value: 0
+    write_value: 0
+    byte_mask: 255
+    cacheable: true
+    io_id: 2
+    reservation_id: h0_y
+    uses_tlb: false
+    execution_class: cache
+  cycle: 2
+- id: lsu_tlb_request_initial_0
+  type: TLB.Request
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    vpn: 5
+    attempt: 0
+  cycle: 1
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - tlb_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: translated_hit_0
+  type: Core.TranslatedMemory
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    vaddr: va5
+    address: mmio0
+    vpn: 5
+    value: 9
+    write_value: 0
+    byte_mask: 255
+    cacheable: false
+    io_id: 0
+    reservation_id: h0_mmio0
+    uses_tlb: true
+    execution_class: mmio
+    tlb_path: hit
+  cycle: 4
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - translated_memory
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: lsu_tlb_request_initial_1
+  type: TLB.Request
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    attempt: 0
+  cycle: 2
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - tlb_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: lsu_tlb_retry_1
+  type: TLB.Retry
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+  cycle: 10
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: lsu_tlb_request_retry_1
+  type: TLB.Request
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    attempt: 1
+  cycle: 11
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - tlb_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_fault_1
+  type: Core.MemoryFault
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+    vpn: 6
+    cause: page_fault
+  cycle: 14
+  annotations:
+    module_spec: boom_v4_lsu_translation
+    module_visibility: public
+    interface_ports:
+    - memory_fault
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_decision_initial_1
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    vpn: 5
+    attempt: 0
+    hit: true
+  cycle: 2
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_initial_1
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    vpn: 5
+    attempt: 0
+    paddr: mmio0
+    miss: false
+    page_fault: false
+    cacheable: false
+  cycle: 3
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_decision_initial_2
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    attempt: 0
+    hit: false
+  cycle: 3
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_initial_2
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    attempt: 0
+    paddr: bad
+    miss: true
+    page_fault: false
+    cacheable: true
+  cycle: 4
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_miss_2
+  type: TLB.Miss
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+  cycle: 5
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - miss
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ptw_request_2
+  type: TLB.PTWRequest
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+  cycle: 6
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - ptw_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_refill_2
+  type: TLB.Refill
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    paddr: bad
+  cycle: 8
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_miss_ready_2
+  type: TLB.MissReady
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+  cycle: 9
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - miss_ready
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_decision_retry_2
+  type: TLB.Decision
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    attempt: 1
+    hit: true
+  cycle: 12
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_response_retry_2
+  type: TLB.Response
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    attempt: 1
+    paddr: bad
+    miss: false
+    page_fault: true
+    cacheable: true
+  cycle: 13
+  annotations:
+    module_spec: boom_v4_nbdtlb
+    module_visibility: public
+    interface_ports:
+    - response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: ptw_result_2
+  type: TLB.PTWResult
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    vpn: 6
+    paddr: bad
+    fault: true
+  cycle: 7
+  annotations:
+    module_spec: bounded_ptw_environment
+    module_visibility: public
+    interface_ports:
+    - ptw_result
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: core_io_request_0
+  type: IOMSHR.Request
+  occurs: true
+  fields:
+    op_id: OLD
+    address: mmio0
+    mem_kind: load
+    value: 0
+    io_id: 0
+  cycle: 5
+  annotations:
+    module_spec: mmio_core
+    module_visibility: public
+    interface_ports:
+    - io_request
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: core_io_access_0
+  type: IOMSHR.MemAccess
+  occurs: true
+  fields:
+    op_id: OLD
+    address: mmio0
+    mem_kind: load
+    io_id: 0
+  cycle: 6
+  annotations:
+    module_spec: mmio_core
+    module_visibility: public
+    interface_ports:
+    - io_access
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: core_io_ack_0
+  type: IOMSHR.MemAck
+  occurs: true
+  fields:
+    op_id: OLD
+    value: 9
+    io_id: 0
+  cycle: 7
+  annotations:
+    module_spec: mmio_core
+    module_visibility: public
+    interface_ports:
+    - io_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: core_io_response_0
+  type: IOMSHR.Response
+  occurs: true
+  fields:
+    op_id: OLD
+    value: 9
+    io_id: 0
+  cycle: 8
+  annotations:
+    module_spec: mmio_core
+    module_visibility: public
+    interface_ports:
+    - io_response
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: mmio_complete_0
+  type: Core.MemoryComplete
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    address: mmio0
+    value: 9
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 9
+  annotations:
+    module_spec: mmio_core
+    module_visibility: public
+    interface_ports:
+    - memory_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_allocate_0
+  type: ROB.Allocate
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+  cycle: 1
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_writeback_0
+  type: ROB.Writeback
+  occurs: true
+  fields:
+    op_id: OLD
+    rob_idx: 0
+  cycle: 10
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_commit_0
+  type: ROB.Commit
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    program_index: 0
+    rob_idx: 0
+    mem_kind: load
+    address: mmio0
+    value: 9
+    write_value: 0
+    byte_mask: 255
+    success: true
+  cycle: 11
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - commit
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_allocate_1
+  type: ROB.Allocate
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    program_index: 1
+    rob_idx: 1
+  cycle: 2
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_exception_record_1
+  type: ROB.ExceptionRecord
+  occurs: true
+  fields:
+    op_id: FAULT
+    rob_idx: 1
+    cause: page_fault
+  cycle: 15
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_precise_exception_1
+  type: ROB.PreciseException
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    program_index: 1
+    cause: page_fault
+  cycle: 16
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - precise_exception
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_exception_squash_1
+  type: Core.SquashMemory
+  occurs: true
+  fields:
+    op_id: FAULT
+    hart: 0
+    program_index: 1
+    reason: precise_memory_exception
+  cycle: 17
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - squash_memory
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_allocate_2
+  type: ROB.Allocate
+  occurs: true
+  fields:
+    op_id: YOUNG
+    hart: 0
+    program_index: 2
+    rob_idx: 2
+  cycle: 3
+  annotations:
+    module_spec: rob_core
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: rob_exception_squash_2
+  type: Core.SquashMemory
+  occurs: true
+  fields:
+    op_id: YOUNG
+    hart: 0
+    program_index: 2
+    reason: precise_memory_exception
+  cycle: 17
+  annotations:
+    module_spec: rob_core
+    module_visibility: public
+    interface_ports:
+    - squash_memory
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_arch_load_0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: OLD
+    hart: 0
+    program_index: 0
+    address: mmio0
+    value: 9
+    byte_mask: 255
+  cycle: 12
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - arch_load
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retired_commit_load_0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: OLD
+    value: 9
+  cycle: 12
+  annotations:
+    module_spec: retire_core
+    module_visibility: public
+    interface_ports:
+    - commit_load
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

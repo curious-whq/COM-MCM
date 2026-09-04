@@ -1,0 +1,36 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-scalar-load-v0.5
+horizon: 40
+metadata:
+  version: 0.5.0
+  stage: 5
+  purpose: Executable aligned scalar load S0-S3 pipeline with translation, store forwarding, L1 response, replay, fault, and writeback behavior.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: scalar_load_pipeline, path: ../model/load/scalar_pipeline.yaml}
+connections: []
+roles:
+- name: load_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: load
+    fields.vector: false
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    vaddr: fields.vaddr
+    size: fields.size
+    byte_mask: fields.byte_mask
+    lq_idx: fields.lq_idx
+    tlb_instance: fields.tlb_instance
+    vpn: fields.vpn
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+constraints: []

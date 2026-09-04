@@ -1,0 +1,1235 @@
+schema_version: umcm.events.v0.18.0
+metadata:
+  model: xiangshan-kunminghu-v3-memory
+  version: 0.9.0
+  stage: 9
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  xscache_commit: dfd3edcf42b772e2a21178579b93bafc956f99b8
+  scope: Public hierarchy vocabulary plus executable core lifecycle, translation hierarchy, scalar load flow and queues, replay/prediction, scalar store flow, virtual/physical store queues, forwarding, split and drain through stage 9.
+events:
+
+# Architectural input/projection vocabulary.  These names follow the reusable
+# RVWMO graph vocabulary already supported by this repository.
+- name: Arch.InitWrite
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+- name: Arch.Load
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: &arch_read_fields
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+  - {name: acquire, sort: {name: bool}, required: false}
+  - {name: release, sort: {name: bool}, required: false}
+  - {name: rcsc, sort: {name: bool}, required: false}
+  - {name: memory_region, sort: {name: string}, required: false}
+  - {name: parent_op_id, sort: {name: op_id}, required: false}
+  - {name: element_index, sort: {name: int}, required: false}
+- name: Arch.LR
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: *arch_read_fields
+- name: Arch.Store
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: &arch_write_fields
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+  - {name: acquire, sort: {name: bool}, required: false}
+  - {name: release, sort: {name: bool}, required: false}
+  - {name: rcsc, sort: {name: bool}, required: false}
+  - {name: memory_region, sort: {name: string}, required: false}
+  - {name: parent_op_id, sort: {name: op_id}, required: false}
+  - {name: element_index, sort: {name: int}, required: false}
+- name: Arch.SC
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields: *arch_write_fields
+- name: Arch.AMO
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: write_value, sort: {name: value, width: 64}}
+  - {name: size, sort: {name: int}, required: false}
+  - {name: acquire, sort: {name: bool}, required: false}
+  - {name: release, sort: {name: bool}, required: false}
+  - {name: rcsc, sort: {name: bool}, required: false}
+  - {name: memory_region, sort: {name: string}, required: false}
+- name: Arch.Fence
+  module: Architecture
+  layer: architectural
+  visibility: architectural
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: fence_kind, sort: {name: string}}
+  - {name: predecessor_set, sort: {name: string}, required: false}
+  - {name: successor_set, sort: {name: string}, required: false}
+- name: Arch.CommitRead
+  module: CoreControl
+  layer: architectural-boundary
+  visibility: architectural
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: value, sort: {name: value, width: 64}}
+- name: Arch.AddressDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: &arch_edge_fields
+  - {name: source_op_id, sort: {name: op_id}}
+  - {name: target_op_id, sort: {name: op_id}}
+- name: Arch.DataDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: *arch_edge_fields
+- name: Arch.ControlDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: *arch_edge_fields
+- name: Arch.FenceOrder
+  module: Architecture
+  layer: synchronization
+  visibility: architectural
+  fields: *arch_edge_fields
+- name: Arch.LRSCPair
+  module: Architecture
+  layer: synchronization
+  visibility: architectural
+  fields: *arch_edge_fields
+- name: Arch.PipelineDependency
+  module: Architecture
+  layer: dependency
+  visibility: architectural
+  fields: *arch_edge_fields
+
+# Core/MemBlock boundary.
+- name: Core.MemoryInstruction
+  module: Backend
+  layer: dispatch-interface
+  visibility: public
+  fields: &core_instruction_fields
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: mem_kind, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: write_value, sort: {name: value, width: 64}}
+  - {name: size, sort: {name: int}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+  - {name: vector, sort: {name: bool}}
+- name: Core.MemoryIssue
+  module: CoreControl
+  layer: core-memory-interface
+  visibility: public
+  fields: &core_op_fields
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: mem_kind, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: address, sort: {name: address, width: 64}, required: false}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: write_value, sort: {name: value, width: 64}, required: false}
+  - {name: size, sort: {name: int}}
+  - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: lq_idx, sort: {name: int}, required: false}
+  - {name: sq_idx, sort: {name: int}, required: false}
+  - {name: vector, sort: {name: bool}, required: false}
+  - {name: parent_op_id, sort: {name: op_id}, required: false}
+  - {name: element_index, sort: {name: int}, required: false}
+  - {name: tlb_instance, sort: {name: string}, required: false}
+  - {name: vpn, sort: {name: int}, required: false}
+  - {name: asid, sort: {name: int}, required: false}
+  - {name: vmid, sort: {name: int}, required: false}
+  - {name: translation_stage, sort: {name: string}, required: false}
+- name: Core.MemoryCommit
+  module: CoreControl
+  layer: core-memory-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: mem_kind, sort: {name: string}}
+- name: Core.Redirect
+  module: CoreControl
+  layer: recovery
+  visibility: public
+  fields:
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: cause, sort: {name: string}}
+  - {name: source_op_id, sort: {name: op_id}, identity: true}
+  - {name: target_op_id, sort: {name: op_id}, required: false}
+  - {name: origin, sort: {name: string}, required: false}
+  - {name: flush_self, sort: {name: bool}, required: false}
+- name: Core.MemoryWriteback
+  module: MemorySubsystem
+  layer: core-memory-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: mem_kind, sort: {name: string}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: success, sort: {name: bool}}
+  - {name: parent_op_id, sort: {name: op_id}, required: false}
+  - {name: element_index, sort: {name: int}, required: false}
+- name: Core.MemoryFault
+  module: MemorySubsystem
+  layer: recovery
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: gpaddr, sort: {name: address, width: 64}, required: false}
+  - {name: cause, sort: {name: string}}
+  - {name: element_index, sort: {name: int}, required: false}
+- name: Core.MemoryViolation
+  module: LoadQueue
+  layer: recovery
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: source_op_id, sort: {name: op_id}, required: false}
+  - {name: cause, sort: {name: string}}
+  - {name: program_index, sort: {name: int}, required: false}
+  - {name: rob_idx, sort: {name: int}, required: false}
+  - {name: lq_idx, sort: {name: int}, required: false}
+  - {name: address, sort: {name: address, width: 64}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+- name: Core.SFence
+  module: CoreControl
+  layer: translation-control
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: vaddr, sort: {name: address, width: 64}, required: false}
+  - {name: vpn, sort: {name: int}}
+  - {name: asid, sort: {name: int}}
+  - {name: vmid, sort: {name: int}}
+  - {name: flush_kind, sort: {name: string}}
+- name: Core.FenceRequest
+  module: CoreControl
+  layer: ordering-control
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: fence_kind, sort: {name: string}}
+- name: Core.MemoryOrdered
+  module: SBuffer
+  layer: ordering-control
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: fence_kind, sort: {name: string}}
+
+# Translation boundaries.
+- name: MMU.PageMap
+  module: TranslationEnvironment
+  layer: configuration
+  visibility: public
+  fields:
+  - {name: map_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: entry_id, sort: {name: string}, identity: true}
+  - {name: tlb_instance, sort: {name: string}, identity: true}
+  - {name: vpn, sort: {name: int}, identity: true}
+  - {name: paddr, sort: {name: address, width: 64}}
+  - {name: asid, sort: {name: int}}
+  - {name: vmid, sort: {name: int}}
+  - {name: translation_stage, sort: {name: string}}
+  - {name: initial_valid, sort: {name: bool}}
+  - {name: gpaddr, sort: {name: address, width: 64}, required: false}
+  - {name: page_level, sort: {name: int}, required: false}
+  - {name: l2_initial_valid, sort: {name: bool}, required: false}
+  - {name: stage1_valid, sort: {name: bool}, required: false}
+  - {name: stage1_access_allowed, sort: {name: bool}, required: false}
+  - {name: stage2_valid, sort: {name: bool}, required: false}
+  - {name: stage2_access_allowed, sort: {name: bool}, required: false}
+- name: MMU.ProtectionMap
+  module: TranslationEnvironment
+  layer: configuration
+  visibility: public
+  fields:
+  - {name: region_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: lower, sort: {name: address, width: 64}}
+  - {name: upper, sort: {name: address, width: 64}}
+  - {name: access_kind, sort: {name: string}, identity: true}
+  - {name: pmp_allow, sort: {name: bool}}
+  - {name: pma_allow, sort: {name: bool}}
+  - {name: bitmap_enabled, sort: {name: bool}}
+  - {name: bitmap_allow, sort: {name: bool}}
+  - {name: mpt_enabled, sort: {name: bool}}
+  - {name: mpt_allow, sort: {name: bool}}
+  - {name: cacheable, sort: {name: bool}}
+  - {name: atomic, sort: {name: bool}}
+- name: MMU.TranslateRequest
+  module: MMU
+  layer: translation-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: tlb_instance, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: vpn, sort: {name: int}}
+  - {name: attempt, sort: {name: int}, identity: true}
+  - {name: access_kind, sort: {name: string}}
+  - {name: size, sort: {name: int}}
+  - {name: asid, sort: {name: int}}
+  - {name: vmid, sort: {name: int}}
+  - {name: translation_stage, sort: {name: string}}
+- name: MMU.TranslateResponse
+  module: DTLB
+  layer: translation-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: tlb_instance, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: vpn, sort: {name: int}}
+  - {name: attempt, sort: {name: int}, identity: true}
+  - {name: access_kind, sort: {name: string}}
+  - {name: asid, sort: {name: int}}
+  - {name: vmid, sort: {name: int}}
+  - {name: translation_stage, sort: {name: string}}
+  - {name: paddr, sort: {name: address, width: 64}, required: false}
+  - {name: hit_level, sort: {name: string}, required: false}
+  - {name: replay, sort: {name: bool}}
+  - {name: fault, sort: {name: bool}}
+  - {name: cause, sort: {name: string}, required: false}
+- name: MMU.PTWRequest
+  module: DTLB
+  layer: page-walk-interface
+  visibility: public
+  fields: &ptw_fields
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: tlb_instance, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: vpn, sort: {name: int}}
+  - {name: access_kind, sort: {name: string}}
+  - {name: asid, sort: {name: int}}
+  - {name: vmid, sort: {name: int}}
+  - {name: translation_stage, sort: {name: string}}
+- name: MMU.PTWResponse
+  module: TranslationBackend
+  layer: page-walk-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: tlb_instance, sort: {name: string}}
+  - {name: vaddr, sort: {name: address, width: 64}}
+  - {name: vpn, sort: {name: int}}
+  - {name: access_kind, sort: {name: string}}
+  - {name: asid, sort: {name: int}}
+  - {name: vmid, sort: {name: int}}
+  - {name: translation_stage, sort: {name: string}}
+  - {name: paddr, sort: {name: address, width: 64}, required: false}
+  - {name: gpaddr, sort: {name: address, width: 64}, required: false}
+  - {name: cacheable, sort: {name: bool}, required: false}
+  - {name: fault, sort: {name: bool}}
+  - {name: cause, sort: {name: string}, required: false}
+
+# Load/store queue and execution boundaries.
+- name: Load.PipelineUpdate
+  module: LoadPipeline
+  layer: load-queue-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: lq_idx, sort: {name: int}, identity: true}
+  - {name: address, sort: {name: address, width: 64}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: executed, sort: {name: bool}}
+  - {name: succeeded, sort: {name: bool}}
+  - {name: replay_cause, sort: {name: string}, required: false}
+  - {name: attempt, sort: {name: int}, required: false}
+  - {name: fault, sort: {name: bool}, required: false}
+- name: Load.ReplayIssue
+  module: LoadQueue
+  layer: load-queue-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: lq_idx, sort: {name: int}, identity: true}
+  - {name: cause, sort: {name: string}}
+  - {name: hart, sort: {name: int}, required: false}
+  - {name: program_index, sort: {name: int}, required: false}
+  - {name: rob_idx, sort: {name: int}, required: false}
+  - {name: vaddr, sort: {name: address, width: 64}, required: false}
+  - {name: attempt, sort: {name: int}, required: false}
+  - {name: priority, sort: {name: string}, required: false}
+- name: Load.ReplayWakeup
+  module: LoadQueue
+  layer: load-replay-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: cause, sort: {name: string}}
+  - {name: source, sort: {name: string}}
+- name: Load.OrderQuery
+  module: LoadPipeline
+  layer: load-order-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: lq_idx, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+  - {name: data_valid, sort: {name: bool}}
+  - {name: nc, sort: {name: bool}}
+- name: Store.AddressReady
+  module: StorePipeline
+  layer: store-queue-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: sq_idx, sort: {name: int}, identity: true}
+  - {name: hart, sort: {name: int}, required: false}
+  - {name: program_index, sort: {name: int}, required: false}
+  - {name: rob_idx, sort: {name: int}, required: false}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+- name: Store.DataReady
+  module: StorePipeline
+  layer: store-queue-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: sq_idx, sort: {name: int}, identity: true}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+- name: Store.Layout
+  module: StorePipeline
+  layer: store-queue-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: sq_idx, sort: {name: int}, identity: true}
+  - {name: kind, sort: {name: string}}
+  - {name: cross_page, sort: {name: bool}}
+  - {name: low_address, sort: {name: address, width: 64}}
+  - {name: high_address, sort: {name: address, width: 64}}
+  - {name: low_value, sort: {name: value, width: 64}}
+  - {name: high_value, sort: {name: value, width: 64}}
+  - {name: low_mask, sort: {name: bv, width: 64}}
+  - {name: high_mask, sort: {name: bv, width: 64}}
+- name: Store.UnalignedTailReady
+  module: StorePipeline
+  layer: store-queue-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: sq_idx, sort: {name: int}, identity: true}
+  - {name: address, sort: {name: address, width: 64}}
+
+# Memory-dependence predictor boundary.
+- name: MDP.EntryConfig
+  module: CoreControl
+  layer: predictor-configuration
+  visibility: public
+  fields:
+  - {name: entry_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: pc, sort: {name: int}, identity: true}
+  - {name: initial_valid, sort: {name: bool}}
+  - {name: initial_ssid, sort: {name: int}}
+  - {name: initial_strict, sort: {name: bool}}
+- name: MDP.Train
+  module: CoreControl
+  layer: predictor-update
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: load_pc, sort: {name: int}}
+  - {name: store_pc, sort: {name: int}}
+  - {name: load_op_id, sort: {name: op_id}, required: false}
+  - {name: store_op_id, sort: {name: op_id}, required: false}
+- name: MDP.Lookup
+  module: CoreControl
+  layer: predictor-lookup
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}}
+  - {name: program_index, sort: {name: int}}
+  - {name: rob_idx, sort: {name: int}}
+  - {name: pc, sort: {name: int}}
+  - {name: mem_kind, sort: {name: string}}
+- name: MDP.WaitPrediction
+  module: CoreControl
+  layer: predictor-dispatch
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: source_op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: pc, sort: {name: int}}
+  - {name: ssid, sort: {name: int}}
+  - {name: wait_for_rob_idx, sort: {name: int}}
+  - {name: strict, sort: {name: bool}}
+- name: Store.ForwardQuery
+  module: LoadPipeline
+  layer: load-store-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: hart, sort: {name: int}, required: false}
+  - {name: program_index, sort: {name: int}, required: false}
+  - {name: lq_idx, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+- name: Store.ForwardResponse
+  module: StoreQueue
+  layer: load-store-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: source_op_id, sort: {name: op_id}, required: false}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+  - {name: match, sort: {name: bool}}
+  - {name: data_invalid, sort: {name: bool}}
+- name: Store.Drain
+  module: StoreQueue
+  layer: store-buffer-interface
+  visibility: public
+  fields:
+  - {name: op_id, sort: {name: op_id}, identity: true}
+  - {name: beat, sort: {name: int}, identity: true, required: false}
+  - {name: hart, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+  - {name: last, sort: {name: bool}, required: false}
+  - {name: cross_page, sort: {name: bool}, required: false}
+
+# Core-side cache and uncached request boundaries.
+- name: L1.Request
+  module: L1DInterface
+  layer: l1-interface
+  visibility: public
+  fields: &request_fields
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: request_kind, sort: {name: string}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: size, sort: {name: int}}
+- name: L1.Response
+  module: L1D
+  layer: l1-interface
+  visibility: public
+  fields: &response_fields
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: response_kind, sort: {name: string}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: success, sort: {name: bool}}
+  - {name: denied, sort: {name: bool}, required: false}
+  - {name: corrupt, sort: {name: bool}, required: false}
+- name: L1.Nack
+  module: L1D
+  layer: l1-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: op_id, sort: {name: op_id}}
+  - {name: cause, sort: {name: string}}
+- name: L1.ReleaseNotice
+  module: L1D
+  layer: load-order-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_op_id, sort: {name: op_id}, required: false}
+  - {name: hart, sort: {name: int}, required: false}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: dirty, sort: {name: bool}}
+- name: Uncache.Request
+  module: UncacheInterface
+  layer: uncache-interface
+  visibility: public
+  fields: *request_fields
+- name: Uncache.Response
+  module: Uncache
+  layer: uncache-interface
+  visibility: public
+  fields: *response_fields
+
+# L1-L2 TileLink channels.  Channel events remain public; channel arbitration
+# and cache pipeline decisions remain private to their owners.
+- name: TL.A
+  module: L1D
+  layer: l1-l2-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: opcode, sort: {name: string}}
+  - {name: param, sort: {name: string}, required: false}
+  - {name: size, sort: {name: int}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+- name: TL.B
+  module: CoupledL2
+  layer: l1-l2-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: opcode, sort: {name: string}}
+  - {name: param, sort: {name: string}, required: false}
+  - {name: size, sort: {name: int}}
+- name: TL.C
+  module: L1D
+  layer: l1-l2-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: opcode, sort: {name: string}}
+  - {name: param, sort: {name: string}, required: false}
+  - {name: size, sort: {name: int}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+- name: TL.D
+  module: CoupledL2
+  layer: l1-l2-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: sink_id, sort: {name: int}, required: false}
+  - {name: opcode, sort: {name: string}}
+  - {name: param, sort: {name: string}, required: false}
+  - {name: size, sort: {name: int}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: denied, sort: {name: bool}, required: false}
+  - {name: corrupt, sort: {name: bool}, required: false}
+- name: TL.E
+  module: L1D
+  layer: l1-l2-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: sink_id, sort: {name: int}}
+
+# L2-OpenLLC CHI channels, named from the L2 request-node perspective.
+- name: CHI.TXREQ
+  module: CoupledL2
+  layer: l2-l3-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: target_id, sort: {name: int}, required: false}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: opcode, sort: {name: string}}
+- name: CHI.TXDAT
+  module: CoupledL2
+  layer: l2-l3-interface
+  visibility: public
+  fields: &chi_data_fields
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: target_id, sort: {name: int}, required: false}
+  - {name: data_id, sort: {name: int}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: response, sort: {name: string}, required: false}
+- name: CHI.TXRSP
+  module: CoupledL2
+  layer: l2-l3-interface
+  visibility: public
+  fields: &chi_response_fields
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: target_id, sort: {name: int}, required: false}
+  - {name: response, sort: {name: string}}
+  - {name: opcode, sort: {name: string}, required: false}
+- name: CHI.RXSNP
+  module: OpenLLC
+  layer: l2-l3-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_id, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: opcode, sort: {name: string}}
+- name: CHI.RXDAT
+  module: OpenLLC
+  layer: l2-l3-interface
+  visibility: public
+  fields: *chi_data_fields
+- name: CHI.RXRSP
+  module: OpenLLC
+  layer: l2-l3-interface
+  visibility: public
+  fields: *chi_response_fields
+
+# External memory and prefetch boundaries.
+- name: Memory.Request
+  module: MemoryHierarchy
+  layer: memory-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: request_kind, sort: {name: string}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: size, sort: {name: int}}
+  - {name: source_op_id, sort: {name: op_id}, required: false}
+  - {name: requester_id, sort: {name: int}, required: false}
+- name: Memory.Response
+  module: MemoryEnvironment
+  layer: memory-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: response_kind, sort: {name: string}}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: success, sort: {name: bool}}
+  - {name: denied, sort: {name: bool}, required: false}
+  - {name: corrupt, sort: {name: bool}, required: false}
+- name: Memory.WriteVisible
+  module: MemoryEnvironment
+  layer: memory-observation
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_write_id, sort: {name: op_id}, required: false}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: value, sort: {name: value, width: 64}}
+  - {name: byte_mask, sort: {name: bv, width: 64}}
+- name: Prefetch.Train
+  module: MemoryHierarchy
+  layer: prefetch-interface
+  visibility: public
+  fields:
+  - {name: source_op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: source_level, sort: {name: string}}
+  - {name: hit, sort: {name: bool}, required: false}
+- name: Prefetch.Request
+  module: Prefetch
+  layer: prefetch-interface
+  visibility: public
+  fields:
+  - {name: txn_id, sort: {name: op_id}, identity: true}
+  - {name: source_op_id, sort: {name: op_id}}
+  - {name: hart, sort: {name: int}}
+  - {name: address, sort: {name: address, width: 64}}
+  - {name: target_level, sort: {name: string}}
+
+# Child-private vocabulary.  Stages 2 through 9 activate core lifecycle,
+# translation, scalar load/store pipelines, virtual queues, replay, and
+# memory-dependence predictor events while later-stage families remain
+# ownership reservations.
+- name: Core.DispatchAllocate
+  module: CoreControl
+  layer: control
+  visibility: internal
+  fields: &private_op_fields
+  - {name: op_id, sort: {name: op_id}, identity: true, required: false}
+  - {name: txn_id, sort: {name: op_id}, identity: true, required: false}
+  - {name: source_op_id, sort: {name: op_id}, required: false}
+  - {name: hart, sort: {name: int}, required: false}
+  - {name: program_index, sort: {name: int}, required: false}
+  - {name: rob_idx, sort: {name: int}, required: false}
+  - {name: lq_idx, sort: {name: int}, required: false}
+  - {name: sq_idx, sort: {name: int}, required: false}
+  - {name: target_op_id, sort: {name: op_id}, required: false}
+  - {name: mem_kind, sort: {name: string}, required: false}
+  - {name: vaddr, sort: {name: address, width: 64}, required: false}
+  - {name: address, sort: {name: address, width: 64}, required: false}
+  - {name: value, sort: {name: value, width: 64}, required: false}
+  - {name: size, sort: {name: int}, required: false}
+  - {name: byte_mask, sort: {name: bv, width: 64}, required: false}
+  - {name: success, sort: {name: bool}, required: false}
+  - {name: vpn, sort: {name: int}, required: false}
+  - {name: attempt, sort: {name: int}, required: false}
+  - {name: entry_id, sort: {name: string}, required: false}
+  - {name: tlb_instance, sort: {name: string}, required: false}
+  - {name: map_id, sort: {name: op_id}, required: false}
+  - {name: region_id, sort: {name: op_id}, required: false}
+  - {name: paddr, sort: {name: address, width: 64}, required: false}
+  - {name: gpaddr, sort: {name: address, width: 64}, required: false}
+  - {name: asid, sort: {name: int}, required: false}
+  - {name: vmid, sort: {name: int}, required: false}
+  - {name: access_kind, sort: {name: string}, required: false}
+  - {name: translation_stage, sort: {name: string}, required: false}
+  - {name: stage, sort: {name: string}, required: false}
+  - {name: walk_source, sort: {name: string}, required: false}
+  - {name: resolution_source, sort: {name: string}, required: false}
+  - {name: level, sort: {name: int}, required: false}
+  - {name: hit, sort: {name: bool}, required: false}
+  - {name: accepted, sort: {name: bool}, required: false}
+  - {name: allowed, sort: {name: bool}, required: false}
+  - {name: check_kind, sort: {name: string}, required: false}
+  - {name: cacheable, sort: {name: bool}, required: false}
+  - {name: fault, sort: {name: bool}, required: false}
+  - {name: fault_source, sort: {name: string}, required: false}
+  - {name: queue_kind, sort: {name: string}, required: false}
+  - {name: data_valid, sort: {name: bool}, required: false}
+  - {name: released, sort: {name: bool}, required: false}
+  - {name: path, sort: {name: string}, required: false}
+  - {name: data_source, sort: {name: string}, required: false}
+  - {name: replay_source, sort: {name: string}, required: false}
+  - {name: source, sort: {name: string}, required: false}
+  - {name: priority, sort: {name: string}, required: false}
+  - {name: blocking, sort: {name: bool}, required: false}
+  - {name: issued, sort: {name: bool}, required: false}
+  - {name: pc, sort: {name: int}, required: false}
+  - {name: load_pc, sort: {name: int}, required: false}
+  - {name: store_pc, sort: {name: int}, required: false}
+  - {name: ssid, sort: {name: int}, required: false}
+  - {name: strict, sort: {name: bool}, required: false}
+  - {name: wait_for_rob_idx, sort: {name: int}, required: false}
+  - {name: fence_id, sort: {name: op_id}, required: false}
+  - {name: cause, sort: {name: string}, required: false}
+  - {name: element_index, sort: {name: int}, required: false}
+- name: Core.ROBWriteback
+  module: CoreControl
+  layer: control
+  visibility: internal
+  fields: *private_op_fields
+- name: Core.ExceptionRecord
+  module: CoreControl
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: Core.ROBCommitSelect
+  module: CoreControl
+  layer: control
+  visibility: internal
+  fields: *private_op_fields
+- name: Core.RedirectApply
+  module: CoreControl
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBHit
+  module: DTLB
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBLookup
+  module: DTLB
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBInvalidate
+  module: DTLB
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBPTWDecision
+  module: DTLB
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBPTWDrop
+  module: DTLB
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBPendingFlush
+  module: DTLB
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBMiss
+  module: DTLB
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L1TLBRefill
+  module: DTLB
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L2TLBHit
+  module: TranslationBackend
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L2TLBLookup
+  module: TranslationBackend
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L2TLBRefill
+  module: TranslationBackend
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L2TLBInvalidate
+  module: TranslationBackend
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.L2TLBMiss
+  module: TranslationBackend
+  layer: translation
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.PTWWalk
+  module: TranslationBackend
+  layer: page-walk
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.PTWStageComplete
+  module: TranslationBackend
+  layer: page-walk
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.PTWResolved
+  module: TranslationBackend
+  layer: page-walk
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.TranslationFault
+  module: TranslationBackend
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: MMU.ProtectionCheck
+  module: TranslationBackend
+  layer: protection
+  visibility: internal
+  fields: *private_op_fields
+- name: Load.StageAdvance
+  module: LoadPipeline
+  layer: load-pipeline
+  visibility: internal
+  fields: *private_op_fields
+- name: Load.ForwardSelect
+  module: LoadPipeline
+  layer: load-pipeline
+  visibility: internal
+  fields: *private_op_fields
+- name: Load.ReplayDecision
+  module: LoadPipeline
+  layer: load-pipeline
+  visibility: internal
+  fields: *private_op_fields
+- name: Load.FaultDecision
+  module: LoadPipeline
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.Allocate
+  module: LoadQueue
+  layer: load-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.Deallocate
+  module: LoadQueue
+  layer: load-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.RARTrack
+  module: LoadQueue
+  layer: load-order
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.RAWTrack
+  module: LoadQueue
+  layer: load-order
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.RARViolation
+  module: LoadQueue
+  layer: load-order
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.RAWViolation
+  module: LoadQueue
+  layer: load-order
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.ReplayEnqueue
+  module: LoadQueue
+  layer: load-replay
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.ReplayReady
+  module: LoadQueue
+  layer: load-replay
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.ReplaySelect
+  module: LoadQueue
+  layer: load-replay
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.ReplayDeallocate
+  module: LoadQueue
+  layer: load-replay
+  visibility: internal
+  fields: *private_op_fields
+- name: LQ.ReplayRequeue
+  module: LoadQueue
+  layer: load-replay
+  visibility: internal
+  fields: *private_op_fields
+- name: MDP.SSITTrain
+  module: CoreControl
+  layer: memory-dependence-predictor
+  visibility: internal
+  fields: *private_op_fields
+- name: MDP.SSITRead
+  module: CoreControl
+  layer: memory-dependence-predictor
+  visibility: internal
+  fields: *private_op_fields
+- name: MDP.LFSTAllocate
+  module: CoreControl
+  layer: memory-dependence-predictor
+  visibility: internal
+  fields: *private_op_fields
+- name: MDP.LFSTRelease
+  module: CoreControl
+  layer: memory-dependence-predictor
+  visibility: internal
+  fields: *private_op_fields
+- name: Store.StageAdvance
+  module: StorePipeline
+  layer: store-pipeline
+  visibility: internal
+  fields: *private_op_fields
+- name: Store.ReplayDecision
+  module: StorePipeline
+  layer: store-pipeline
+  visibility: internal
+  fields: *private_op_fields
+- name: Store.FaultDecision
+  module: StorePipeline
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.Allocate
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.Retire
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.RedirectRecover
+  module: StoreQueue
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.PhysicalAllocate
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.AddressWrite
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.DataWrite
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.EntryReady
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.Commit
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.PhysicalCancel
+  module: StoreQueue
+  layer: recovery
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.UnalignedSplit
+  module: StoreQueue
+  layer: store-queue
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.ForwardSelect
+  module: StoreQueue
+  layer: store-forwarding
+  visibility: internal
+  fields: *private_op_fields
+- name: SQ.DrainSelect
+  module: StoreQueue
+  layer: store-drain
+  visibility: internal
+  fields: *private_op_fields
+- name: SBuffer.Merge
+  module: SBuffer
+  layer: store-buffer
+  visibility: internal
+  fields: *private_op_fields
+- name: SBuffer.DrainSelect
+  module: SBuffer
+  layer: store-buffer
+  visibility: internal
+  fields: *private_op_fields
+- name: Uncache.Arbitrate
+  module: Uncache
+  layer: uncache
+  visibility: internal
+  fields: *private_op_fields
+- name: Atomic.ReservationSet
+  module: Atomic
+  layer: atomic
+  visibility: internal
+  fields: *private_op_fields
+- name: Atomic.ReservationClear
+  module: Atomic
+  layer: atomic
+  visibility: internal
+  fields: *private_op_fields
+- name: Atomic.Serialize
+  module: Atomic
+  layer: atomic
+  visibility: internal
+  fields: *private_op_fields
+- name: L1.TagLookup
+  module: L1D
+  layer: l1
+  visibility: internal
+  fields: *private_op_fields
+- name: L1.DataLookup
+  module: L1D
+  layer: l1
+  visibility: internal
+  fields: *private_op_fields
+- name: L1.MSHRAllocate
+  module: L1D
+  layer: l1-miss
+  visibility: internal
+  fields: *private_op_fields
+- name: L1.Refill
+  module: L1D
+  layer: l1-miss
+  visibility: internal
+  fields: *private_op_fields
+- name: L1.ProbeProcess
+  module: L1D
+  layer: l1-coherence
+  visibility: internal
+  fields: *private_op_fields
+- name: L1.Writeback
+  module: L1D
+  layer: l1-coherence
+  visibility: internal
+  fields: *private_op_fields
+- name: L2.DirectoryLookup
+  module: CoupledL2
+  layer: l2
+  visibility: internal
+  fields: *private_op_fields
+- name: L2.MSHRAllocate
+  module: CoupledL2
+  layer: l2
+  visibility: internal
+  fields: *private_op_fields
+- name: L2.ProbeIssue
+  module: CoupledL2
+  layer: l2-coherence
+  visibility: internal
+  fields: *private_op_fields
+- name: L2.GrantIssue
+  module: CoupledL2
+  layer: l2-coherence
+  visibility: internal
+  fields: *private_op_fields
+- name: L3.DirectoryLookup
+  module: OpenLLC
+  layer: l3
+  visibility: internal
+  fields: *private_op_fields
+- name: L3.SnoopIssue
+  module: OpenLLC
+  layer: l3-coherence
+  visibility: internal
+  fields: *private_op_fields
+- name: L3.Refill
+  module: OpenLLC
+  layer: l3
+  visibility: internal
+  fields: *private_op_fields
+- name: L3.MemoryIssue
+  module: OpenLLC
+  layer: l3-memory
+  visibility: internal
+  fields: *private_op_fields
+- name: Prefetch.Generate
+  module: Prefetch
+  layer: prefetch
+  visibility: internal
+  fields: *private_op_fields
+- name: Prefetch.Filter
+  module: Prefetch
+  layer: prefetch
+  visibility: internal
+  fields: *private_op_fields

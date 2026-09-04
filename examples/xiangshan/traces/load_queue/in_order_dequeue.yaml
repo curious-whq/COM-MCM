@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 6, case: in-order-dequeue, expected: FEASIBLE}
+events:
+- id: older_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LHEAD, hart: 0, program_index: 0, rob_idx: 10, mem_kind: load, vaddr: 28672, address: 28672, value: 1, size: 8, byte_mask: 255, lq_idx: 10, vector: false}
+- id: younger_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 2
+  fields: {op_id: LTAIL, hart: 0, program_index: 1, rob_idx: 11, mem_kind: load, vaddr: 32768, address: 32768, value: 2, size: 8, byte_mask: 255, lq_idx: 11, vector: false}
+- id: younger_update
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 8
+  fields: {op_id: LTAIL, lq_idx: 11, address: 32768, byte_mask: 255, executed: true, succeeded: true, replay_cause: none, attempt: 0, fault: false}
+- id: older_update
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 12
+  fields: {op_id: LHEAD, lq_idx: 10, address: 28672, byte_mask: 255, executed: true, succeeded: true, replay_cause: none, attempt: 0, fault: false}
+constraints: []

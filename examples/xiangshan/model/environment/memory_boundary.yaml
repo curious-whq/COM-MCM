@@ -1,0 +1,17 @@
+schema_version: umcm.module.v0.15.0
+name: memory_environment
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: bounded external memory abstraction beyond OpenLLC/uncached ports
+ports:
+- {name: l3_request, direction: input, event_type: Memory.Request}
+- {name: uncache_request, direction: input, event_type: Memory.Request}
+- {name: response, direction: output, event_type: Memory.Response}
+- {name: write_visible, direction: output, event_type: Memory.WriteVisible, required_connection: false}
+internal_events: []
+slots: []
+state_variables: []
+transformations: []
+constraints: []

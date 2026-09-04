@@ -1,0 +1,502 @@
+schema_version: umcm.module.v0.15.0
+name: memory_dependency_predictor
+metadata:
+  version: 0.7.0
+  stage: 7
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/mem/mdp/StoreSet.scala:39-420,423-560
+  - src/main/scala/xiangshan/mem/mdp/WaitTable.scala:1-71
+  - src/main/scala/xiangshan/backend/ctrlblock/MemCtrl.scala:20-43
+  - src/main/scala/xiangshan/Parameters.scala:896-905
+  - src/main/scala/xiangshan/backend/dispatch/Dispatch.scala:778-792
+  - src/main/scala/xiangshan/backend/CtrlBlock.scala:226-268
+  scope: bounded SSIT training and lookup plus one relevant pending LFST store per dependency witness
+  hierarchy: SSIT training/read and LFST allocation/release are private; configuration, violation training, lookup, predicted wait, memory issue, and redirect are public boundaries
+  abstractions:
+  - MDP.EntryConfig finitely instantiates relevant hashed PC entries; initial_ssid is the stored SSID when valid and the precomputed XORFold candidate when invalid
+  - training implements allocate, attach-store, attach-load, lower-SSID merge, and same-set strict promotion exactly for one update epoch
+  - one relevant LFST pending store is expanded per witness; the physical LFST has 64 sets and width 2, while multi-store strictShouldWait is retained through SSIT strict but capacity counting is deferred
+  - prediction constrains issue order only and carries no address or value, so it cannot manufacture or alter a memory value
+  - WaitTable.scala exists in the tree but MemCtrl leaves it uninstantiated; StoreSetEnable is true and Dispatch uses LFST output, so no active WaitTable behavior is modeled
+ports:
+- {name: entry_config, direction: input, event_type: MDP.EntryConfig, required_connection: false}
+- {name: train, direction: input, event_type: MDP.Train, required_connection: false}
+- {name: lookup, direction: input, event_type: MDP.Lookup, required_connection: false}
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+- {name: wait_prediction, direction: output, event_type: MDP.WaitPrediction}
+internal_events:
+- MDP.SSITTrain
+- MDP.SSITRead
+- MDP.LFSTAllocate
+- MDP.LFSTRelease
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: mdp_entries
+  as: entry
+  include:
+    state_variables:
+    - {name: "SSIT[${entry.entry_id}].valid", sort: {name: bool}, initial: "${entry.initial_valid}"}
+    - {name: "SSIT[${entry.entry_id}].ssid", sort: {name: int}, initial: "${entry.initial_ssid}"}
+    - {name: "SSIT[${entry.entry_id}].strict", sort: {name: bool}, initial: "${entry.initial_strict}"}
+- over: mdp_lookups
+  as: lookup_op
+  include:
+    state_variables:
+    - {name: "LFST[${lookup_op.op_id}].pending", sort: {name: bool}, initial: false}
+
+repeat_product:
+- axes:
+  - {over: mdp_trainings, as: training}
+  - {over: mdp_entries, as: load_entry}
+  - {over: mdp_entries, as: store_entry}
+  include:
+    slots:
+    - id: ssit_allocate_${product.repeat_index}
+      type: MDP.SSITTrain
+      required: false
+      fields: &ssit_train_common
+        txn_id: ${training.txn_id}
+        hart: ${training.hart}
+        load_pc: ${training.load_pc}
+        store_pc: ${training.store_pc}
+        source_op_id: ${load_entry.entry_id}
+        target_op_id: ${store_entry.entry_id}
+        ssid: {$expr: {node: symbol, name: "ssit::${training.txn_id}::result_ssid", sort: {name: int}}}
+        strict: false
+        path: allocate
+    - id: ssit_attach_store_${product.repeat_index}
+      type: MDP.SSITTrain
+      required: false
+      fields: {<<: *ssit_train_common, path: attach_store}
+    - id: ssit_attach_load_${product.repeat_index}
+      type: MDP.SSITTrain
+      required: false
+      fields: {<<: *ssit_train_common, path: attach_load}
+    - id: ssit_merge_${product.repeat_index}
+      type: MDP.SSITTrain
+      required: false
+      fields: {<<: *ssit_train_common, path: merge}
+    - id: ssit_strict_${product.repeat_index}
+      type: MDP.SSITTrain
+      required: false
+      fields: {<<: *ssit_train_common, strict: true, path: strict}
+    transformations:
+    - name: unassigned_pair_allocates_store_set_${product.repeat_index}
+      inputs: [{role: training, type: MDP.Train}]
+      outputs: [{role: result, type: MDP.SSITTrain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - &training_pair_match
+          node: nary
+          op: and
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: training, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${training.txn_id}"}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: training, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${load_entry.hart}"}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: training, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store_entry.hart}"}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: training, field: load_pc, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${load_entry.pc}"}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: training, field: store_pc, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store_entry.pc}"}}
+        - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${load_entry.initial_valid}"}}
+        - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${store_entry.initial_valid}"}}
+      output_when: &allocate_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${training.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: allocate}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_entry.entry_id}"}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: result, field: ssid, sort: {name: int}}
+        right:
+          node: ite
+          condition: {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}, right: {node: literal, sort: {name: int}, value: "${store_entry.initial_ssid}"}}
+          then: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}
+          else: {node: literal, sort: {name: int}, value: "${store_entry.initial_ssid}"}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: training, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}}
+      state_updates:
+      - {state: "SSIT[${load_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${load_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${load_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "SSIT[${store_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${store_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${store_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [mdp, ssit, allocate, source:StoreSet.scala:176-245]
+    - name: assigned_load_attaches_store_${product.repeat_index}
+      inputs: [{role: training, type: MDP.Train}]
+      outputs: [{role: result, type: MDP.SSITTrain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *training_pair_match
+        - {node: literal, sort: {name: bool}, value: "${load_entry.initial_valid}"}
+        - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${store_entry.initial_valid}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${training.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: attach_store}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: ssid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: training, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}}
+      state_updates:
+      - {state: "SSIT[${store_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${store_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${store_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [mdp, ssit, attach-store, source:StoreSet.scala:246-258]
+    - name: assigned_store_attaches_load_${product.repeat_index}
+      inputs: [{role: training, type: MDP.Train}]
+      outputs: [{role: result, type: MDP.SSITTrain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *training_pair_match
+        - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${load_entry.initial_valid}"}}
+        - {node: literal, sort: {name: bool}, value: "${store_entry.initial_valid}"}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${training.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: attach_load}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: ssid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store_entry.initial_ssid}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: training, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}}
+      state_updates:
+      - {state: "SSIT[${load_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${load_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${load_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [mdp, ssit, attach-load, source:StoreSet.scala:259-271]
+    - name: different_store_sets_merge_to_lower_ssid_${product.repeat_index}
+      inputs: [{role: training, type: MDP.Train}]
+      outputs: [{role: result, type: MDP.SSITTrain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *training_pair_match
+        - {node: literal, sort: {name: bool}, value: "${load_entry.initial_valid}"}
+        - {node: literal, sort: {name: bool}, value: "${store_entry.initial_valid}"}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}, right: {node: literal, sort: {name: int}, value: "${store_entry.initial_ssid}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${training.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: merge}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_entry.entry_id}"}}
+      ensure:
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: result, field: ssid, sort: {name: int}}
+        right:
+          node: ite
+          condition: {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}, right: {node: literal, sort: {name: int}, value: "${store_entry.initial_ssid}"}}
+          then: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}
+          else: {node: literal, sort: {name: int}, value: "${store_entry.initial_ssid}"}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: training, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}}
+      state_updates:
+      - {state: "SSIT[${load_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${load_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${load_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "SSIT[${store_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${store_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${store_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [mdp, ssit, merge, source:StoreSet.scala:272-300]
+    - name: repeated_same_set_violation_promotes_strict_load_${product.repeat_index}
+      inputs: [{role: training, type: MDP.Train}]
+      outputs: [{role: result, type: MDP.SSITTrain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *training_pair_match
+        - {node: literal, sort: {name: bool}, value: "${load_entry.initial_valid}"}
+        - {node: literal, sort: {name: bool}, value: "${store_entry.initial_valid}"}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}, right: {node: literal, sort: {name: int}, value: "${store_entry.initial_ssid}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${training.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: strict}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: target_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: ssid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${load_entry.initial_ssid}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: training, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 3}}}
+      state_updates:
+      - {state: "SSIT[${load_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${load_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${load_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${store_entry.entry_id}].valid", at: result, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "SSIT[${store_entry.entry_id}].ssid", at: result, value: {node: event_field, event_id: result, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${store_entry.entry_id}].strict", at: result, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [mdp, ssit, strict, source:StoreSet.scala:301-330]
+
+- axes:
+  - {over: mdp_lookups, as: lookup_op}
+  - {over: mdp_entries, as: entry}
+  include:
+    slots:
+    - id: ssit_read_${product.repeat_index}
+      type: MDP.SSITRead
+      required: false
+      fields: &ssit_read_fields
+        op_id: ${lookup_op.op_id}
+        hart: ${lookup_op.hart}
+        program_index: ${lookup_op.program_index}
+        rob_idx: ${lookup_op.rob_idx}
+        pc: ${lookup_op.pc}
+        mem_kind: ${lookup_op.mem_kind}
+        source_op_id: ${entry.entry_id}
+        ssid: {$expr: {node: symbol, name: "ssit::${lookup_op.op_id}::ssid", sort: {name: int}}}
+        strict: {$expr: {node: symbol, name: "ssit::${lookup_op.op_id}::strict", sort: {name: bool}}}
+        path: hit
+    - id: lfst_allocate_${product.repeat_index}
+      type: MDP.LFSTAllocate
+      required: false
+      fields:
+        <<: *ssit_read_fields
+        wait_for_rob_idx: ${lookup_op.rob_idx}
+        path: dispatch_store
+    - id: lfst_issue_release_${product.repeat_index}
+      type: MDP.LFSTRelease
+      required: false
+      fields:
+        <<: *ssit_read_fields
+        wait_for_rob_idx: ${lookup_op.rob_idx}
+        path: store_issue
+    - id: lfst_redirect_release_${product.repeat_index}
+      type: MDP.LFSTRelease
+      required: false
+      fields:
+        <<: *ssit_read_fields
+        wait_for_rob_idx: ${lookup_op.rob_idx}
+        path: redirect
+    transformations:
+    - name: valid_ssit_entry_answers_lookup_${product.repeat_index}
+      inputs: [{role: lookup, type: MDP.Lookup}]
+      outputs: [{role: read, type: MDP.SSITRead}]
+      when: &lookup_matches_entry
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: pc, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${entry.pc}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: read, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "SSIT[${entry.entry_id}].valid", at: lookup, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [mdp, ssit, read, source:StoreSet.scala:103-154]
+    - name: ssit_read_returns_current_entry_${product.repeat_index}
+      inputs: [{role: read, type: MDP.SSITRead}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      state_requirements:
+      - {state: "SSIT[${entry.entry_id}].ssid", at: read, op: eq, value: {node: event_field, event_id: read, field: ssid, sort: {name: int}}}
+      - {state: "SSIT[${entry.entry_id}].strict", at: read, op: eq, value: {node: event_field, event_id: read, field: strict, sort: {name: bool}}}
+      tags: [mdp, ssit, state-read]
+    - name: store_lookup_allocates_lfst_${product.repeat_index}
+      inputs: [{role: read, type: MDP.SSITRead}]
+      outputs: [{role: allocate, type: MDP.LFSTAllocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: read, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: ssid, sort: {name: int}}, right: {node: event_field, event_id: read, field: ssid, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: read, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "LFST[${lookup_op.op_id}].pending", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "LFST[${lookup_op.op_id}].pending", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [mdp, lfst, allocate, source:StoreSet.scala:501-516]
+    - name: issuing_store_releases_lfst_${product.repeat_index}
+      inputs:
+      - {role: allocate, type: MDP.LFSTAllocate}
+      - {role: issue, type: Core.MemoryIssue}
+      outputs: [{role: release, type: MDP.LFSTRelease}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_issue}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "LFST[${lookup_op.op_id}].pending", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "LFST[${lookup_op.op_id}].pending", at: release, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [mdp, lfst, store-issue, release, source:StoreSet.scala:487-499]
+    - name: redirect_cancels_pending_lfst_store_${product.repeat_index}
+      inputs:
+      - {role: allocate, type: MDP.LFSTAllocate}
+      - {role: redirect, type: Core.Redirect}
+      outputs: [{role: release, type: MDP.LFSTRelease}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${lookup_op.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${lookup_op.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${lookup_op.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${entry.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: release, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      exact: true
+      tags: [mdp, lfst, redirect, source:StoreSet.scala:518-538]
+    - name: redirected_lfst_release_clears_pending_${product.repeat_index}
+      inputs: [{role: release, type: MDP.LFSTRelease}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${lookup_op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: release, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+      state_requirements:
+      - {state: "LFST[${lookup_op.op_id}].pending", at: release, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "LFST[${lookup_op.op_id}].pending", at: release, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [mdp, lfst, redirect, state-release]
+
+- axes:
+  - {over: mdp_lookups, as: store_lookup}
+  - {over: mdp_lookups, as: load_lookup}
+  include:
+    slots:
+    - id: wait_prediction_${product.repeat_index}
+      type: MDP.WaitPrediction
+      required: false
+      fields:
+        op_id: ${load_lookup.op_id}
+        source_op_id: ${store_lookup.op_id}
+        hart: ${load_lookup.hart}
+        pc: ${load_lookup.pc}
+        ssid: {$expr: {node: symbol, name: "mdp::${store_lookup.op_id}::${load_lookup.op_id}::ssid", sort: {name: int}}}
+        wait_for_rob_idx: ${store_lookup.rob_idx}
+        strict: {$expr: {node: symbol, name: "mdp::${load_lookup.op_id}::strict", sort: {name: bool}}}
+    transformations:
+    - name: matching_pending_store_predicts_load_wait_${product.repeat_index}
+      inputs:
+      - {role: store_read, type: MDP.SSITRead}
+      - {role: allocate, type: MDP.LFSTAllocate}
+      - {role: load_read, type: MDP.SSITRead}
+      outputs: [{role: prediction, type: MDP.WaitPrediction}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: store_read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_lookup.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_lookup.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: load_read, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_lookup.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store_read, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: load_read, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store_read, field: ssid, sort: {name: int}}, right: {node: event_field, event_id: load_read, field: ssid, sort: {name: int}}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${store_lookup.program_index}"}, right: {node: literal, sort: {name: int}, value: "${load_lookup.program_index}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: prediction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_lookup.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: prediction, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_lookup.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: prediction, field: ssid, sort: {name: int}}, right: {node: event_field, event_id: load_read, field: ssid, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: prediction, field: strict, sort: {name: bool}}, right: {node: event_field, event_id: load_read, field: strict, sort: {name: bool}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: prediction, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: load_read, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "LFST[${store_lookup.op_id}].pending", at: load_read, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [mdp, lfst, prediction, source:StoreSet.scala:450-485]
+    - name: wait_prediction_delays_load_until_store_issue_${product.repeat_index}
+      inputs:
+      - {role: prediction, type: MDP.WaitPrediction}
+      - {role: store_issue, type: Core.MemoryIssue}
+      - {role: load_issue, type: Core.MemoryIssue}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: prediction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_lookup.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: prediction, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_lookup.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: store_issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store_lookup.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: load_issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load_lookup.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: prediction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: store_issue, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: store_issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: load_issue, field: cycle, sort: {name: int}}}
+      tags: [mdp, ordering-only, source:Dispatch.scala:778-792]

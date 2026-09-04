@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: redirect-reclaims, expected: FEASIBLE}
+events:
+- id: redirected_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SQKILL, hart: 0, program_index: 2, rob_idx: 2, mem_kind: store, vaddr: 8192, write_value: 2, size: 8, byte_mask: 255, sq_idx: 2, vector: false}
+- id: queue_redirect
+  type: Core.Redirect
+  occurs: true
+  cycle: 5
+  fields: {source_op_id: SQOLD, target_op_id: SQOLD, hart: 0, program_index: 1, rob_idx: 1, cause: branch_mispredict, origin: branch, flush_self: false}
+constraints: []

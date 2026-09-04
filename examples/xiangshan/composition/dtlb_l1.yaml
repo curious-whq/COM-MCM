@@ -1,0 +1,45 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-l1-dtlb-v0.3
+horizon: 32
+metadata:
+  version: 0.3.0
+  stage: 3
+  purpose: Executable nonblocking L1 DTLB hit, miss, PTW refill, retry, and SFENCE slice.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: dtlb, path: ../model/mmu/l1_dtlb.yaml}
+connections: []
+roles:
+- name: pages
+  event_type: MMU.PageMap
+  cardinality: many
+  min_matches: 1
+  exports:
+    map_id: fields.map_id
+    hart: fields.hart
+    entry_id: fields.entry_id
+    tlb_instance: fields.tlb_instance
+    vpn: fields.vpn
+    paddr: fields.paddr
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+    initial_valid: fields.initial_valid
+- name: translation_requests
+  event_type: MMU.TranslateRequest
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    tlb_instance: fields.tlb_instance
+    vaddr: fields.vaddr
+    vpn: fields.vpn
+    attempt: fields.attempt
+    access_kind: fields.access_kind
+    size: fields.size
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+constraints: []

@@ -1,0 +1,9 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: merge-sets, expected: FEASIBLE}
+events:
+- {id: load_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: EML, hart: 0, pc: 2560, initial_valid: true, initial_ssid: 14, initial_strict: false}}
+- {id: store_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: EMS, hart: 0, pc: 2816, initial_valid: true, initial_ssid: 4, initial_strict: false}}
+- {id: train, type: MDP.Train, occurs: true, cycle: 1, fields: {txn_id: TM, hart: 0, load_pc: 2560, store_pc: 2816}}
+- {id: load_lookup, type: MDP.Lookup, occurs: true, cycle: 6, fields: {op_id: LM, hart: 0, program_index: 1, rob_idx: 6, pc: 2560, mem_kind: load}}
+constraints: []

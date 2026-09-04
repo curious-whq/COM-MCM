@@ -1,0 +1,140 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage8-store-pipeline-vsq
+catalog: ../events.yaml
+metadata:
+  version: 0.8.0
+  purpose: Reachability coverage for aligned scalar STA/STD pairing and VirtualStoreQueue lifecycle/recovery.
+  witness_policy: Inputs contain public store issue, translation result, commit, redirect, and finite DTLB configuration only; pipeline stages and VSQ state remain solver-derived.
+models:
+- name: scalar_store
+  composition: ../composition/scalar_store.yaml
+  input_event_types: [Core.MemoryIssue, MMU.TranslateResponse, Core.Redirect]
+  inputs:
+  - {name: cacheable-success, path: ../traces/store/cacheable_success.yaml}
+  - {name: tlb-replay, path: ../traces/store/tlb_replay.yaml}
+  - {name: translation-fault, path: ../traces/store/translation_fault.yaml}
+  - {name: redirect-kills, path: ../traces/store/redirect_kills.yaml}
+- name: virtual_store_queue
+  composition: ../composition/virtual_store_queue.yaml
+  input_event_types: [Core.MemoryIssue, Core.MemoryCommit, Core.Redirect]
+  inputs:
+  - {name: normal-retire, path: ../traces/store_queue/normal_retire.yaml}
+  - {name: redirect-reclaims, path: ../traces/store_queue/redirect_reclaims.yaml}
+  - {name: in-order-retire, path: ../traces/store_queue/in_order_retire.yaml}
+- name: scalar_store_queue
+  composition: ../composition/scalar_store_queue.yaml
+  input_event_types: [Core.MemoryIssue, MMU.TranslateResponse, Core.MemoryCommit]
+  inputs:
+  - {name: integrated-queue-retire, path: ../traces/store/integrated_queue_retire.yaml}
+- name: store_translation
+  composition: ../composition/store_translation.yaml
+  input_event_types: [MMU.PageMap, Core.MemoryIssue, MMU.TranslateRequest]
+  inputs:
+  - {name: integrated-dtlb-hit, path: ../traces/store/integrated_dtlb_hit.yaml}
+goals:
+- id: store_enters_independent_sta_and_std
+  model: scalar_store
+  category: Pipeline entrances
+  inputs: [cacheable-success]
+  require:
+  - {transformation: "issue_enters_store_sta_s0_*"}
+  - {transformation: "issue_enters_independent_std_*"}
+- id: sta_requests_store_translation
+  model: scalar_store
+  category: Address translation
+  inputs: [cacheable-success]
+  require:
+  - {transformation: "sta_s0_requests_translation_*"}
+  - {transformation: "translation_success_enters_store_s1_*"}
+- id: translated_address_reaches_sq
+  model: scalar_store
+  category: Address readiness
+  inputs: [cacheable-success]
+  require:
+  - {transformation: "store_s1_publishes_address_*"}
+  - {event: Store.AddressReady}
+- id: std_value_reaches_sq
+  model: scalar_store
+  category: Data readiness
+  inputs: [cacheable-success]
+  require:
+  - {transformation: "std_writes_store_data_*"}
+  - {event: Store.DataReady}
+- id: paired_store_reaches_s3_and_writeback
+  model: scalar_store
+  category: Address/data pairing
+  inputs: [cacheable-success]
+  require:
+  - {transformation: "store_s1_advances_to_s2_*"}
+  - {transformation: "checked_store_advances_to_s3_*"}
+  - {transformation: "address_data_pair_completes_store_*"}
+  - {event: Core.MemoryWriteback}
+- id: tlb_miss_replays_without_completion
+  model: scalar_store
+  category: Replay
+  inputs: [tlb-replay]
+  require:
+  - {transformation: "store_tlb_miss_requests_replay_*"}
+  - {event: Store.ReplayDecision}
+- id: translation_fault_reaches_core
+  model: scalar_store
+  category: Fault
+  inputs: [translation-fault]
+  require:
+  - {transformation: "store_translation_fault_is_classified_*"}
+  - {transformation: "store_fault_reaches_core_*"}
+  - {event: Core.MemoryFault}
+- id: redirect_kills_store_pipeline
+  model: scalar_store
+  category: Pipeline recovery
+  inputs: [redirect-kills]
+  require:
+  - {transformation: "redirect_kills_live_store_pipeline_*"}
+  - {transformation: "redirected_store_pipeline_becomes_dead_*"}
+- id: issue_allocates_vsq
+  model: virtual_store_queue
+  category: VSQ allocation
+  inputs: [normal-retire]
+  require:
+  - {transformation: "store_issue_allocates_vsq_*"}
+  - {event: SQ.Allocate}
+- id: rob_commit_retires_vsq
+  model: virtual_store_queue
+  category: VSQ retirement
+  inputs: [normal-retire]
+  require:
+  - {transformation: "committed_store_retires_vsq_*"}
+  - {event: SQ.Retire}
+- id: redirect_recovers_vsq_pointer
+  model: virtual_store_queue
+  category: VSQ recovery
+  inputs: [redirect-reclaims]
+  require:
+  - {transformation: "redirect_selects_live_vsq_entry_*"}
+  - {transformation: "redirect_recovery_reclaims_vsq_*"}
+  - {event: SQ.RedirectRecover}
+- id: younger_vsq_retire_waits_for_head
+  model: virtual_store_queue
+  category: VSQ ordering
+  inputs: [in-order-retire]
+  require:
+  - {transformation: "younger_vsq_retire_waits_for_older_*"}
+- id: scalar_pipeline_and_vsq_close_lifecycle
+  model: scalar_store_queue
+  category: Stage 8 integration
+  inputs: [integrated-queue-retire]
+  require:
+  - {transformation: "address_data_pair_completes_store_*"}
+  - {transformation: "committed_store_retires_vsq_*"}
+  - {event: SQ.Retire}
+- id: store_pipeline_uses_store_dtlb
+  model: store_translation
+  category: Stage 3 integration
+  inputs: [integrated-dtlb-hit]
+  require:
+  - {transformation: "request_looks_up_entry_*"}
+  - {transformation: "lookup_hit_*"}
+  - {transformation: "hit_returns_translation_*"}
+  - {transformation: "address_data_pair_completes_store_*"}
+  - {event: MMU.L1TLBHit}
+auto_goals: []

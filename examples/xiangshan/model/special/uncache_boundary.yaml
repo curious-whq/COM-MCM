@@ -1,0 +1,19 @@
+schema_version: umcm.module.v0.15.0
+name: uncache
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: cache/dcache/Uncache.scala and MemBlock uncache arbitration
+ports:
+- {name: load_request, direction: input, event_type: Uncache.Request}
+- {name: store_request, direction: input, event_type: Uncache.Request}
+- {name: response, direction: output, event_type: Uncache.Response}
+- {name: memory_request, direction: output, event_type: Memory.Request}
+- {name: memory_response, direction: input, event_type: Memory.Response}
+internal_events:
+- Uncache.Arbitrate
+slots: []
+state_variables: []
+transformations: []
+constraints: []

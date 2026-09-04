@@ -1,0 +1,120 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-scalar-load-v0.5
+policy: ports-only-public-surface
+modules:
+- module: scalar_load_pipeline
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: translate_request
+    direction: output
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: translate_response
+    direction: input
+    event_type: MMU.TranslateResponse
+    required_connection: false
+  - name: l1_request
+    direction: output
+    event_type: L1.Request
+    required_connection: false
+  - name: l1_response
+    direction: input
+    event_type: L1.Response
+    required_connection: false
+  - name: l1_nack
+    direction: input
+    event_type: L1.Nack
+    required_connection: false
+  - name: forward_query
+    direction: output
+    event_type: Store.ForwardQuery
+    required_connection: false
+  - name: forward_response
+    direction: input
+    event_type: Store.ForwardResponse
+    required_connection: false
+  - name: order_query
+    direction: output
+    event_type: Load.OrderQuery
+    required_connection: false
+  - name: queue_update
+    direction: output
+    event_type: Load.PipelineUpdate
+    required_connection: false
+  - name: writeback
+    direction: output
+    event_type: Core.MemoryWriteback
+    required_connection: false
+  - name: memory_fault
+    direction: output
+    event_type: Core.MemoryFault
+    required_connection: false
+  public_event_types:
+  - Core.MemoryFault
+  - Core.MemoryIssue
+  - Core.MemoryWriteback
+  - Core.Redirect
+  - L1.Nack
+  - L1.Request
+  - L1.Response
+  - Load.OrderQuery
+  - Load.PipelineUpdate
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  - Store.ForwardQuery
+  - Store.ForwardResponse
+  private_slot_ids:
+  - load_fault_l1_corrupt_0
+  - load_fault_l1_denied_0
+  - load_fault_translation_0
+  - load_replay_cache_miss_0
+  - load_replay_forward_invalid_0
+  - load_replay_nack_0
+  - load_replay_tlb_0
+  - load_s0_0
+  - load_s1_0
+  - load_s2_cache_0
+  - load_s2_forward_0
+  - load_s3_cache_0
+  - load_s3_forward_0
+  - load_s4_unaligned_0
+  - load_select_cache_0
+  - load_select_forward_0
+  private_event_types:
+  - Load.FaultDecision
+  - Load.ForwardSelect
+  - Load.ReplayDecision
+  - Load.StageAdvance
+  private_state_names:
+  - LoadPipeline[L0].live
+  private_transformation_names:
+  - aligned_scalar_does_not_enter_s4_0
+  - cache_data_is_selected_without_forward_0
+  - fault_decision_reports_core_fault_0
+  - fault_decision_updates_load_queue_0
+  - invalid_forward_requests_replay_0
+  - issue_enters_load_s0_0
+  - l1_corrupt_is_hardware_error_0
+  - l1_denied_is_access_fault_0
+  - l1_miss_requests_replay_0
+  - l1_nack_requests_replay_0
+  - replay_decision_updates_load_queue_0
+  - s0_queries_store_forwarding_0
+  - s0_requests_dcache_0
+  - s0_requests_translation_0
+  - s2_queries_load_order_0
+  - s2_selected_data_enters_s3_0
+  - s3_updates_load_queue_success_0
+  - s3_writes_back_selected_value_0
+  - selected_data_enters_s2_0
+  - tlb_replay_is_classified_0
+  - translation_fault_is_classified_0
+  - translation_success_enters_s1_0
+  - valid_full_forward_is_selected_0

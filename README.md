@@ -1,8 +1,47 @@
-# µMCM Foundation v0.18.0
+# µMCM Foundation v0.20.0
 
-v0.18 adds a source-grounded, searchable BOOM-L1/SiFive-InclusiveCache coherence µMCM on top of the v0.15 hierarchy, v0.16 RVWMO checker, and v0.17 core-side slice. It models bounded directory state, owner/sharer permissions, TileLink A/B/C/D/E flows, dirty data handoff, and ghost coherence versions without asking the input trace to choose hit/miss or protocol outcomes.
+v0.20 adds two-level hierarchical search on top of the v0.15 hierarchy, v0.16 RVWMO checker, v0.17 core-side slice, v0.18 coherence model, and v0.19 path coverage. It first discovers an architectural execution skeleton, then asks µMCM slices to realize the resulting obligations through public events only.
+
+## v0.20 hierarchical search
+
+```bash
+umcm search boom --rvwmo --backend z3 \
+  --output examples/boom/search/BOOM_SEARCH_REPORT.yaml \
+  --witness-dir examples/boom/search/witnesses
+```
+
+The checked-in BOOM query searches the bounded architectural values for two
+same-address loads and one remote store. Layer one independently discovers the
+RVWMO-forbidden outcome `R0=1, R1=0` and its
+`R1 -fr-> W -rf-> R0 -ppo-> R1` cycle. Layer two then searches the v0.18
+coherence composition and realizes the version obligations through the public
+request order `R1 -> W -> R0`.
+
+The result is deliberately `partial` with `end_to_end: false`. The detailed
+LSQ/L1/MSHR composition still requires private allocation/routing annotations
+at template-instantiation time and is not yet connected to the v0.18 TileLink
+ports. This is reported as an explicit required interface gap; it is the v0.21
+blind-rediscovery task, not hidden as UNSAT or claimed as a completed witness.
+See `HIERARCHICAL_SEARCH_V0.20.md` and `ITERATION_20_REPORT.md`.
+
+## v0.19 path coverage
+
+```bash
+umcm cover boom \
+  --backend z3 \
+  --output examples/boom/coverage/BOOM_PATH_COVERAGE.yaml \
+  --witness-dir examples/boom/coverage/witnesses
+```
+
+The checked-in suite covers 27/27 required goals across LSQ, MSHR, TLB/ROB/atomic/MMIO/fence behavior, coherence, and generated TileLink interface goals. One optional repeated same-hart L1-hit goal remains visibly UNSAT, a v0.18 model gap discovered by v0.19. See `PATH_COVERAGE_V0.19.md` and `ITERATION_19_REPORT.md`.
 
 ```text
+bounded architectural operation domains
+        ↓
+RVWMO skeleton + obligations
+        ↓
+public-interface realization search
+        ↓
 partial microarchitectural Trace
         ↓
 Event + State + Transformation semantics
@@ -150,7 +189,7 @@ For the current regression, 45 concrete events project to 19 interface events wh
 
 ## Validation
 
-v0.18 has 168 passing tests: the v0.17 suite plus nine focused coherence tests and one Z3 atomic-state encoding regression.
+v0.20 has 177 passing tests, including four focused hierarchical-search tests.
 
 ## v0.12 LSQ model
 

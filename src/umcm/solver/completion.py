@@ -36,6 +36,7 @@ class CompletionResult:
     initial_state: dict[str, Any] = field(default_factory=dict)
     final_state: dict[str, Any] = field(default_factory=dict)
     state_steps: tuple[dict[str, Any], ...] = ()
+    active_transformations: tuple[dict[str, Any], ...] = ()
 
     @property
     def feasible(self) -> bool:
@@ -56,6 +57,22 @@ def complete_trace(
     compatibility.  ``z3`` may be selected explicitly for larger bounded models.
     """
 
+    problem = build_problem(catalog, trace, spec)
+    return complete_problem(problem, backend=backend, node_limit=node_limit)
+
+
+def complete_problem(
+    problem: BoundedProblem,
+    *,
+    backend: str = "auto",
+    node_limit: int = 500_000,
+) -> CompletionResult:
+    """Solve an already-instantiated problem.
+
+    Coverage queries use this entry point to add a reachability obligation to
+    the same bounded problem that implements normal trace completion.
+    """
+
     normalized_backend = backend.lower()
     if normalized_backend == "auto":
         normalized_backend = "finite"
@@ -64,7 +81,6 @@ def complete_trace(
             f"unsupported completion backend {backend!r}; available: finite, z3"
         )
 
-    problem = build_problem(catalog, trace, spec)
     solved = (
         solve_z3(problem)
         if normalized_backend == "z3"
@@ -93,12 +109,18 @@ def complete_trace(
         state_result=solved.state_result,
         backend=normalized_backend,
     )
-    completed.validate(catalog, partial=False)
+    completed.validate(problem.catalog, partial=False)
     selected_slot_ids = tuple(
         event.id
         for event in completed.events
         if event.id in set(problem.slot_ids)
     )
+    active_transformations = _active_transformations(
+        problem, solved.assignment, solved.state_result
+    )
+    completed.metadata["completion"]["active_transformations"] = [
+        dict(item) for item in active_transformations
+    ]
     return CompletionResult(
         status=CompletionStatus.FEASIBLE,
         backend=normalized_backend,
@@ -122,7 +144,61 @@ def complete_trace(
             if solved.state_result is not None
             else ()
         ),
+        active_transformations=active_transformations,
     )
+
+
+def _active_transformations(
+    problem: BoundedProblem,
+    assignment: dict[str, Any],
+    state_result: Any,
+) -> tuple[dict[str, Any], ...]:
+    context = EvaluationContext(events=problem.event_map, assignment=assignment)
+    active: list[dict[str, Any]] = []
+    for candidate in problem.transformation_activations:
+        if evaluate(candidate.expression, context) is not True:
+            continue
+        if candidate.state_predicates and not _state_predicates_hold(
+            candidate.state_predicates, context, state_result
+        ):
+            continue
+        active.append(
+            {
+                "name": candidate.name,
+                "transformation": candidate.transformation,
+                "binding": dict(candidate.binding),
+            }
+        )
+    return tuple(sorted(active, key=lambda item: (item["transformation"], item["name"])))
+
+
+def _state_predicates_hold(predicates, context, state_result: Any) -> bool:
+    if state_result is None:
+        return False
+    for predicate in predicates:
+        cycle = evaluate(predicate.cycle, context)
+        expected = evaluate(predicate.expected, context)
+        if not isinstance(cycle, int) or isinstance(cycle, bool):
+            return False
+        state = dict(state_result.initial_state)
+        for step in sorted(state_result.steps, key=lambda item: item.cycle):
+            if step.cycle >= cycle:
+                break
+            state = dict(step.after)
+        actual = state.get(predicate.state, UNKNOWN)
+        if actual is UNKNOWN or expected is UNKNOWN:
+            return False
+        comparison = {
+            "eq": actual == expected,
+            "ne": actual != expected,
+            "lt": actual < expected,
+            "le": actual <= expected,
+            "gt": actual > expected,
+            "ge": actual >= expected,
+        }[predicate.op]
+        if not comparison:
+            return False
+    return True
 
 
 def _materialize_trace(

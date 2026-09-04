@@ -1,0 +1,78 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-l1-dtlb-v0.3
+policy: ports-only-public-surface
+modules:
+- module: dtlb
+  ports:
+  - name: load_request
+    direction: input
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: store_request
+    direction: input
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: atomic_request
+    direction: input
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: response
+    direction: output
+    event_type: MMU.TranslateResponse
+    required_connection: false
+  - name: ptw_request
+    direction: output
+    event_type: MMU.PTWRequest
+    required_connection: false
+  - name: ptw_response
+    direction: input
+    event_type: MMU.PTWResponse
+    required_connection: false
+  - name: sfence
+    direction: input
+    event_type: Core.SFence
+    required_connection: false
+  public_event_types:
+  - Core.SFence
+  - MMU.PTWRequest
+  - MMU.PTWResponse
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  private_slot_ids:
+  - dtlb_hit_0
+  - dtlb_invalidate_0
+  - dtlb_lookup_0
+  - dtlb_miss_0
+  - dtlb_pending_flush_0
+  - dtlb_ptw_decision_0
+  - dtlb_ptw_drop_0
+  - dtlb_refill_0
+  private_event_types:
+  - MMU.L1TLBHit
+  - MMU.L1TLBInvalidate
+  - MMU.L1TLBLookup
+  - MMU.L1TLBMiss
+  - MMU.L1TLBPTWDecision
+  - MMU.L1TLBPTWDrop
+  - MMU.L1TLBPendingFlush
+  - MMU.L1TLBRefill
+  private_state_names:
+  - DTLB.ldtlb.entry[e0].valid
+  - DTLB.ldtlb.walk[L0.a0.e0].live
+  private_transformation_names:
+  - accepted_ptw_response_refills_0
+  - cancelled_ptw_response_drops_0
+  - completed_refill_precedes_later_sfence_0
+  - hit_returns_translation_0
+  - lookup_hit_0
+  - lookup_miss_0
+  - miss_issues_ptw_request_0
+  - miss_replay_precedes_ptw_request_0
+  - miss_returns_replay_0
+  - pre_sfence_miss_emits_ptw_before_flush_0
+  - ptw_response_is_filtered_0
+  - request_looks_up_entry_0
+  - retry_requires_earlier_refill_0
+  - sfence_cancels_inflight_ptw_0
+  - sfence_invalidates_entry_0
+  - sfence_precedes_subsequent_lookup_0

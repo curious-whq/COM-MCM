@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 5, case: dcache-miss, expected: FEASIBLE}
+events:
+- id: load_miss_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LMISS, hart: 0, program_index: 0, rob_idx: 4, mem_kind: load, vaddr: 262144, size: 8, byte_mask: 255, lq_idx: 4, vector: false, tlb_instance: ldtlb, vpn: 64, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_miss_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 5
+  fields: {op_id: LMISS, hart: 0, tlb_instance: ldtlb, vaddr: 262144, vpn: 64, attempt: 0, access_kind: load, asid: 1, vmid: 0, translation_stage: s1, paddr: 16384, hit_level: l1, replay: false, fault: false, cause: none}
+- id: load_miss_forward
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 10
+  fields: {op_id: LMISS, value: 0, byte_mask: 0, match: false, data_invalid: false}
+- id: load_miss_response
+  type: L1.Response
+  occurs: true
+  cycle: 10
+  fields: {txn_id: LMISS.load.a0, op_id: LMISS, response_kind: miss, value: 0, success: false, denied: false, corrupt: false}
+constraints: []

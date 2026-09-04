@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 5, case: cache-hit, expected: FEASIBLE}
+events:
+- id: load_0_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: L0, hart: 0, program_index: 0, rob_idx: 0, mem_kind: load, vaddr: 65540, size: 8, byte_mask: 255, lq_idx: 0, vector: false, tlb_instance: ldtlb, vpn: 16, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_0_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 5
+  fields: {op_id: L0, hart: 0, tlb_instance: ldtlb, vaddr: 65540, vpn: 16, attempt: 0, access_kind: load, asid: 1, vmid: 0, translation_stage: s1, paddr: 8192, hit_level: l1, replay: false, fault: false, cause: none}
+- id: load_0_forward
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 10
+  fields: {op_id: L0, value: 0, byte_mask: 0, match: false, data_invalid: false}
+- id: load_0_l1_response
+  type: L1.Response
+  occurs: true
+  cycle: 10
+  fields: {txn_id: L0.load.a0, op_id: L0, response_kind: hit, value: 42, success: true, denied: false, corrupt: false}
+constraints: []

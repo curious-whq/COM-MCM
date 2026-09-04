@@ -1,0 +1,142 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage7-replay-mdp
+catalog: ../events.yaml
+metadata:
+  version: 0.7.0
+  purpose: Reachability coverage for LoadQueueReplay cause/readiness/feedback/recovery and active SSIT/LFST prediction behavior.
+  witness_policy: Inputs contain public pipeline feedback, wakeups, predictor configuration/training/lookup, issue, and redirect events only; queue/predictor state and decisions are solver-derived.
+models:
+- name: load_replay
+  composition: ../composition/load_replay.yaml
+  input_event_types: [Core.MemoryIssue, Load.PipelineUpdate, Load.ReplayWakeup, Core.Redirect]
+  inputs:
+  - {name: immediate-nack, path: ../traces/replay/immediate_nack.yaml}
+  - {name: blocked-refill, path: ../traces/replay/blocked_refill.yaml}
+  - {name: replay-success, path: ../traces/replay/replay_success.yaml}
+  - {name: replay-requeues, path: ../traces/replay/replay_requeues.yaml}
+  - {name: redirect-cancels, path: ../traces/replay/redirect_cancels.yaml}
+- name: scalar_load_replay
+  composition: ../composition/scalar_load_replay.yaml
+  input_event_types: [Core.MemoryIssue, MMU.TranslateResponse, Store.ForwardResponse, L1.Nack]
+  inputs:
+  - {name: scalar-l1-nack, path: ../traces/load/l1_nack.yaml}
+- name: memory_dependency_predictor
+  composition: ../composition/memory_dependency_predictor.yaml
+  input_event_types: [MDP.EntryConfig, MDP.Train, MDP.Lookup, Core.MemoryIssue, Core.Redirect]
+  inputs:
+  - {name: trained-wait, path: ../traces/mdp/trained_wait.yaml}
+  - {name: attach-store, path: ../traces/mdp/attach_store.yaml}
+  - {name: attach-load, path: ../traces/mdp/attach_load.yaml}
+  - {name: merge-sets, path: ../traces/mdp/merge_sets.yaml}
+  - {name: strict-training, path: ../traces/mdp/strict_training.yaml}
+  - {name: redirect-clears-store, path: ../traces/mdp/redirect_clears_store.yaml}
+goals:
+- id: failed_load_enters_replay_queue
+  model: load_replay
+  category: Replay allocation
+  inputs: [immediate-nack]
+  require:
+  - {transformation: "failed_load_enters_replay_queue_*"}
+  - {transformation: "replay_cause_encoding_*"}
+  - {event: LQ.ReplayEnqueue}
+- id: immediate_cause_issues_without_wakeup
+  model: load_replay
+  category: Replay readiness
+  inputs: [immediate-nack]
+  require:
+  - {transformation: "nonblocking_entry_is_ready_*"}
+  - {transformation: "selected_entry_issues_once_*"}
+  - {event: Load.ReplayIssue}
+- id: blocked_cause_waits_for_matching_wakeup
+  model: load_replay
+  category: Replay wakeup
+  inputs: [blocked-refill]
+  require:
+  - {transformation: "matching_hardware_wakeup_unblocks_entry_*"}
+  - {transformation: "ready_entry_is_selected_*"}
+  - {event: Load.ReplayIssue}
+- id: successful_retry_frees_entry
+  model: load_replay
+  category: Replay feedback
+  inputs: [replay-success]
+  require:
+  - {transformation: "successful_replay_feedback_frees_entry_*"}
+  - {event: LQ.ReplayDeallocate}
+- id: failed_retry_reuses_entry
+  model: load_replay
+  category: Replay feedback
+  inputs: [replay-requeues]
+  require:
+  - {transformation: "failed_replay_feedback_reuses_entry_*"}
+  - {event: LQ.ReplayRequeue}
+- id: redirect_cancels_replay_entry
+  model: load_replay
+  category: Replay recovery
+  inputs: [redirect-cancels]
+  require:
+  - {transformation: "redirect_cancels_replay_entry_*"}
+  - {transformation: "redirected_replay_entry_is_freed_*"}
+- id: scalar_pipeline_feeds_replay_queue
+  model: scalar_load_replay
+  category: Stage 5 integration
+  inputs: [scalar-l1-nack]
+  require:
+  - {transformation: "l1_nack_requests_replay_*"}
+  - {transformation: "replay_decision_updates_load_queue_*"}
+  - {transformation: "failed_load_enters_replay_queue_*"}
+  - {event: Load.ReplayIssue}
+- id: new_pair_allocates_common_ssid
+  model: memory_dependency_predictor
+  category: SSIT training
+  inputs: [trained-wait]
+  require:
+  - {transformation: "unassigned_pair_allocates_store_set_*"}
+  - {event: MDP.SSITTrain}
+- id: assigned_load_attaches_store
+  model: memory_dependency_predictor
+  category: SSIT training
+  inputs: [attach-store]
+  require:
+  - {transformation: "assigned_load_attaches_store_*"}
+- id: assigned_store_attaches_load
+  model: memory_dependency_predictor
+  category: SSIT training
+  inputs: [attach-load]
+  require:
+  - {transformation: "assigned_store_attaches_load_*"}
+- id: store_sets_merge_to_lower_ssid
+  model: memory_dependency_predictor
+  category: SSIT training
+  inputs: [merge-sets]
+  require:
+  - {transformation: "different_store_sets_merge_to_lower_ssid_*"}
+- id: repeated_violation_promotes_strict
+  model: memory_dependency_predictor
+  category: SSIT training
+  inputs: [strict-training]
+  require:
+  - {transformation: "repeated_same_set_violation_promotes_strict_load_*"}
+- id: matching_pending_store_predicts_wait
+  model: memory_dependency_predictor
+  category: LFST prediction
+  inputs: [trained-wait]
+  require:
+  - {transformation: "store_lookup_allocates_lfst_*"}
+  - {transformation: "matching_pending_store_predicts_load_wait_*"}
+  - {transformation: "wait_prediction_delays_load_until_store_issue_*"}
+  - {event: MDP.WaitPrediction}
+- id: issued_store_releases_lfst
+  model: memory_dependency_predictor
+  category: LFST release
+  inputs: [trained-wait]
+  require:
+  - {transformation: "issuing_store_releases_lfst_*"}
+  - {event: MDP.LFSTRelease}
+- id: redirect_releases_lfst
+  model: memory_dependency_predictor
+  category: LFST recovery
+  inputs: [redirect-clears-store]
+  require:
+  - {transformation: "redirect_cancels_pending_lfst_store_*"}
+  - {transformation: "redirected_lfst_release_clears_pending_*"}
+auto_goals: []

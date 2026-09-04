@@ -1,0 +1,69 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-translation-backend-v0.4
+horizon: 48
+metadata:
+  version: 0.4.0
+  stage: 4
+  purpose: Executable L2TLB, page-table walk, two-stage translation, protection, fault, refill, and invalidation slice.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: translation_backend, path: ../model/mmu/translation_backend.yaml}
+connections: []
+roles:
+- name: pages
+  event_type: MMU.PageMap
+  cardinality: many
+  min_matches: 1
+  exports:
+    map_id: fields.map_id
+    hart: fields.hart
+    entry_id: fields.entry_id
+    tlb_instance: fields.tlb_instance
+    vpn: fields.vpn
+    gpaddr: fields.gpaddr
+    paddr: fields.paddr
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+    initial_valid: fields.initial_valid
+    page_level: fields.page_level
+    l2_initial_valid: fields.l2_initial_valid
+    stage1_valid: fields.stage1_valid
+    stage1_access_allowed: fields.stage1_access_allowed
+    stage2_valid: fields.stage2_valid
+    stage2_access_allowed: fields.stage2_access_allowed
+- name: backend_requests
+  event_type: MMU.PTWRequest
+  cardinality: many
+  min_matches: 1
+  exports:
+    txn_id: fields.txn_id
+    op_id: fields.op_id
+    hart: fields.hart
+    tlb_instance: fields.tlb_instance
+    vaddr: fields.vaddr
+    vpn: fields.vpn
+    access_kind: fields.access_kind
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+- name: protection_regions
+  event_type: MMU.ProtectionMap
+  cardinality: many
+  min_matches: 1
+  exports:
+    region_id: fields.region_id
+    hart: fields.hart
+    lower: fields.lower
+    upper: fields.upper
+    access_kind: fields.access_kind
+    pmp_allow: fields.pmp_allow
+    pma_allow: fields.pma_allow
+    bitmap_enabled: fields.bitmap_enabled
+    bitmap_allow: fields.bitmap_allow
+    mpt_enabled: fields.mpt_enabled
+    mpt_allow: fields.mpt_allow
+    cacheable: fields.cacheable
+    atomic: fields.atomic
+constraints: []

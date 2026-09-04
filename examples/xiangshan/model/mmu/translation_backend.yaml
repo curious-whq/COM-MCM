@@ -1,0 +1,1111 @@
+schema_version: umcm.module.v0.15.0
+name: translation_backend
+metadata:
+  version: 0.4.0
+  stage: 4
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/cache/mmu/L2TLB.scala:61-180,220-241,320-459,476-620,758-864
+  - src/main/scala/xiangshan/cache/mmu/L2TLBMissQueue.scala:30-45
+  - src/main/scala/xiangshan/cache/mmu/PageTableCache.scala:120-389,588-874,1068-1284
+  - src/main/scala/xiangshan/cache/mmu/PageTableWalker.scala:104-802,804-1389,1391-1729
+  - src/main/scala/xiangshan/cache/mmu/MMUBundle.scala:780-900,920-1005,1163-1235,1405-1501
+  - src/main/scala/xiangshan/cache/mmu/BitmapCheck.scala:31-104,124-358,364-517
+  - src/main/scala/xiangshan/cache/mmu/MptChecker.scala:31-151,758-947,1175-1347
+  - src/main/scala/xiangshan/backend/fu/PMP.scala:190-289,368-520
+  - src/main/scala/xiangshan/backend/fu/PMA.scala:201-265
+  - src/main/scala/xiangshan/Parameters.scala:48-80,665-681
+  - src/main/scala/top/Configs.scala:241-251
+  scope: bounded L2TLB lookup/refill, S1/G-stage PTW, page/guest-page/access faults, PMP/PMA, BitmapCheck, optional MPT, and SFENCE/HFENCE invalidation
+  hierarchy: L2TLB, walker, refill, fault, and protection decisions are private; L1 DTLB communication uses public PTW ports
+  abstractions:
+  - finite PageMap records stand for already-decoded PTE chains; stage validity/access flags summarize leaf format, R/W/X/U/A/D, PBMT, NAPOT, superpage alignment, and privilege checks
+  - finite ProtectionMap regions summarize the first matching PMP/PMA entry and the selected Bitmap or MPT permission result
+  - DefaultConfig enables BitmapCheck and disables MPT; MPT is retained as a mutually-exclusive optional configuration path
+  - exact page-table memory addresses, TileLink beats, cache replacement, walker arbitration, and merge capacity are omitted while causal stage order and fault class are preserved
+  - each bounded request has one matching PageMap and one matching ProtectionMap region
+ports:
+- {name: ptw_request, direction: input, event_type: MMU.PTWRequest, required_connection: false}
+- {name: ptw_response, direction: output, event_type: MMU.PTWResponse}
+- {name: sfence, direction: input, event_type: Core.SFence, required_connection: false}
+internal_events:
+- MMU.L2TLBLookup
+- MMU.L2TLBHit
+- MMU.L2TLBMiss
+- MMU.L2TLBRefill
+- MMU.L2TLBInvalidate
+- MMU.PTWWalk
+- MMU.PTWStageComplete
+- MMU.PTWResolved
+- MMU.TranslationFault
+- MMU.ProtectionCheck
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: pages
+  as: page
+  include:
+    state_variables:
+    - name: L2TLB.entry[${page.tlb_instance}.${page.map_id}].valid
+      sort: {name: bool}
+      initial: ${page.l2_initial_valid}
+      description: Valid state for one finite combined L2 translation entry.
+    slots:
+    - id: l2tlb_invalidate_${page.repeat_index}
+      type: MMU.L2TLBInvalidate
+      required: false
+      fields:
+        fence_id: {$expr: {node: symbol, name: "l2tlb::${page.map_id}::fence_id", sort: {name: op_id}}}
+        hart: ${page.hart}
+        tlb_instance: ${page.tlb_instance}
+        map_id: ${page.map_id}
+        vpn: ${page.vpn}
+        asid: ${page.asid}
+        vmid: ${page.vmid}
+        translation_stage: ${page.translation_stage}
+    transformations:
+    - name: sfence_invalidates_l2_entry_${page.repeat_index}
+      inputs: [{role: sfence, type: Core.SFence}]
+      outputs: [{role: invalidate, type: MMU.L2TLBInvalidate}]
+      when: &l2_sfence_matches_page
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: all}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: vpn}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: asid}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: asid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.asid}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: vpn_asid}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: asid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.asid}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hfence_vvma}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: asid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.asid}"}}
+            - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: all}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: hfence_gvma}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vmid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vmid}"}}
+            - node: nary
+              op: or
+              operands:
+              - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: all}}
+              - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s2}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: invalidate, field: fence_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "L2TLB.entry[${page.tlb_instance}.${page.map_id}].valid", at: invalidate, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [l2tlb, sfence, hfence, invalidate, source:L2TLB.scala:81-100]
+
+repeat_product:
+- axes:
+  - {over: backend_requests, as: op}
+  - {over: pages, as: page}
+  include:
+    slots:
+    - id: l2tlb_lookup_${product.repeat_index}
+      type: MMU.L2TLBLookup
+      required: false
+      fields: &l2_lookup_fields
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        vpn: ${op.vpn}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        hit: {$expr: {node: symbol, name: "l2tlb::${op.txn_id}::hit", sort: {name: bool}}}
+    - id: l2tlb_hit_${product.repeat_index}
+      type: MMU.L2TLBHit
+      required: false
+      fields: *l2_lookup_fields
+    - id: l2tlb_miss_${product.repeat_index}
+      type: MMU.L2TLBMiss
+      required: false
+      fields:
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        vpn: ${op.vpn}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+    - id: ptw_s1_walk_${product.repeat_index}
+      type: MMU.PTWWalk
+      required: false
+      fields: &s1_walk_fields
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        vpn: ${op.vpn}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        stage: s1
+        walk_source: l2_s1
+        level: ${page.page_level}
+    - id: ptw_s1_complete_${product.repeat_index}
+      type: MMU.PTWStageComplete
+      required: false
+      fields: *s1_walk_fields
+    - id: ptw_s2_walk_from_s1_${product.repeat_index}
+      type: MMU.PTWWalk
+      required: false
+      fields: &s2_walk_fields
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        vpn: ${op.vpn}
+        gpaddr: ${page.gpaddr}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        stage: s2
+        walk_source: s1_complete
+        level: ${page.page_level}
+    - id: ptw_s2_only_walk_${product.repeat_index}
+      type: MMU.PTWWalk
+      required: false
+      fields:
+        <<: *s2_walk_fields
+        walk_source: l2_s2
+    - id: ptw_s2_complete_${product.repeat_index}
+      type: MMU.PTWStageComplete
+      required: false
+      fields: *s2_walk_fields
+    - id: ptw_resolved_l2_${product.repeat_index}
+      type: MMU.PTWResolved
+      required: false
+      fields: &resolved_fields
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        vpn: ${op.vpn}
+        gpaddr: ${page.gpaddr}
+        paddr: ${page.paddr}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        resolution_source: l2
+        level: ${page.page_level}
+    - id: ptw_resolved_s1_${product.repeat_index}
+      type: MMU.PTWResolved
+      required: false
+      fields:
+        <<: *resolved_fields
+        resolution_source: s1
+    - id: ptw_resolved_s2_${product.repeat_index}
+      type: MMU.PTWResolved
+      required: false
+      fields:
+        <<: *resolved_fields
+        resolution_source: s2
+    - id: ptw_page_fault_walk_${product.repeat_index}
+      type: MMU.TranslationFault
+      required: false
+      fields: &page_fault_fields
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        region_id: {$expr: {node: symbol, name: "fault::${op.txn_id}::region", sort: {name: op_id}}}
+        vpn: ${op.vpn}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        stage: s1
+        fault: true
+        fault_source: s1_walk
+        cause: "${op.access_kind}_page_fault"
+    - id: ptw_page_fault_l2_${product.repeat_index}
+      type: MMU.TranslationFault
+      required: false
+      fields:
+        <<: *page_fault_fields
+        fault_source: l2
+    - id: ptw_guest_page_fault_walk_${product.repeat_index}
+      type: MMU.TranslationFault
+      required: false
+      fields: &guest_fault_fields
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        region_id: {$expr: {node: symbol, name: "fault::${op.txn_id}::region", sort: {name: op_id}}}
+        vpn: ${op.vpn}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        stage: s2
+        fault: true
+        fault_source: s2_walk
+        cause: "${op.access_kind}_guest_page_fault"
+    - id: ptw_guest_page_fault_l2_${product.repeat_index}
+      type: MMU.TranslationFault
+      required: false
+      fields:
+        <<: *guest_fault_fields
+        fault_source: l2
+    - id: ptw_page_fault_response_${product.repeat_index}
+      type: MMU.PTWResponse
+      required: false
+      fields:
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        access_kind: ${op.access_kind}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        cacheable: false
+        fault: true
+        cause: "${op.access_kind}_page_fault"
+    - id: ptw_guest_page_fault_response_${product.repeat_index}
+      type: MMU.PTWResponse
+      required: false
+      fields:
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        access_kind: ${op.access_kind}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        cacheable: false
+        fault: true
+        cause: "${op.access_kind}_guest_page_fault"
+    transformations:
+    - name: ptw_request_looks_up_l2_${product.repeat_index}
+      inputs: [{role: request, type: MMU.PTWRequest}]
+      outputs: [{role: lookup, type: MMU.L2TLBLookup}]
+      when: &backend_request_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: asid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.asid}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vmid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vmid}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: translation_stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}}
+      output_when: &l2_lookup_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "L2TLB.entry[${page.tlb_instance}.${page.map_id}].valid", at: lookup, op: eq, value: {node: event_field, event_id: lookup, field: hit, sort: {name: bool}}}
+      exact: true
+      tags: [l2tlb, lookup, source:L2TLB.scala:220-241,320-420]
+    - name: l2_lookup_hits_${product.repeat_index}
+      inputs: [{role: lookup, type: MMU.L2TLBLookup}]
+      outputs: [{role: hit, type: MMU.L2TLBHit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_lookup_scope
+        - {node: event_field, event_id: lookup, field: hit, sort: {name: bool}}
+      output_when: &l2_hit_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: hit, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: hit, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [l2tlb, hit, source:PageTableCache.scala:588-874]
+    - name: l2_lookup_misses_${product.repeat_index}
+      inputs: [{role: lookup, type: MMU.L2TLBLookup}]
+      outputs: [{role: miss, type: MMU.L2TLBMiss}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_lookup_scope
+        - {node: unary, op: not, operand: {node: event_field, event_id: lookup, field: hit, sort: {name: bool}}}
+      output_when: &l2_miss_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [l2tlb, miss, miss-queue, source:L2TLBMissQueue.scala:30-45]
+    - name: l2_hit_resolves_valid_mapping_${product.repeat_index}
+      inputs: [{role: hit, type: MMU.L2TLBHit}]
+      outputs: [{role: resolved, type: MMU.PTWResolved}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_hit_scope
+        - &mapping_valid
+          node: nary
+          op: or
+          operands:
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s1}}
+            - {node: literal, sort: {name: bool}, value: "${page.stage1_valid}"}
+            - {node: literal, sort: {name: bool}, value: "${page.stage1_access_allowed}"}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s2}}
+            - {node: literal, sort: {name: bool}, value: "${page.stage2_valid}"}
+            - {node: literal, sort: {name: bool}, value: "${page.stage2_access_allowed}"}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: all}}
+            - {node: literal, sort: {name: bool}, value: "${page.stage1_valid}"}
+            - {node: literal, sort: {name: bool}, value: "${page.stage1_access_allowed}"}
+            - {node: literal, sort: {name: bool}, value: "${page.stage2_valid}"}
+            - {node: literal, sort: {name: bool}, value: "${page.stage2_access_allowed}"}
+      output_when: &resolved_l2_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: resolution_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: resolved, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [l2tlb, hit, resolved]
+    - name: l2_miss_starts_s1_walk_${product.repeat_index}
+      inputs: [{role: miss, type: MMU.L2TLBMiss}]
+      outputs: [{role: walk, type: MMU.PTWWalk}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_miss_scope
+        - {node: binary, op: ne, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s2}}
+      output_when: &s1_walk_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: walk, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, s1, source:PageTableWalker.scala:104-802]
+    - name: s1_walk_completes_${product.repeat_index}
+      inputs: [{role: walk, type: MMU.PTWWalk}]
+      outputs: [{role: complete, type: MMU.PTWStageComplete}]
+      when: *s1_walk_scope
+      output_when: &s1_complete_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: walk, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, s1, pte]
+    - name: valid_s1_only_resolves_${product.repeat_index}
+      inputs: [{role: complete, type: MMU.PTWStageComplete}]
+      outputs: [{role: resolved, type: MMU.PTWResolved}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_complete_scope
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s1}}
+        - {node: literal, sort: {name: bool}, value: "${page.stage1_valid}"}
+        - {node: literal, sort: {name: bool}, value: "${page.stage1_access_allowed}"}
+      output_when: &resolved_s1_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: resolution_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: resolved, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, s1, resolved]
+    - name: valid_s1_starts_g_stage_${product.repeat_index}
+      inputs: [{role: complete, type: MMU.PTWStageComplete}]
+      outputs: [{role: walk, type: MMU.PTWWalk}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_complete_scope
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: all}}
+        - {node: literal, sort: {name: bool}, value: "${page.stage1_valid}"}
+        - {node: literal, sort: {name: bool}, value: "${page.stage1_access_allowed}"}
+      output_when: &s2_walk_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: walk_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1_complete}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: walk, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, two-stage, hptw, source:PageTableWalker.scala:1391-1729]
+    - name: l2_miss_starts_s2_only_walk_${product.repeat_index}
+      inputs: [{role: miss, type: MMU.L2TLBMiss}]
+      outputs: [{role: walk, type: MMU.PTWWalk}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_miss_scope
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s2}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: walk_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l2_s2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: walk, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, s2, hptw]
+    - name: s2_walk_completes_${product.repeat_index}
+      inputs: [{role: walk, type: MMU.PTWWalk}]
+      outputs: [{role: complete, type: MMU.PTWStageComplete}]
+      when: &any_s2_walk_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: walk, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+      output_when: &s2_complete_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: walk, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, s2, pte]
+    - name: valid_s2_resolves_${product.repeat_index}
+      inputs: [{role: complete, type: MMU.PTWStageComplete}]
+      outputs: [{role: resolved, type: MMU.PTWResolved}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s2_complete_scope
+        - {node: literal, sort: {name: bool}, value: "${page.stage2_valid}"}
+        - {node: literal, sort: {name: bool}, value: "${page.stage2_access_allowed}"}
+      output_when: &resolved_s2_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: resolution_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: resolved, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, s2, resolved]
+    - name: s1_failure_raises_page_fault_${product.repeat_index}
+      inputs: [{role: complete, type: MMU.PTWStageComplete}]
+      outputs: [{role: fault, type: MMU.TranslationFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_complete_scope
+        - node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage1_valid}"}}
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage1_access_allowed}"}}
+      output_when: &page_fault_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_page_fault"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1_walk}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [ptw, page-fault, source:MMUBundle.scala:780-900]
+    - name: s2_failure_raises_guest_page_fault_${product.repeat_index}
+      inputs: [{role: complete, type: MMU.PTWStageComplete}]
+      outputs: [{role: fault, type: MMU.TranslationFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s2_complete_scope
+        - node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage2_valid}"}}
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage2_access_allowed}"}}
+      output_when: &guest_fault_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_guest_page_fault"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2_walk}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [hptw, guest-page-fault, source:MMUBundle.scala:827-900,1206-1235]
+    - name: invalid_l2_hit_raises_page_fault_${product.repeat_index}
+      inputs: [{role: hit, type: MMU.L2TLBHit}]
+      outputs: [{role: fault, type: MMU.TranslationFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_hit_scope
+        - {node: binary, op: ne, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s2}}
+        - node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage1_valid}"}}
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage1_access_allowed}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_page_fault"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [l2tlb, cached-page-fault]
+    - name: invalid_g_stage_l2_hit_raises_guest_fault_${product.repeat_index}
+      inputs: [{role: hit, type: MMU.L2TLBHit}]
+      outputs: [{role: fault, type: MMU.TranslationFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_hit_scope
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: s2}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}, right: {node: literal, sort: {name: string}, value: all}}
+            - {node: literal, sort: {name: bool}, value: "${page.stage1_valid}"}
+            - {node: literal, sort: {name: bool}, value: "${page.stage1_access_allowed}"}
+        - node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage2_valid}"}}
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${page.stage2_access_allowed}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_guest_page_fault"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [l2tlb, cached-guest-page-fault]
+    - name: page_fault_returns_to_l1_${product.repeat_index}
+      inputs: [{role: fault, type: MMU.TranslationFault}]
+      outputs: [{role: response, type: MMU.PTWResponse}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_page_fault"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: event_field, event_id: response, field: fault, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_page_fault"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.vpn}"}}
+      exact: true
+      tags: [ptw, page-fault, response]
+    - name: guest_page_fault_returns_to_l1_${product.repeat_index}
+      inputs: [{role: fault, type: MMU.TranslationFault}]
+      outputs: [{role: response, type: MMU.PTWResponse}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_guest_page_fault"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: event_field, event_id: response, field: fault, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_guest_page_fault"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: gpaddr, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${page.gpaddr}"}}
+      exact: true
+      tags: [hptw, guest-page-fault, response]
+    - name: sfence_precedes_later_l2_lookup_${product.repeat_index}
+      inputs:
+      - {role: sfence, type: Core.SFence}
+      - {role: invalidate, type: MMU.L2TLBInvalidate}
+      - {role: request, type: MMU.PTWRequest}
+      - {role: lookup, type: MMU.L2TLBLookup}
+      when:
+        node: nary
+        op: and
+        operands:
+        - *l2_sfence_matches_page
+        - *backend_request_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}}
+      tags: [l2tlb, sfence, lookup-order]
+
+- axes:
+  - {over: backend_requests, as: op}
+  - {over: pages, as: page}
+  - {over: protection_regions, as: protection}
+  include:
+    slots:
+    - id: pmp_check_${product.repeat_index}
+      type: MMU.ProtectionCheck
+      required: false
+      fields: &pmp_check_fields
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        region_id: ${protection.region_id}
+        vpn: ${op.vpn}
+        paddr: ${page.paddr}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        check_kind: pmp
+        allowed: ${protection.pmp_allow}
+    - id: pma_check_${product.repeat_index}
+      type: MMU.ProtectionCheck
+      required: false
+      fields:
+        <<: *pmp_check_fields
+        check_kind: pma
+        allowed: ${protection.pma_allow}
+        cacheable: ${protection.cacheable}
+    - id: bitmap_check_${product.repeat_index}
+      type: MMU.ProtectionCheck
+      required: false
+      fields:
+        <<: *pmp_check_fields
+        check_kind: bitmap
+        allowed: {$expr: {node: symbol, name: "protect::${op.txn_id}::bitmap", sort: {name: bool}}}
+    - id: mpt_check_${product.repeat_index}
+      type: MMU.ProtectionCheck
+      required: false
+      fields:
+        <<: *pmp_check_fields
+        check_kind: mpt
+        allowed: {$expr: {node: symbol, name: "protect::${op.txn_id}::mpt", sort: {name: bool}}}
+    - id: backend_success_response_${product.repeat_index}
+      type: MMU.PTWResponse
+      required: false
+      fields:
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        access_kind: ${op.access_kind}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        cacheable: ${protection.cacheable}
+        fault: false
+        cause: none
+    - id: backend_access_fault_${product.repeat_index}
+      type: MMU.TranslationFault
+      required: false
+      fields:
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        region_id: ${protection.region_id}
+        vpn: ${op.vpn}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        fault: true
+        fault_source: protection
+        cause: "${op.access_kind}_access_fault"
+    - id: backend_access_fault_response_${product.repeat_index}
+      type: MMU.PTWResponse
+      required: false
+      fields:
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        access_kind: ${op.access_kind}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        cacheable: ${protection.cacheable}
+        fault: true
+        cause: "${op.access_kind}_access_fault"
+    - id: l2tlb_refill_${product.repeat_index}
+      type: MMU.L2TLBRefill
+      required: false
+      fields:
+        txn_id: ${op.txn_id}
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        map_id: ${page.map_id}
+        region_id: ${protection.region_id}
+        vpn: ${op.vpn}
+        paddr: ${page.paddr}
+        gpaddr: ${page.gpaddr}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        level: ${page.page_level}
+    transformations:
+    - name: resolved_translation_checks_pmp_${product.repeat_index}
+      inputs: [{role: resolved, type: MMU.PTWResolved}]
+      outputs: [{role: check, type: MMU.ProtectionCheck}]
+      when: &resolved_region_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: resolved, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${op.access_kind}"}, right: {node: literal, sort: {name: string}, value: "${protection.access_kind}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${op.hart}"}, right: {node: literal, sort: {name: int}, value: "${protection.hart}"}}
+      output_when: &pmp_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: region_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${protection.region_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: pmp}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: resolved, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: check, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [protection, pmp, source:PMP.scala:190-289,368-520]
+    - name: resolved_translation_checks_pma_${product.repeat_index}
+      inputs: [{role: resolved, type: MMU.PTWResolved}]
+      outputs: [{role: check, type: MMU.ProtectionCheck}]
+      when: *resolved_region_scope
+      output_when: &pma_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: region_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${protection.region_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: pma}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: resolved, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: check, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [protection, pma, source:PMA.scala:201-265]
+    - name: resolved_translation_checks_bitmap_${product.repeat_index}
+      inputs: [{role: resolved, type: MMU.PTWResolved}]
+      outputs: [{role: check, type: MMU.ProtectionCheck}]
+      when: *resolved_region_scope
+      output_when: &bitmap_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: region_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${protection.region_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: bitmap}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: resolved, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: check, field: cycle, sort: {name: int}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: check, field: allowed, sort: {name: bool}}
+        right:
+          node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${protection.bitmap_enabled}"}}
+          - {node: literal, sort: {name: bool}, value: "${protection.bitmap_allow}"}
+      exact: true
+      tags: [protection, bitmap, default-config, source:BitmapCheck.scala:124-358]
+    - name: resolved_translation_checks_mpt_${product.repeat_index}
+      inputs: [{role: resolved, type: MMU.PTWResolved}]
+      outputs: [{role: check, type: MMU.ProtectionCheck}]
+      when: *resolved_region_scope
+      output_when: &mpt_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: region_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${protection.region_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: check, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mpt}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: resolved, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: check, field: cycle, sort: {name: int}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: check, field: allowed, sort: {name: bool}}
+        right:
+          node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: literal, sort: {name: bool}, value: "${protection.mpt_enabled}"}}
+          - {node: literal, sort: {name: bool}, value: "${protection.mpt_allow}"}
+      exact: true
+      tags: [protection, mpt, optional-config, source:MptChecker.scala:31-151,758-947]
+    - name: protection_allows_response_${product.repeat_index}
+      inputs:
+      - {role: pmp, type: MMU.ProtectionCheck}
+      - {role: pma, type: MMU.ProtectionCheck}
+      - {role: bitmap, type: MMU.ProtectionCheck}
+      - {role: mpt, type: MMU.ProtectionCheck}
+      outputs: [{role: response, type: MMU.PTWResponse}]
+      when: &all_protection_allows
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: pmp, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: pmp, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: pmp}}
+        - {node: event_field, event_id: pmp, field: allowed, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: pma, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: pma, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: pma}}
+        - {node: event_field, event_id: pma, field: allowed, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: bitmap, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: bitmap, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: bitmap}}
+        - {node: event_field, event_id: bitmap, field: allowed, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: mpt, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: mpt, field: check_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mpt}}
+        - {node: event_field, event_id: mpt, field: allowed, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: pmp, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: pma, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: bitmap, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: mpt, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.vpn}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${page.paddr}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: gpaddr, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${page.gpaddr}"}}
+      exact: true
+      tags: [translation-backend, success, response]
+    - name: protection_denial_raises_access_fault_${product.repeat_index}
+      inputs:
+      - {role: pmp, type: MMU.ProtectionCheck}
+      - {role: pma, type: MMU.ProtectionCheck}
+      - {role: bitmap, type: MMU.ProtectionCheck}
+      - {role: mpt, type: MMU.ProtectionCheck}
+      outputs: [{role: fault, type: MMU.TranslationFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: pmp, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: pma, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: bitmap, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: mpt, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: unary, op: not, operand: {node: event_field, event_id: pmp, field: allowed, sort: {name: bool}}}
+          - {node: unary, op: not, operand: {node: event_field, event_id: pma, field: allowed, sort: {name: bool}}}
+          - {node: unary, op: not, operand: {node: event_field, event_id: bitmap, field: allowed, sort: {name: bool}}}
+          - {node: unary, op: not, operand: {node: event_field, event_id: mpt, field: allowed, sort: {name: bool}}}
+      output_when: &access_fault_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: region_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${protection.region_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_access_fault"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: pmp, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: pma, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: bitmap, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: mpt, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [protection, access-fault]
+    - name: access_fault_returns_to_l1_${product.repeat_index}
+      inputs: [{role: fault, type: MMU.TranslationFault}]
+      outputs: [{role: response, type: MMU.PTWResponse}]
+      when: *access_fault_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: event_field, event_id: response, field: fault, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${op.access_kind}_access_fault"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${page.paddr}"}}
+      exact: true
+      tags: [protection, access-fault, response]
+    - name: successful_walk_refills_l2_${product.repeat_index}
+      inputs:
+      - {role: miss, type: MMU.L2TLBMiss}
+      - {role: pmp, type: MMU.ProtectionCheck}
+      - {role: pma, type: MMU.ProtectionCheck}
+      - {role: bitmap, type: MMU.ProtectionCheck}
+      - {role: mpt, type: MMU.ProtectionCheck}
+      outputs: [{role: refill, type: MMU.L2TLBRefill}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - *all_protection_allows
+      output_when: &l2_refill_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: map_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${page.map_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: region_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${protection.region_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: pmp, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: pma, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: bitmap, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: mpt, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "L2TLB.entry[${page.tlb_instance}.${page.map_id}].valid", at: refill, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [l2tlb, refill, source:L2TLB.scala:476-620,PageTableCache.scala:1068-1284]
+    - name: refill_precedes_success_response_${product.repeat_index}
+      inputs:
+      - {role: refill, type: MMU.L2TLBRefill}
+      - {role: response, type: MMU.PTWResponse}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.txn_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      tags: [l2tlb, refill, response-order]

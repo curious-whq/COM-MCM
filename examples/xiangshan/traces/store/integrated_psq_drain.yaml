@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 9, case: integrated-psq-drain, expected: FEASIBLE}
+events:
+- id: psq_int_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: PSQINT, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 65544, write_value: 42, size: 8, byte_mask: 255, sq_idx: 0, vector: false, tlb_instance: sttlb, vpn: 16, asid: 1, vmid: 0, translation_stage: s1}
+- id: psq_int_layout
+  type: Store.Layout
+  occurs: true
+  cycle: 1
+  fields: {op_id: PSQINT, sq_idx: 0, kind: aligned, cross_page: false, low_address: 8200, high_address: 8200, low_value: 42, high_value: 0, low_mask: 255, high_mask: 0}
+- id: psq_int_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: PSQINT, hart: 0, tlb_instance: sttlb, vaddr: 65544, vpn: 16, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 8200, hit_level: l1, replay: false, fault: false, cause: none}
+- id: psq_int_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 32
+  fields: {op_id: PSQINT, hart: 0, rob_idx: 0, mem_kind: store}
+- id: psq_int_writeback
+  type: Core.MemoryWriteback
+  occurs: true
+  cycle: 24
+  fields: {op_id: PSQINT, hart: 0, rob_idx: 0, mem_kind: store, value: 42, success: true}
+constraints: []

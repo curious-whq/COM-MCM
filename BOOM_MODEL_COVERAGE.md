@@ -1,6 +1,8 @@
-# BOOM memory µMCM coverage at v0.18
+# BOOM memory µMCM coverage at v0.20
 
 This file is an inventory, not a claim that the entire BOOM RTL is modeled signal-for-signal. `covered` means the current µMCM contains the memory-order-relevant behavior needed to expose that path at a module boundary. `partial (source-grounded)` means an executable subset is tied to named RTL regions and its omissions are listed. `abstracted` means a deliberate boundary model exists. `future` means the behavior is not yet represented adequately for blind bug discovery.
+
+The retained v0.19 executable coverage report is `examples/boom/coverage/BOOM_PATH_COVERAGE.yaml`: 27/27 required goals have witnesses, with one optional uncovered repeated L1-hit goal retained as a model finding. v0.20 additionally discovers a forbidden RVWMO skeleton and realizes its version flow in the coherence slice; the detailed end-to-end join remains explicitly blocked. See `PATH_COVERAGE_V0.19.md` and `HIERARCHICAL_SEARCH_V0.20.md`.
 
 | Area | Status | Current semantic surface |
 |---|---|---|
@@ -13,7 +15,7 @@ This file is an inventory, not a claim that the entire BOOM RTL is modeled signa
 | ST-LD violation | covered | generic order-fail path |
 | Fence | covered | wait for DCache ordered and release |
 | Branch/exception recovery | covered | load/store kill/flush, retry-queue effects, ROB younger squash, branch-kill broadcast |
-| L1 request/response boundary | covered | request accept, hit/miss private outcome, response/nack |
+| L1 request/response boundary | partial | request accept, miss/refill and response/nack are covered; v0.19 found the same-hart refill→second-read-hit trace UNSAT in the separate v0.18 coherence slice |
 | L1 Probe boundary | covered | source-pinned clean ProbeAck and dirty ProbeAckData, permission downgrade/invalidation, and data publication |
 | MSHR primary/secondary/RPQ | covered | admission, RPQ, refill/direct response/replay |
 | MSHR SDQ/IOMSHR | covered | bounded store-data lifetime and MMIO-MSHR path |
@@ -38,9 +40,11 @@ This file is an inventory, not a claim that the entire BOOM RTL is modeled signa
 
 The detailed `memory_buggy.yaml` / `memory_fixed_reference.yaml` compositions continue to own ordinary cacheable LSQ/L1/MSHR behavior. `core_side_v017.yaml` owns ROB, NBDTLB/LSU retry, bounded PTW, atomic, fence, MMIO, and recovery behavior. `coherence_v018.yaml` independently owns the new BOOM-L1/SiFive-L2 permission and data protocol. All are executable strict compositions; a signal-level adapter unifying their three root request vocabularies is not claimed yet.
 
+v0.20 makes the consequence machine-readable. `umcm search boom --rvwmo` finds the architectural forbidden skeleton and realizes `R1 -> W -> R0` in `coherence_v018.yaml`, but emits `status: partial` and `end_to_end: false` because the detailed LSQ/L1/MSHR join is a required `interface_gap`. No TLB/MSHR/cache-path hint is injected to turn that gap into a witness.
+
 ## Hierarchy status
 
-The v0.15 enforceable hierarchy boundary remains mandatory in v0.18:
+The v0.15 enforceable hierarchy boundary remains mandatory in v0.20:
 
 - state is private to its module;
 - internal event vocabulary is separate from ports;

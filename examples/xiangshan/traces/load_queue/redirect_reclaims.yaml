@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 6, case: redirect-reclaims, expected: FEASIBLE}
+events:
+- id: redirected_load_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LKILL, hart: 0, program_index: 1, rob_idx: 2, mem_kind: load, vaddr: 12288, address: 12288, value: 0, size: 8, byte_mask: 255, lq_idx: 2, vector: false}
+- id: older_redirect
+  type: Core.Redirect
+  occurs: true
+  cycle: 8
+  fields: {source_op_id: OLD, target_op_id: LKILL, hart: 0, program_index: 0, rob_idx: 1, cause: branch_mispredict, origin: core, flush_self: true}
+constraints: []

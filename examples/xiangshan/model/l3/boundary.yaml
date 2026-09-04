@@ -1,0 +1,26 @@
+schema_version: umcm.module.v0.15.0
+name: open_llc
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: XSCache openLLC/OpenLLC.scala and Slice.scala
+ports:
+- {name: chi_txreq, direction: input, event_type: CHI.TXREQ}
+- {name: chi_txdat, direction: input, event_type: CHI.TXDAT}
+- {name: chi_txrsp, direction: input, event_type: CHI.TXRSP}
+- {name: chi_rxsnp, direction: output, event_type: CHI.RXSNP}
+- {name: chi_rxdat, direction: output, event_type: CHI.RXDAT}
+- {name: chi_rxrsp, direction: output, event_type: CHI.RXRSP}
+- {name: memory_request, direction: output, event_type: Memory.Request}
+- {name: memory_response, direction: input, event_type: Memory.Response}
+- {name: prefetch_request, direction: input, event_type: Prefetch.Request}
+internal_events:
+- L3.DirectoryLookup
+- L3.SnoopIssue
+- L3.Refill
+- L3.MemoryIssue
+slots: []
+state_variables: []
+transformations: []
+constraints: []

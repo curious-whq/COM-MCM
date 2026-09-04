@@ -1,0 +1,443 @@
+schema_version: umcm.module.v0.15.0
+name: load_replay_queue
+metadata:
+  version: 0.7.0
+  stage: 7
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/mem/lsqueue/LoadQueueReplay.scala:31-72,197-240,242-318,337-463,493-725,742-890
+  - src/main/scala/xiangshan/mem/pipeline/NewLoadUnit.scala:1029-1088,1494-1549
+  - src/main/scala/xiangshan/mem/lsqueue/LoadQueue.scala:227-317
+  scope: bounded scalar LoadQueueReplay entry from a failed attempt-0 update through readiness, selection, one attempt-1 replay, feedback, and redirect cancellation
+  hierarchy: replay-entry allocation/readiness/scheduling/requeue/free are private; pipeline updates, summarized hardware wakeups, replay issue, and redirects cross public ports
+  abstractions:
+  - one retry epoch is expanded per load; a failed attempt-1 feedback is retained as a requeued live entry but is not recursively unrolled
+  - the 13 replay causes retain the source priority encoding; only dcache_miss and uncache use the hardware replayHiPrio entrance
+  - Load.ReplayWakeup summarizes TLB hint, refill D channel, store address/data readiness, queue capacity, SQ dequeue, and MMIO/NC completion while preserving their cause-specific matching
+  - cold-down timing and multi-port arbitration are reduced to causal order; one relevant entry per load is still age-identifiable by program_index
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: pipeline_update, direction: input, event_type: Load.PipelineUpdate, required_connection: false}
+- {name: wakeup, direction: input, event_type: Load.ReplayWakeup, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+- {name: replay_issue, direction: output, event_type: Load.ReplayIssue}
+internal_events:
+- LQ.ReplayEnqueue
+- LQ.ReplayReady
+- LQ.ReplaySelect
+- LQ.ReplayDeallocate
+- LQ.ReplayRequeue
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: load_ops
+  as: op
+  include:
+    state_variables:
+    - {name: "Replay[${op.op_id}].allocated", sort: {name: bool}, initial: false}
+    - {name: "Replay[${op.op_id}].issued", sort: {name: bool}, initial: false}
+    slots:
+    - id: replay_enqueue_${op.repeat_index}
+      type: LQ.ReplayEnqueue
+      required: false
+      fields: &replay_entry_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        lq_idx: ${op.lq_idx}
+        vaddr: ${op.vaddr}
+        attempt: 0
+        cause: {$expr: {node: symbol, name: "replay::${op.op_id}::cause", sort: {name: string}}}
+        priority: {$expr: {node: symbol, name: "replay::${op.op_id}::priority", sort: {name: string}}}
+        blocking: {$expr: {node: symbol, name: "replay::${op.op_id}::blocking", sort: {name: bool}}}
+        issued: false
+        queue_kind: replay
+        path: enqueue
+    - id: replay_ready_immediate_${op.repeat_index}
+      type: LQ.ReplayReady
+      required: false
+      fields:
+        <<: *replay_entry_fields
+        blocking: false
+        path: immediate
+    - id: replay_ready_wakeup_${op.repeat_index}
+      type: LQ.ReplayReady
+      required: false
+      fields:
+        <<: *replay_entry_fields
+        blocking: false
+        path: wakeup
+    - id: replay_select_${op.repeat_index}
+      type: LQ.ReplaySelect
+      required: false
+      fields:
+        <<: *replay_entry_fields
+        blocking: false
+        issued: false
+        path: selected
+    - id: replay_issue_${op.repeat_index}
+      type: Load.ReplayIssue
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        lq_idx: ${op.lq_idx}
+        cause: {$expr: {node: symbol, name: "replay::${op.op_id}::cause", sort: {name: string}}}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        vaddr: ${op.vaddr}
+        attempt: 1
+        priority: {$expr: {node: symbol, name: "replay::${op.op_id}::priority", sort: {name: string}}}
+    - id: replay_complete_${op.repeat_index}
+      type: LQ.ReplayDeallocate
+      required: false
+      fields:
+        <<: *replay_entry_fields
+        attempt: 1
+        issued: true
+        path: feedback_complete
+    - id: replay_redirect_${op.repeat_index}
+      type: LQ.ReplayDeallocate
+      required: false
+      fields:
+        <<: *replay_entry_fields
+        path: redirect
+        cause: {$expr: {node: symbol, name: "replay::${op.op_id}::redirect_cause", sort: {name: string}}}
+    - id: replay_requeue_${op.repeat_index}
+      type: LQ.ReplayRequeue
+      required: false
+      fields:
+        <<: *replay_entry_fields
+        attempt: 1
+        issued: false
+        cause: {$expr: {node: symbol, name: "replay::${op.op_id}::next_cause", sort: {name: string}}}
+        path: feedback_replay
+    transformations:
+    - name: failed_load_enters_replay_queue_${op.repeat_index}
+      inputs: [{role: update, type: Load.PipelineUpdate}]
+      outputs: [{role: enqueue, type: LQ.ReplayEnqueue}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: update, field: executed, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: update, field: succeeded, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: update, field: fault, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when: &enqueue_scope
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: enqueue, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: update, field: replay_cause, sort: {name: string}}, right: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: enqueue, field: cycle, sort: {name: int}}
+        right: {node: binary, op: add, left: {node: event_field, event_id: update, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      state_requirements:
+      - {state: "Replay[${op.op_id}].allocated", at: enqueue, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Replay[${op.op_id}].allocated", at: enqueue, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [replay, enqueue, source:LoadQueueReplay.scala:301-318,742-870]
+    - name: replay_cause_encoding_${op.repeat_index}
+      inputs: [{role: enqueue, type: LQ.ReplayEnqueue}]
+      when: *enqueue_scope
+      ensure:
+      - &known_replay_cause
+        node: nary
+        op: or
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: uncache}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_multi_forward}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: memory_address}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tlb_miss}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: forward_data_invalid}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: dcache_replay}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mshr_nack}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: dcache_miss}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: wpu_fail}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: bank_conflict}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: rar_full}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: raw_full}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: nuke}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: misalign_buffer_full}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: enqueue, field: blocking, sort: {name: bool}}
+        right:
+          node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: uncache}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_multi_forward}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: memory_address}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tlb_miss}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: forward_data_invalid}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: dcache_miss}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: rar_full}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: raw_full}}
+      - node: binary
+        op: eq
+        left: {node: event_field, event_id: enqueue, field: priority, sort: {name: string}}
+        right:
+          node: ite
+          condition:
+            node: nary
+            op: or
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: dcache_miss}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: uncache}}
+          then: {node: literal, sort: {name: string}, value: high}
+          else: {node: literal, sort: {name: string}, value: low}
+      tags: [replay, cause-priority, source:LoadQueueReplay.scala:31-72,824-863,699-725]
+    - name: nonblocking_entry_is_ready_${op.repeat_index}
+      inputs: [{role: enqueue, type: LQ.ReplayEnqueue}]
+      outputs: [{role: ready, type: LQ.ReplayReady}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *enqueue_scope
+        - {node: unary, op: not, operand: {node: event_field, event_id: enqueue, field: blocking, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: immediate}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: cause, sort: {name: string}}, right: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: enqueue, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      exact: true
+      tags: [replay, ready, immediate, source:LoadQueueReplay.scala:824-840]
+    - name: matching_hardware_wakeup_unblocks_entry_${op.repeat_index}
+      inputs:
+      - {role: enqueue, type: LQ.ReplayEnqueue}
+      - {role: wakeup, type: Load.ReplayWakeup}
+      outputs: [{role: ready, type: LQ.ReplayReady}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *enqueue_scope
+        - {node: event_field, event_id: enqueue, field: blocking, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: cause, sort: {name: string}}, right: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}}
+        - &valid_wakeup_source
+          node: nary
+          op: or
+          operands:
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: uncache}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: mmio_nc}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_multi_forward}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: sq_dequeue}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: memory_address}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_address}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tlb_miss}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tlb}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: forward_data_invalid}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_data}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: dcache_miss}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: refill}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: rar_full}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: rar_capacity}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: enqueue, field: cause, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: raw_full}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: wakeup, field: source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: raw_capacity}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: wakeup}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: enqueue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: wakeup, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: wakeup, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      exact: true
+      tags: [replay, wakeup, source:LoadQueueReplay.scala:337-463]
+    - name: ready_entry_is_selected_${op.repeat_index}
+      inputs: [{role: ready, type: LQ.ReplayReady}]
+      outputs: [{role: select, type: LQ.ReplaySelect}]
+      when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      output_when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: select, field: cause, sort: {name: string}}, right: {node: event_field, event_id: ready, field: cause, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "Replay[${op.op_id}].allocated", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Replay[${op.op_id}].issued", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [replay, select, age-arbitration, source:LoadQueueReplay.scala:493-628]
+    - name: selected_entry_issues_once_${op.repeat_index}
+      inputs: [{role: select, type: LQ.ReplaySelect}]
+      outputs: [{role: issue, type: Load.ReplayIssue}]
+      when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      output_when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: cause, sort: {name: string}}, right: {node: event_field, event_id: select, field: cause, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: priority, sort: {name: string}}, right: {node: event_field, event_id: select, field: priority, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "Replay[${op.op_id}].allocated", at: issue, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Replay[${op.op_id}].issued", at: issue, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Replay[${op.op_id}].issued", at: issue, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [replay, issue, once, source:LoadQueueReplay.scala:630-725]
+    - name: successful_replay_feedback_frees_entry_${op.repeat_index}
+      inputs:
+      - {role: issue, type: Load.ReplayIssue}
+      - {role: update, type: Load.PipelineUpdate}
+      outputs: [{role: deallocate, type: LQ.ReplayDeallocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - node: nary
+          op: or
+          operands:
+          - {node: event_field, event_id: update, field: succeeded, sort: {name: bool}}
+          - {node: event_field, event_id: update, field: fault, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: feedback_complete}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: update, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: update, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "Replay[${op.op_id}].allocated", at: deallocate, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Replay[${op.op_id}].issued", at: deallocate, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "Replay[${op.op_id}].allocated", at: deallocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Replay[${op.op_id}].issued", at: deallocate, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [replay, feedback, free, source:LoadQueueReplay.scala:301-318,870-881]
+    - name: failed_replay_feedback_reuses_entry_${op.repeat_index}
+      inputs:
+      - {role: issue, type: Load.ReplayIssue}
+      - {role: update, type: Load.PipelineUpdate}
+      outputs: [{role: requeue, type: LQ.ReplayRequeue}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: event_field, event_id: update, field: executed, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: update, field: succeeded, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: update, field: fault, sort: {name: bool}}}
+      output_when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: requeue, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: requeue, field: cause, sort: {name: string}}, right: {node: event_field, event_id: update, field: replay_cause, sort: {name: string}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: update, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: requeue, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: update, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "Replay[${op.op_id}].allocated", at: requeue, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Replay[${op.op_id}].issued", at: requeue, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "Replay[${op.op_id}].issued", at: requeue, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [replay, feedback, requeue, source:LoadQueueReplay.scala:301-318,870-881]
+    - name: redirect_cancels_replay_entry_${op.repeat_index}
+      inputs:
+      - {role: enqueue, type: LQ.ReplayEnqueue}
+      - {role: redirect, type: Core.Redirect}
+      outputs: [{role: deallocate, type: LQ.ReplayDeallocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *enqueue_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: enqueue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: cause, sort: {name: string}}, right: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      exact: true
+      tags: [replay, redirect, cancel, source:LoadQueueReplay.scala:883-890]
+    - name: redirected_replay_entry_is_freed_${op.repeat_index}
+      inputs: [{role: deallocate, type: LQ.ReplayDeallocate}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: deallocate, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: redirect}}
+      state_requirements:
+      - {state: "Replay[${op.op_id}].allocated", at: deallocate, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "Replay[${op.op_id}].allocated", at: deallocate, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Replay[${op.op_id}].issued", at: deallocate, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [replay, redirect, state-free]

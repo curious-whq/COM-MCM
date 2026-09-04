@@ -1,0 +1,66 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-physical-store-queue-v0.9
+horizon: 40
+metadata:
+  version: 0.9.0
+  stage: 9
+  purpose: Executable PhysicalStoreQueue lifetime, youngest byte forwarding, unaligned split, cross-page tail buffering, and ordered drain.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: physical_store_queue, path: ../model/store/physical_queue.yaml}
+connections: []
+roles: &psq_roles
+- name: store_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: store
+    fields.vector: false
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    write_value: fields.write_value
+    byte_mask: fields.byte_mask
+    sq_idx: fields.sq_idx
+- name: load_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: load
+    fields.vector: false
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    byte_mask: fields.byte_mask
+    lq_idx: fields.lq_idx
+- name: layouts
+  event_type: Store.Layout
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    sq_idx: fields.sq_idx
+    kind: fields.kind
+    cross_page: fields.cross_page
+    low_address: fields.low_address
+    high_address: fields.high_address
+    low_value: fields.low_value
+    high_value: fields.high_value
+    low_mask: fields.low_mask
+    high_mask: fields.high_mask
+- name: unaligned_tails
+  event_type: Store.UnalignedTailReady
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    sq_idx: fields.sq_idx
+    address: fields.address
+constraints: []

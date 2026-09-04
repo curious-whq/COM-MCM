@@ -1,0 +1,111 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage4-translation-backend
+catalog: ../events.yaml
+metadata:
+  version: 0.4.0
+  purpose: Reachability coverage for L2TLB, PTW, two-stage translation, protection, faults, refill, and HFENCE.
+  witness_policy: Inputs contain only public mappings, protection configuration, PTW requests, and SFENCE observations; all backend decisions are solver-derived.
+models:
+- name: translation_backend
+  composition: ../composition/translation_backend.yaml
+  input_event_types: [MMU.PageMap, MMU.ProtectionMap, MMU.PTWRequest, Core.SFence]
+  inputs:
+  - {name: l2-hit, path: ../traces/mmu/l2_hit.yaml}
+  - {name: ptw-refill, path: ../traces/mmu/ptw_refill.yaml}
+  - {name: two-stage, path: ../traces/mmu/two_stage_translation.yaml}
+  - {name: page-fault, path: ../traces/mmu/page_fault.yaml}
+  - {name: guest-page-fault, path: ../traces/mmu/guest_page_fault.yaml}
+  - {name: pmp-fault, path: ../traces/mmu/pmp_access_fault.yaml}
+  - {name: pma-fault, path: ../traces/mmu/pma_access_fault.yaml}
+  - {name: bitmap-fault, path: ../traces/mmu/bitmap_access_fault.yaml}
+  - {name: mpt-fault, path: ../traces/mmu/mpt_access_fault.yaml}
+  - {name: hfence-miss, path: ../traces/mmu/hfence_forces_l2_miss.yaml}
+goals:
+- id: valid_l2_entry_hits
+  model: translation_backend
+  category: L2TLB lookup
+  inputs: [l2-hit]
+  description: A valid L2 entry resolves without starting a page walk.
+  require:
+  - {transformation: "l2_lookup_hits_*"}
+  - {transformation: "l2_hit_resolves_valid_mapping_*"}
+  - {event: MMU.L2TLBHit}
+- id: miss_walks_and_refills
+  model: translation_backend
+  category: PTW refill
+  inputs: [ptw-refill]
+  description: An L2 miss walks S1, passes protection, refills L2, and returns the translation.
+  require:
+  - {transformation: "l2_lookup_misses_*"}
+  - {transformation: "l2_miss_starts_s1_walk_*"}
+  - {transformation: "successful_walk_refills_l2_*"}
+  - state_transition: {state: "L2TLB.entry[ldtlb.MAP_X].valid", from: false, to: true}
+- id: two_stage_walk_orders_s1_before_s2
+  model: translation_backend
+  category: Hypervisor translation
+  inputs: [two-stage]
+  description: VS-stage completion precedes G-stage walk and final resolution.
+  require:
+  - {transformation: "valid_s1_starts_g_stage_*"}
+  - {transformation: "s2_walk_completes_*"}
+  - {transformation: "valid_s2_resolves_*"}
+- id: invalid_s1_pte_faults
+  model: translation_backend
+  category: Page fault
+  inputs: [page-fault]
+  description: Invalid or disallowed S1 PTE data returns a page fault without protection checks.
+  require:
+  - {transformation: "s1_failure_raises_page_fault_*"}
+  - {transformation: "page_fault_returns_to_l1_*"}
+  - {event: MMU.TranslationFault}
+- id: invalid_g_stage_pte_faults
+  model: translation_backend
+  category: Guest page fault
+  inputs: [guest-page-fault]
+  description: A valid S1 result followed by invalid G-stage data returns a guest-page fault.
+  require:
+  - {transformation: "s2_failure_raises_guest_page_fault_*"}
+  - {transformation: "guest_page_fault_returns_to_l1_*"}
+- id: pmp_denial_faults
+  model: translation_backend
+  category: PMP protection
+  inputs: [pmp-fault]
+  description: A PMP denial becomes an access fault.
+  require:
+  - {transformation: "resolved_translation_checks_pmp_*"}
+  - {transformation: "protection_denial_raises_access_fault_*"}
+- id: pma_denial_faults
+  model: translation_backend
+  category: PMA protection
+  inputs: [pma-fault]
+  description: A PMA denial becomes an access fault and carries cacheability classification.
+  require:
+  - {transformation: "resolved_translation_checks_pma_*"}
+  - {transformation: "protection_denial_raises_access_fault_*"}
+- id: default_bitmap_denial_faults
+  model: translation_backend
+  category: BitmapCheck protection
+  inputs: [bitmap-fault]
+  description: DefaultConfig BitmapCheck denial becomes an access fault.
+  require:
+  - {transformation: "resolved_translation_checks_bitmap_*"}
+  - {transformation: "protection_denial_raises_access_fault_*"}
+- id: optional_mpt_denial_faults
+  model: translation_backend
+  category: MPT protection
+  inputs: [mpt-fault]
+  description: The mutually-exclusive optional MPT configuration can deny the access.
+  require:
+  - {transformation: "resolved_translation_checks_mpt_*"}
+  - {transformation: "protection_denial_raises_access_fault_*"}
+- id: hfence_invalidates_before_lookup
+  model: translation_backend
+  category: HFENCE invalidation
+  inputs: [hfence-miss]
+  description: Matching HFENCE.GVMA clears a combined entry before a later lookup and forces PTW.
+  require:
+  - {transformation: "sfence_invalidates_l2_entry_*"}
+  - {transformation: "sfence_precedes_later_l2_lookup_*"}
+  - {event: MMU.L2TLBMiss}
+  - state_transition: {state: "L2TLB.entry[ldtlb.MAP_HFENCE].valid", from: true, to: false}
+auto_goals: []

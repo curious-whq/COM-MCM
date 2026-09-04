@@ -1,0 +1,6 @@
+schema_version: umcm.trace.v0.19.0
+partial: true
+metadata: {case: coverage-iomshr-load, input_contract: public IOMSHR request only}
+events:
+- {id: io_req, type: IOMSHR.Request, occurs: true, cycle: 0, fields: {op_id: IO0, address: mmio0, mem_kind: load, value: 77, io_id: 5}}
+constraints: []

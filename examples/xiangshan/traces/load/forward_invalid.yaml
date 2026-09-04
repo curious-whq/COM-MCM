@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 5, case: forward-invalid, expected: FEASIBLE}
+events:
+- id: load_finv_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LFINV, hart: 0, program_index: 0, rob_idx: 5, mem_kind: load, vaddr: 327680, size: 8, byte_mask: 255, lq_idx: 5, vector: false, tlb_instance: ldtlb, vpn: 80, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_finv_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 5
+  fields: {op_id: LFINV, hart: 0, tlb_instance: ldtlb, vaddr: 327680, vpn: 80, attempt: 0, access_kind: load, asid: 1, vmid: 0, translation_stage: s1, paddr: 20480, hit_level: l1, replay: false, fault: false, cause: none}
+- id: load_finv_forward
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 10
+  fields: {op_id: LFINV, source_op_id: S1, value: 77, byte_mask: 255, match: true, data_invalid: true}
+constraints: []

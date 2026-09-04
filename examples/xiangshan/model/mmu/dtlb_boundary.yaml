@@ -1,0 +1,23 @@
+schema_version: umcm.module.v0.15.0
+name: dtlb
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: cache/mmu/TLB.scala, TLBStorage.scala and MemBlock DTLB wiring
+ports:
+- {name: load_request, direction: input, event_type: MMU.TranslateRequest}
+- {name: store_request, direction: input, event_type: MMU.TranslateRequest}
+- {name: atomic_request, direction: input, event_type: MMU.TranslateRequest}
+- {name: response, direction: output, event_type: MMU.TranslateResponse}
+- {name: ptw_request, direction: output, event_type: MMU.PTWRequest}
+- {name: ptw_response, direction: input, event_type: MMU.PTWResponse}
+- {name: sfence, direction: input, event_type: Core.SFence}
+internal_events:
+- MMU.L1TLBHit
+- MMU.L1TLBMiss
+- MMU.L1TLBRefill
+slots: []
+state_variables: []
+transformations: []
+constraints: []

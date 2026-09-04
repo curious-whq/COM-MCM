@@ -1,0 +1,33 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 4, case: l2-hit, expected: FEASIBLE}
+events:
+- id: page_x
+  type: MMU.PageMap
+  occurs: true
+  cycle: 0
+  fields:
+    {map_id: MAP_X, hart: 0, entry_id: e0, tlb_instance: ldtlb,
+     vpn: 16, gpaddr: 40960, paddr: 8192, asid: 1, vmid: 0,
+     translation_stage: s1, initial_valid: false, page_level: 0,
+     l2_initial_valid: true, stage1_valid: true,
+     stage1_access_allowed: true, stage2_valid: true,
+     stage2_access_allowed: true}
+- id: region_x
+  type: MMU.ProtectionMap
+  occurs: true
+  cycle: 0
+  fields:
+    {region_id: REGION_X, hart: 0, lower: 0, upper: 65536,
+     access_kind: load, pmp_allow: true, pma_allow: true,
+     bitmap_enabled: true, bitmap_allow: true,
+     mpt_enabled: false, mpt_allow: false, cacheable: true, atomic: false}
+- id: load_0_ptw
+  type: MMU.PTWRequest
+  occurs: true
+  cycle: 1
+  fields:
+    {txn_id: L0.a0, op_id: L0, hart: 0, tlb_instance: ldtlb,
+     vaddr: 65540, vpn: 16, access_kind: load, asid: 1, vmid: 0,
+     translation_stage: s1}
+constraints: []

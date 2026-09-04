@@ -1,0 +1,20 @@
+schema_version: umcm.module.v0.15.0
+name: translation_backend
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: cache/mmu/L2TLB, PageTableWalker, PageTableCache and protection checks
+ports:
+- {name: ptw_request, direction: input, event_type: MMU.PTWRequest}
+- {name: ptw_response, direction: output, event_type: MMU.PTWResponse}
+- {name: sfence, direction: input, event_type: Core.SFence}
+internal_events:
+- MMU.L2TLBHit
+- MMU.L2TLBMiss
+- MMU.PTWWalk
+- MMU.ProtectionCheck
+slots: []
+state_variables: []
+transformations: []
+constraints: []

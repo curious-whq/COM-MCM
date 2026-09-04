@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 6, case: replay-retains-entry, expected: FEASIBLE}
+events:
+- id: replay_load_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LREP, hart: 0, program_index: 0, rob_idx: 1, mem_kind: load, vaddr: 8192, address: 8192, value: 0, size: 8, byte_mask: 255, lq_idx: 1, vector: false}
+- id: replay_load_update
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 8
+  fields: {op_id: LREP, lq_idx: 1, address: 8192, byte_mask: 255, executed: true, succeeded: false, replay_cause: dcache_miss, attempt: 0, fault: false}
+constraints: []

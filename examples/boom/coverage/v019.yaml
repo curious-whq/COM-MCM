@@ -1,0 +1,295 @@
+schema_version: umcm.coverage.v0.19.0
+name: boom-path-coverage-v0.19
+catalog: ../events.yaml
+metadata:
+  version: 0.19.0
+  purpose: Reachability witnesses for memory-relevant BOOM µMCM transitions.
+  scope: Independent LSQ, MSHR, core-side, and coherence compositions plus public-interface checks.
+  witness_policy: Inputs may contain only the declared architectural/environment/public-interface event types; private outcomes are solver-selected.
+
+models:
+- name: lsq
+  composition: ../composition/lsq.yaml
+  input_event_types: [Arch.Load, Arch.Store, LSU.DCacheReqFire, DCache.LoadNack]
+  inputs:
+  - {name: load, path: inputs/lsq_load.yaml}
+  - {name: store-forward, path: inputs/lsq_store_forward.yaml}
+  - {name: nack, path: inputs/lsq_nack.yaml}
+- name: mshr
+  composition: ../composition/mshr.yaml
+  input_event_types: [DCache.MSHRRequest, IOMSHR.Request]
+  inputs:
+  - {name: primary, path: inputs/mshr_primary.yaml}
+  - {name: secondary, path: inputs/mshr_secondary.yaml}
+  - {name: store-replay, path: inputs/mshr_store_replay.yaml}
+  - {name: io, path: inputs/mshr_io.yaml}
+- name: core
+  composition: ../composition/core_side_v017.yaml
+  input_event_types: [Core.PageMap, Core.MemoryInstruction, TLB.SFence, DCache.ProbeRelease, Core.BranchMispredict, DCache.Ordered]
+  inputs:
+  - {name: tlb-retry, path: ../traces/core/tlb_retry_mmio_load.yaml}
+  - {name: sfence-retry, path: ../traces/core/sfence_tlb_retry.yaml}
+  - {name: amo, path: ../traces/core/amo_hit.yaml}
+  - {name: lr-sc-success, path: inputs/core_lr_sc_success.yaml}
+  - {name: lr-probe-sc-fail, path: inputs/core_lr_probe_sc_fail.yaml}
+  - {name: mmio-store, path: ../traces/core/mmio_store.yaml}
+  - {name: fence, path: ../traces/core/fence_wait.yaml}
+  - {name: page-fault, path: ../traces/core/precise_page_fault.yaml}
+  - {name: branch-recovery, path: ../traces/core/branch_recovery.yaml}
+- name: coherence
+  composition: ../composition/coherence_v018.yaml
+  input_event_types: [Coherence.LineInit, Coherence.Access, Coherence.Evict]
+  inputs:
+  - {name: cold-read, path: ../traces/coherence/cold_read.yaml}
+  - {name: l1-hit, path: inputs/coherence_hit.yaml}
+  - {name: shared-read, path: ../traces/coherence/shared_read.yaml}
+  - {name: write-upgrade, path: ../traces/coherence/write_upgrade.yaml}
+  - {name: dirty-handoff, path: ../traces/coherence/dirty_owner_handoff.yaml}
+  - {name: dirty-release, path: ../traces/coherence/dirty_release_reacquire.yaml}
+
+goals:
+- id: lsq_ldq_allocate
+  model: lsq
+  category: LSQ
+  inputs: [load]
+  description: An architectural load allocates a live LDQ entry.
+  require:
+  - {transformation: "ldq_allocate_*"}
+  - {event: LSU.LDQAllocate}
+  - state_transition: {state: "LSU.ldq[0].valid", from: false, to: true}
+- id: lsq_tlb_retry
+  model: lsq
+  category: LSQ
+  inputs: [load]
+  description: The LSQ records a miss, enqueues it, and later issues the retry.
+  require:
+  - {transformation: "tlb_miss_records_virtual_address_*"}
+  - {transformation: "retry_enqueue_requires_tlb_miss_*"}
+  - {transformation: "retry_issue_requires_enqueue_*"}
+  - {event: LSU.RetryIssue}
+- id: lsq_store_forward
+  model: lsq
+  category: LSQ
+  inputs: [store-forward]
+  description: An older same-address store forwards its data to the load.
+  require:
+  - {transformation: "selected_store_load_forward_*"}
+  - {event: LSU.StoreLoadForward}
+- id: lsq_nack_wakeup
+  model: lsq
+  category: LSQ
+  inputs: [nack]
+  description: A public DCache nack clears executed state and a sleeping entry can wake.
+  require:
+  - {transformation: "dcache_nack_clears_executed_*"}
+  - {transformation: "nack_seen_*"}
+  - {transformation: "load_wakeup_requires_sleeping_entry_*"}
+  - {event: LSU.LoadWakeup}
+
+- id: mshr_primary_refill
+  model: mshr
+  category: MSHR
+  inputs: [primary]
+  description: A primary miss acquires data, refills, and returns a load response.
+  require:
+  - {transformation: "primary_accept_*"}
+  - {transformation: "acquire_*"}
+  - {transformation: "grant_data_*"}
+  - {transformation: "refill_complete_*"}
+  - {transformation: "direct_load_response_*"}
+- id: mshr_secondary_merge
+  model: mshr
+  category: MSHR
+  inputs: [secondary]
+  description: A secondary request joins an occupied MSHR/RPQ.
+  require:
+  - {transformation: "primary_accept_Ld0"}
+  - {transformation: "secondary_accept_Ld1"}
+  - {transformation: "secondary_rpq_insert_Ld1"}
+- id: mshr_dirty_writeback
+  model: mshr
+  category: MSHR
+  inputs: [primary]
+  description: Dirty victim metadata causes clear, writeback, refill commit, and finish.
+  require:
+  - {transformation: "dirty_meta_clear_*"}
+  - {transformation: "wb_request_*"}
+  - {transformation: "commit_after_wb_*"}
+  - {transformation: "mem_finish_*"}
+- id: mshr_store_replay
+  model: mshr
+  category: MSHR
+  inputs: [store-replay]
+  description: A no-data store miss replays and frees its SDQ entry.
+  require:
+  - {transformation: "replay_*"}
+  - {transformation: "sdq_free_*"}
+  - {event: MSHR.Replay}
+- id: mshr_probe_fence_blocked
+  model: mshr
+  category: MSHR
+  inputs: [primary]
+  description: Occupied/post-refill states expose both fence and probe blocking.
+  require:
+  - {transformation: "fence_blocked_*"}
+  - {transformation: "probe_blocked_*"}
+- id: iomshr_load
+  model: mshr
+  category: MSHR
+  inputs: [io]
+  description: An uncacheable load traverses the IOMSHR state machine.
+  require:
+  - {transformation: "io_access_*"}
+  - {transformation: "io_ack_*"}
+  - {transformation: "io_response_*"}
+
+- id: core_tlb_miss_retry
+  model: core
+  category: TLB
+  inputs: [tlb-retry]
+  description: Invalid TLB entry selects miss/PTW/refill/retry without a miss input event.
+  require:
+  - {transformation: "miss_captures_refill_tag_*"}
+  - {transformation: "ptw_result_refills_entry_*"}
+  - {transformation: "retry_request_reads_refilled_entry_*"}
+- id: core_sfence_retry
+  model: core
+  category: TLB
+  inputs: [sfence-retry]
+  description: SFENCE invalidates a matching entry and a subsequent lookup refills it.
+  require:
+  - {transformation: "sfence_invalidates_entry_*"}
+  - {transformation: "sfence_precedes_subsequent_lookup_*"}
+  - {transformation: "ptw_result_refills_entry_*"}
+- id: core_amo
+  model: core
+  category: Atomic
+  inputs: [amo]
+  description: AMO read and serialized write both occur.
+  require:
+  - {transformation: "amo_starts_read_*"}
+  - {transformation: "amo_read_precedes_write_*"}
+  - {transformation: "amo_write_completes_*"}
+- id: core_lr_sc_success
+  model: core
+  category: Atomic
+  inputs: [lr-sc-success]
+  description: LR establishes a reservation and SC consumes it successfully.
+  require:
+  - {transformation: "lr_sets_reservation_*"}
+  - {transformation: "successful_sc_writes_*"}
+  - {transformation: "successful_sc_completes_*"}
+- id: core_lr_probe_sc_fail
+  model: core
+  category: Atomic
+  inputs: [lr-probe-sc-fail]
+  description: A probe invalidates the LR reservation and SC fails without writing.
+  require:
+  - {transformation: "lr_sets_reservation_*"}
+  - {transformation: "probe_invalidates_reservation_*"}
+  - {transformation: "failed_sc_completes_without_write_*"}
+- id: core_mmio
+  model: core
+  category: MMIO
+  inputs: [mmio-store]
+  description: Uncacheable translation routes through the core-side IOMSHR path.
+  require:
+  - {transformation: "uncacheable_routes_to_iomshr_*"}
+  - {transformation: "iomshr_access_*"}
+  - {transformation: "iomshr_store_completion_*"}
+- id: core_fence
+  model: core
+  category: Fence
+  inputs: [fence]
+  description: Fence waits for and is released by DCache.Ordered.
+  require:
+  - {transformation: "decode_fence_*"}
+  - {transformation: "fence_waits_for_ordered_*"}
+- id: core_precise_exception
+  model: core
+  category: ROB
+  inputs: [page-fault]
+  description: The ROB records a memory fault and raises a precise exception.
+  require:
+  - {transformation: "rob_records_memory_fault_*"}
+  - {transformation: "rob_raises_precise_exception_*"}
+- id: core_branch_recovery
+  model: core
+  category: ROB
+  inputs: [branch-recovery]
+  description: Branch recovery squashes younger memory work and broadcasts kill.
+  require:
+  - {transformation: "branch_recovery_squashes_younger_*"}
+  - {transformation: "branch_recovery_broadcasts_kill_*"}
+
+- id: coherence_cold_refill
+  model: coherence
+  category: Coherence
+  inputs: [cold-read]
+  description: A cold load issues Acquire, gets outer data, and installs B permission.
+  require:
+  - {transformation: "load_miss_acquire_h0_*"}
+  - {transformation: "outer_memory_grants_*"}
+  - {transformation: "grant_to_t_h0_*"}
+- id: coherence_l1_hit
+  model: coherence
+  category: Coherence
+  inputs: [l1-hit]
+  description: A second same-hart read reaches an L1 hit after the first fill.
+  required: false
+  require:
+  - {transformation: "load_hit_h0_*"}
+- id: coherence_dirty_handoff
+  model: coherence
+  category: Coherence
+  inputs: [dirty-handoff]
+  description: Dirty owner supplies ProbeAckData and L2 publishes it before granting the reader.
+  require:
+  - {transformation: "probe_ack_dirty_h0_*"}
+  - {transformation: "accept_probe_data_h0_*"}
+  - {transformation: "probe_data_is_published_before_grant_*"}
+  - {transformation: "grant_to_b_h1_*"}
+- id: coherence_write_upgrade
+  model: coherence
+  category: Coherence
+  inputs: [write-upgrade]
+  description: A B-state writer probes the other sharer and upgrades to T.
+  require:
+  - {transformation: "store_from_b_h0_*"}
+  - {transformation: "probe_h1_to_n_*"}
+  - {transformation: "grant_to_t_h0_*"}
+- id: coherence_dirty_release
+  model: coherence
+  category: Coherence
+  inputs: [dirty-release]
+  description: Dirty eviction publishes ReleaseData and retires on ReleaseAck.
+  require:
+  - {transformation: "release_dirty_h0_*"}
+  - {transformation: "publish_release_data_*"}
+  - {transformation: "release_ack_retires_eviction_*"}
+
+auto_goals:
+- model: coherence
+  kind: public_interface
+  include: [sifive_inclusive_l2.probe]
+  category: Coherence-interface
+  required: true
+  inputs: [dirty-handoff]
+- model: coherence
+  kind: public_interface
+  include: [sifive_inclusive_l2.grant]
+  category: Coherence-interface
+  required: true
+  inputs: [cold-read]
+- model: coherence
+  kind: public_interface
+  include: [boom_l1_coherence_client.release]
+  category: Coherence-interface
+  required: true
+  inputs: [dirty-release]
+- model: coherence
+  kind: public_interface
+  include: [sifive_inclusive_l2.release_ack]
+  category: Coherence-interface
+  required: true
+  inputs: [dirty-release]

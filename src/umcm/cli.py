@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from umcm.composition import CompositionSpec, compose_modules
+from umcm.coverage import CoverageSuite, run_coverage
 from umcm.errors import UMCMError
 from umcm.graph.checker import (
     AxiomStatus,
@@ -26,6 +27,12 @@ from umcm.ir.completion import CompletionSpec
 from umcm.ir.event import EventCatalog
 from umcm.ir.trace import Trace
 from umcm.serialization import dump_data
+from umcm.search import (
+    HierarchicalSearchSpec,
+    SearchStatus,
+    StageStatus,
+    run_hierarchical_search,
+)
 from umcm.solver.completion import CompletionStatus, complete_trace
 
 
@@ -175,7 +182,112 @@ def _build_parser() -> argparse.ArgumentParser:
     project_interface.add_argument("--composition", required=True, help="composition manifest")
     project_interface.add_argument("--trace", required=True, help="completed concrete trace")
     project_interface.add_argument("--output", required=True, help="write interface-only trace")
+
+    cover = subparsers.add_parser(
+        "cover",
+        help="search bounded witnesses for µMCM events, rules and state transitions",
+    )
+    cover.add_argument(
+        "profile",
+        help="coverage profile name (for example boom) or suite YAML/JSON path",
+    )
+    cover.add_argument("--suite", help="explicit coverage suite YAML/JSON")
+    cover.add_argument(
+        "--backend",
+        default="z3",
+        choices=("finite", "z3"),
+        help="feasibility backend (default: z3)",
+    )
+    cover.add_argument(
+        "--node-limit",
+        type=int,
+        default=500_000,
+        help="maximum finite-search nodes per goal/input pair",
+    )
+    cover.add_argument("--output", help="write coverage report YAML/JSON")
+    cover.add_argument(
+        "--witness-dir",
+        help="write one completed witness trace per covered goal",
+    )
+
+    search = subparsers.add_parser(
+        "search",
+        help="search architectural skeletons, then realize them through public interfaces",
+    )
+    search.add_argument(
+        "profile",
+        help="search profile name (for example boom) or search YAML/JSON path",
+    )
+    search.add_argument("--spec", help="explicit hierarchical search YAML/JSON")
+    search.add_argument(
+        "--rvwmo",
+        action="store_true",
+        help="use the RVWMO architectural layer (required in v0.20)",
+    )
+    search.add_argument(
+        "--backend",
+        default="z3",
+        choices=("finite", "z3"),
+        help="µMCM realization backend (default: z3)",
+    )
+    search.add_argument(
+        "--node-limit",
+        type=int,
+        default=500_000,
+        help="maximum finite-search nodes per realization schedule",
+    )
+    search.add_argument("--output", help="write the hierarchical search report")
+    search.add_argument(
+        "--witness-dir",
+        help="write the architectural skeleton and completed stage witnesses",
+    )
     return parser
+
+
+def _coverage_suite_path(profile: str, explicit: str | None) -> Path:
+    if explicit:
+        return Path(explicit)
+    candidate = Path(profile)
+    if candidate.suffix.lower() in {".yaml", ".yml", ".json"}:
+        return candidate
+    if profile != "boom":
+        raise UMCMError(
+            f"unknown coverage profile {profile!r}; pass --suite or a suite path"
+        )
+    relative = Path("examples/boom/coverage/v019.yaml")
+    choices = (Path.cwd() / relative, Path(__file__).resolve().parents[2] / relative)
+    for choice in choices:
+        if choice.is_file():
+            return choice
+    raise UMCMError(
+        "cannot locate the boom coverage suite; run from the project root or pass --suite"
+    )
+
+
+def _search_spec_path(profile: str, explicit: str | None) -> Path:
+    if explicit:
+        return Path(explicit)
+    candidate = Path(profile)
+    if candidate.suffix.lower() in {".yaml", ".yml", ".json"}:
+        return candidate
+    if profile != "boom":
+        raise UMCMError(
+            f"unknown search profile {profile!r}; pass --spec or a search-spec path"
+        )
+    relative = Path("examples/boom/search/v020.yaml")
+    choices = (Path.cwd() / relative, Path(__file__).resolve().parents[2] / relative)
+    for choice in choices:
+        if choice.is_file():
+            return choice
+    raise UMCMError(
+        "cannot locate the BOOM search spec; run from the project root or pass --spec"
+    )
+
+
+def _safe_filename(value: str) -> str:
+    return "".join(
+        char if char.isalnum() or char in "-_" else "_" for char in value
+    )
 
 
 def _print_graph_summary(check_result) -> None:
@@ -331,6 +443,159 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {module}: {len(ids)} hidden")
             print(f"WROTE {output}")
             return 0
+
+        if args.command == "search":
+            if not args.rvwmo:
+                raise UMCMError("v0.20 search requires --rvwmo")
+            spec_path = _search_spec_path(args.profile, args.spec)
+            search_spec = HierarchicalSearchSpec.load(spec_path)
+            report = run_hierarchical_search(
+                search_spec,
+                backend=args.backend,
+                node_limit=args.node_limit,
+                progress=lambda message: print(f"SEARCH {message}", flush=True),
+            )
+
+            if report.skeleton is None:
+                print(
+                    f"ARCHITECTURE TARGET NOT FOUND: examined "
+                    f"{report.assignments_examined}/{report.estimated_assignments} "
+                    "assignment(s)"
+                )
+            else:
+                skeleton = report.skeleton
+                graph = skeleton.graph
+                print(
+                    f"ARCHITECTURE {skeleton.target_status.upper()}: "
+                    f"{len(graph.operations)} operation(s), "
+                    f"{len(skeleton.obligations)} obligation(s)"
+                )
+                for operation in sorted(
+                    graph.operations.values(), key=lambda item: item.id
+                ):
+                    if operation.kind.value == "init_write":
+                        print(
+                            f"  {operation.id}: init {operation.address!r}="
+                            f"{operation.value!r}"
+                        )
+                    else:
+                        value = (
+                            operation.read_value
+                            if operation.is_read
+                            else operation.stored_value
+                        )
+                        print(
+                            f"  {operation.id}: {operation.kind.value} "
+                            f"hart={operation.hart} po={operation.program_index} "
+                            f"addr={operation.address!r} value={value!r}"
+                        )
+                for name in ("po", "rf", "co", "fr", "ppo"):
+                    if name not in graph.relations:
+                        continue
+                    rendered = ", ".join(
+                        f"{source}->{target}"
+                        for source, target in graph.relation(name).sorted_edges()
+                    )
+                    print(f"  {name}: {rendered or '(empty)'}")
+                for violation in skeleton.violations:
+                    print(f"  violated: {violation['axiom']}")
+
+            marks = {
+                StageStatus.REALIZABLE: "[+]",
+                StageStatus.UNREALIZABLE: "[-]",
+                StageStatus.BLOCKED: "[!]",
+                StageStatus.UNKNOWN: "[?]",
+            }
+            print("REALIZATION STAGES:")
+            for stage in report.stages:
+                required = "required" if stage.required else "optional"
+                print(
+                    f"  {marks[stage.status]} {stage.name}: "
+                    f"{stage.status.value} ({required}, {stage.attempts} attempt(s))"
+                )
+                if stage.schedule:
+                    print("    schedule: " + " -> ".join(stage.schedule))
+                if stage.reason:
+                    print(f"    {stage.reason}")
+                for missing in stage.missing_interfaces:
+                    print(f"    missing: {missing}")
+
+            if args.witness_dir:
+                witness_dir = Path(args.witness_dir)
+                witness_dir.mkdir(parents=True, exist_ok=True)
+                if report.skeleton is not None:
+                    architecture_trace = witness_dir / "architecture_input.yaml"
+                    architecture_graph = witness_dir / "architecture_graph.yaml"
+                    report.skeleton.trace.dump(architecture_trace)
+                    report.skeleton.graph.dump(architecture_graph)
+                for stage in report.stages:
+                    if stage.witness is None:
+                        continue
+                    path = witness_dir / f"{_safe_filename(stage.name)}.yaml"
+                    stage.witness.dump(path)
+                    stage.witness_path = str(path)
+
+            if args.output:
+                output = Path(args.output)
+                dump_data(report.to_dict(), output)
+                print(f"WROTE {output}")
+            print(
+                f"HIERARCHICAL SEARCH {report.status.value.upper()}: "
+                f"end-to-end={'yes' if report.end_to_end else 'no'}"
+            )
+            return 0 if report.status in {
+                SearchStatus.WITNESS, SearchStatus.PARTIAL
+            } else 1
+
+        if args.command == "cover":
+            suite_path = _coverage_suite_path(args.profile, args.suite)
+            suite = CoverageSuite.load(suite_path)
+            report = run_coverage(
+                suite,
+                backend=args.backend,
+                node_limit=args.node_limit,
+                progress=lambda message: print(f"COVER {message}", flush=True),
+            )
+            if args.witness_dir:
+                witness_dir = Path(args.witness_dir)
+                witness_dir.mkdir(parents=True, exist_ok=True)
+                for item in report.results:
+                    if item.witness is None:
+                        continue
+                    safe = "".join(
+                        char if char.isalnum() or char in "-_" else "_"
+                        for char in item.goal.id
+                    )
+                    path = witness_dir / f"{safe}.yaml"
+                    item.witness.dump(path)
+                    item.witness_path = str(path)
+
+            payload = report.to_dict()
+            summary = payload["summary"]
+            print(
+                f"COVERAGE {suite.name}: {summary['covered']}/{summary['total']} "
+                f"goal(s) covered; required "
+                f"{summary['required_covered']}/{summary['required']}"
+            )
+            marks = {
+                "covered": "[+]",
+                "uncovered": "[-]",
+                "unreachable": "[!]",
+                "unknown": "[?]",
+            }
+            for item in report.results:
+                suffix = f" via {item.input_name}" if item.input_name else ""
+                print(
+                    f"  {marks[item.status.value]} {item.goal.id}: "
+                    f"{item.status.value}{suffix}"
+                )
+                if item.status.value != "covered":
+                    print(f"      {item.reason}")
+            if args.output:
+                output = Path(args.output)
+                dump_data(payload, output)
+                print(f"WROTE {output}")
+            return 0 if report.required_complete else 1
 
         if args.command == "complete":
             catalog = EventCatalog.load(args.schema)

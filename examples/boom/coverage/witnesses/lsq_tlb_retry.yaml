@@ -1,0 +1,590 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: coverage-lsq-load
+  input_contract: architectural load only; TLB/retry outcomes are solver-selected
+  completion:
+    backend: z3
+    horizon: 20
+    model:
+      component: LSQ only
+      version: 0.12.0
+      composition:
+        name: boom-lsq
+        resolved_roles:
+          init_write: []
+          loads:
+          - event_id: load_0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            hart: 0
+            program_index: 0
+            byte_mask: 255
+            cycle: 0
+            ldq_idx: 0
+          local_stores: []
+          fences: []
+        modules:
+        - lsu
+        connections: []
+        generated_transformations: []
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          lsu:
+            public_ports:
+            - name: arch_load
+              direction: input
+              event_type: Arch.Load
+              required_connection: false
+            - name: commit_load
+              direction: input
+              event_type: Arch.CommitLoad
+              required_connection: false
+            - name: branch_kill
+              direction: input
+              event_type: Core.BranchKill
+              required_connection: false
+            - name: exception
+              direction: input
+              event_type: Core.Exception
+              required_connection: false
+            - name: squash_load
+              direction: input
+              event_type: Core.SquashLoad
+              required_connection: false
+            - name: dcache_req_fire
+              direction: input
+              event_type: LSU.DCacheReqFire
+              required_connection: false
+            - name: dcache_req_ready
+              direction: input
+              event_type: DCache.ReqReady
+              required_connection: false
+            - name: dcache_probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: dcache_long_latency_response
+              direction: input
+              event_type: DCache.LongLatencyLoadResponse
+              required_connection: false
+            - name: dcache_req_valid
+              direction: output
+              event_type: LSU.DCacheReqValid
+              required_connection: false
+            - name: memory_order_exception
+              direction: output
+              event_type: Core.MemoryOrderingException
+              required_connection: false
+            - name: dcache_load_nack
+              direction: input
+              event_type: DCache.LoadNack
+              required_connection: false
+            - name: arch_store
+              direction: input
+              event_type: Arch.Store
+              required_connection: false
+            - name: commit_store
+              direction: input
+              event_type: Arch.CommitStore
+              required_connection: false
+            - name: arch_fence
+              direction: input
+              event_type: Arch.Fence
+              required_connection: false
+            - name: commit_fence
+              direction: input
+              event_type: Arch.CommitFence
+              required_connection: false
+            - name: dcache_store_ack
+              direction: input
+              event_type: DCache.StoreAck
+              required_connection: false
+            - name: dcache_ordered
+              direction: input
+              event_type: DCache.Ordered
+              required_connection: false
+            - name: probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: dcache_load_response
+              direction: input
+              event_type: DCache.LoadResponse
+              required_connection: false
+            - name: dcache_ll_response
+              direction: input
+              event_type: DCache.LongLatencyLoadResponse
+              required_connection: false
+            - name: store_drain
+              direction: output
+              event_type: LSU.StoreDrainIssue
+              required_connection: false
+            - name: fence_release
+              direction: output
+              event_type: LSU.FenceRelease
+              required_connection: false
+            public_event_types:
+            - Arch.CommitFence
+            - Arch.CommitLoad
+            - Arch.CommitStore
+            - Arch.Fence
+            - Arch.Load
+            - Arch.Store
+            - Core.BranchKill
+            - Core.Exception
+            - Core.MemoryOrderingException
+            - Core.SquashLoad
+            - DCache.LoadNack
+            - DCache.LoadResponse
+            - DCache.LongLatencyLoadResponse
+            - DCache.Ordered
+            - DCache.ProbeRelease
+            - DCache.ReqReady
+            - DCache.StoreAck
+            - LSU.DCacheReqFire
+            - LSU.DCacheReqValid
+            - LSU.FenceRelease
+            - LSU.StoreDrainIssue
+            private_slot_ids:
+            - ldld_assert_0_0
+            - ldld_conflict_0_0
+            - ldld_search_0_0
+            - ldld_search_0_1
+            - ldq_allocate_0
+            - load_executed_0
+            - load_nack_seen_0
+            - load_observed_0
+            - load_sleep_0
+            - load_succeeded_hit_0
+            - load_succeeded_ll_0
+            - load_wakeup_0
+            - retry_enqueue_0
+            - retry_issue_0
+            - tlb_hit_0
+            - tlb_miss_0
+            private_event_types:
+            - LSU.AssertViolation
+            - LSU.LDLDConflict
+            - LSU.LDLDSearch
+            - LSU.LDQAllocate
+            - LSU.LoadExecuted
+            - LSU.LoadNackSeen
+            - LSU.LoadObserved
+            - LSU.LoadOrderFail
+            - LSU.LoadSleep
+            - LSU.LoadSucceeded
+            - LSU.LoadWakeup
+            - LSU.RetryEnqueue
+            - LSU.RetryIssue
+            - LSU.STLDViolation
+            - LSU.STQAllocate
+            - LSU.StoreAddressReady
+            - LSU.StoreCleared
+            - LSU.StoreCommitted
+            - LSU.StoreDataReady
+            - LSU.StoreFlushed
+            - LSU.StoreLoadForward
+            - LSU.StoreRetryEnqueue
+            - LSU.StoreRetryIssue
+            - LSU.StoreTLBHit
+            - LSU.StoreTLBMiss
+            - LSU.TLBHit
+            - LSU.TLBMiss
+            private_state_names:
+            - LSU.ldq[0].addr_is_uncacheable
+            - LSU.ldq[0].addr_is_virtual
+            - LSU.ldq[0].addr_valid
+            - LSU.ldq[0].address
+            - LSU.ldq[0].commit_eligible
+            - LSU.ldq[0].executed
+            - LSU.ldq[0].executing_now
+            - LSU.ldq[0].forward_std_val
+            - LSU.ldq[0].forward_store_program_index
+            - LSU.ldq[0].forward_stq_idx
+            - LSU.ldq[0].hart
+            - LSU.ldq[0].ld_byte_mask
+            - LSU.ldq[0].observed
+            - LSU.ldq[0].order_fail
+            - LSU.ldq[0].performed
+            - LSU.ldq[0].program_index
+            - LSU.ldq[0].squashed
+            - LSU.ldq[0].succeeded
+            - LSU.ldq[0].valid
+            - LSU.ldq[0].value
+            private_transformation_names:
+            - accepted_request_marks_executed_L0
+            - branch_kill_invalidates_load_L0
+            - buggy_ldld_assert_L0_L0
+            - commit_requires_valid_executed_succeeded_L0
+            - dcache_fire_records_load_address_L0
+            - dcache_nack_clears_executed_L0
+            - dcache_response_to_success_L0
+            - dcache_valid_requires_tlb_hit_L0
+            - exception_flush_invalidates_load_L0
+            - executed_load_generates_ldld_search_L0
+            - ldld_conflict_L0_L0
+            - ldld_search_ends_executing_window_L0
+            - ldq_allocate_L0
+            - ll_response_to_success_L0
+            - load_executed_sets_ldq_bit_L0
+            - load_observed_sets_ldq_bit_L0
+            - load_order_fail_raises_memory_ordering_exception_L0
+            - load_order_fail_sets_ldq_bit_L0
+            - load_succeeded_sets_value_L0
+            - load_wakeup_requires_sleeping_entry_L0
+            - matching_release_marks_observed_L0
+            - nack_seen_L0
+            - retry_enqueue_clears_ldq_address_L0
+            - retry_enqueue_requires_tlb_miss_L0
+            - retry_issue_requires_enqueue_L0
+            - squash_invalidates_load_L0
+            - tlb_hit_records_physical_address_L0
+            - tlb_miss_records_virtual_address_L0
+    selected_slots:
+    - ldq_allocate_0
+    - tlb_miss_0
+    - retry_enqueue_0
+    - retry_issue_0
+    state:
+      initial:
+        LSU.ldq[0].valid: false
+        LSU.ldq[0].addr_valid: false
+        LSU.ldq[0].addr_is_virtual: false
+        LSU.ldq[0].addr_is_uncacheable: false
+        LSU.ldq[0].address: EMPTY_ADDR
+        LSU.ldq[0].executed: false
+        LSU.ldq[0].succeeded: false
+        LSU.ldq[0].order_fail: false
+        LSU.ldq[0].observed: false
+        LSU.ldq[0].forward_std_val: false
+        LSU.ldq[0].forward_stq_idx: 63
+        LSU.ldq[0].ld_byte_mask: 0
+        LSU.ldq[0].value: UNSET_VALUE
+        LSU.ldq[0].squashed: false
+        LSU.ldq[0].executing_now: false
+        LSU.ldq[0].hart: -1
+        LSU.ldq[0].program_index: -1
+        LSU.ldq[0].performed: false
+        LSU.ldq[0].commit_eligible: false
+        LSU.ldq[0].forward_store_program_index: -1
+      final:
+        LSU.ldq[0].valid: true
+        LSU.ldq[0].addr_valid: false
+        LSU.ldq[0].addr_is_virtual: true
+        LSU.ldq[0].addr_is_uncacheable: false
+        LSU.ldq[0].address: x
+        LSU.ldq[0].executed: false
+        LSU.ldq[0].succeeded: false
+        LSU.ldq[0].order_fail: false
+        LSU.ldq[0].observed: false
+        LSU.ldq[0].forward_std_val: false
+        LSU.ldq[0].forward_stq_idx: 63
+        LSU.ldq[0].ld_byte_mask: 255
+        LSU.ldq[0].value: UNSET_VALUE
+        LSU.ldq[0].squashed: false
+        LSU.ldq[0].executing_now: false
+        LSU.ldq[0].hart: 0
+        LSU.ldq[0].program_index: 0
+        LSU.ldq[0].performed: false
+        LSU.ldq[0].commit_eligible: false
+        LSU.ldq[0].forward_store_program_index: -1
+      steps:
+      - cycle: 0
+        before:
+          LSU.ldq[0].valid: false
+          LSU.ldq[0].addr_valid: false
+          LSU.ldq[0].addr_is_virtual: false
+          LSU.ldq[0].addr_is_uncacheable: false
+          LSU.ldq[0].address: EMPTY_ADDR
+          LSU.ldq[0].executed: false
+          LSU.ldq[0].succeeded: false
+          LSU.ldq[0].order_fail: false
+          LSU.ldq[0].observed: false
+          LSU.ldq[0].forward_std_val: false
+          LSU.ldq[0].forward_stq_idx: 63
+          LSU.ldq[0].ld_byte_mask: 0
+          LSU.ldq[0].value: UNSET_VALUE
+          LSU.ldq[0].squashed: false
+          LSU.ldq[0].executing_now: false
+          LSU.ldq[0].hart: -1
+          LSU.ldq[0].program_index: -1
+          LSU.ldq[0].performed: false
+          LSU.ldq[0].commit_eligible: false
+          LSU.ldq[0].forward_store_program_index: -1
+        after:
+          LSU.ldq[0].valid: true
+          LSU.ldq[0].addr_valid: false
+          LSU.ldq[0].addr_is_virtual: false
+          LSU.ldq[0].addr_is_uncacheable: false
+          LSU.ldq[0].address: EMPTY_ADDR
+          LSU.ldq[0].executed: false
+          LSU.ldq[0].succeeded: false
+          LSU.ldq[0].order_fail: false
+          LSU.ldq[0].observed: false
+          LSU.ldq[0].forward_std_val: false
+          LSU.ldq[0].forward_stq_idx: 63
+          LSU.ldq[0].ld_byte_mask: 255
+          LSU.ldq[0].value: UNSET_VALUE
+          LSU.ldq[0].squashed: false
+          LSU.ldq[0].executing_now: false
+          LSU.ldq[0].hart: 0
+          LSU.ldq[0].program_index: 0
+          LSU.ldq[0].performed: false
+          LSU.ldq[0].commit_eligible: false
+          LSU.ldq[0].forward_store_program_index: -1
+        active_requirements: []
+        active_updates:
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.1
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.12
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.2
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.6
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.13
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.8
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.10
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.5
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.4
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.11
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.9
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.7
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.3
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.0
+        changes:
+        - state: LSU.ldq[0].hart
+          before: -1
+          after: 0
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.8
+        - state: LSU.ldq[0].ld_byte_mask
+          before: 0
+          after: 255
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.10
+        - state: LSU.ldq[0].program_index
+          before: -1
+          after: 0
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.9
+        - state: LSU.ldq[0].valid
+          before: false
+          after: true
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.0
+      - cycle: 1
+        before:
+          LSU.ldq[0].valid: true
+          LSU.ldq[0].addr_valid: false
+          LSU.ldq[0].addr_is_virtual: false
+          LSU.ldq[0].addr_is_uncacheable: false
+          LSU.ldq[0].address: EMPTY_ADDR
+          LSU.ldq[0].executed: false
+          LSU.ldq[0].succeeded: false
+          LSU.ldq[0].order_fail: false
+          LSU.ldq[0].observed: false
+          LSU.ldq[0].forward_std_val: false
+          LSU.ldq[0].forward_stq_idx: 63
+          LSU.ldq[0].ld_byte_mask: 255
+          LSU.ldq[0].value: UNSET_VALUE
+          LSU.ldq[0].squashed: false
+          LSU.ldq[0].executing_now: false
+          LSU.ldq[0].hart: 0
+          LSU.ldq[0].program_index: 0
+          LSU.ldq[0].performed: false
+          LSU.ldq[0].commit_eligible: false
+          LSU.ldq[0].forward_store_program_index: -1
+        after:
+          LSU.ldq[0].valid: true
+          LSU.ldq[0].addr_valid: true
+          LSU.ldq[0].addr_is_virtual: true
+          LSU.ldq[0].addr_is_uncacheable: false
+          LSU.ldq[0].address: x
+          LSU.ldq[0].executed: false
+          LSU.ldq[0].succeeded: false
+          LSU.ldq[0].order_fail: false
+          LSU.ldq[0].observed: false
+          LSU.ldq[0].forward_std_val: false
+          LSU.ldq[0].forward_stq_idx: 63
+          LSU.ldq[0].ld_byte_mask: 255
+          LSU.ldq[0].value: UNSET_VALUE
+          LSU.ldq[0].squashed: false
+          LSU.ldq[0].executing_now: false
+          LSU.ldq[0].hart: 0
+          LSU.ldq[0].program_index: 0
+          LSU.ldq[0].performed: false
+          LSU.ldq[0].commit_eligible: false
+          LSU.ldq[0].forward_store_program_index: -1
+        active_requirements:
+        - transformation.tlb_miss_records_virtual_address_L0.forward.0.tlb_miss_0.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.tlb_miss_records_virtual_address_L0.forward.0.tlb_miss_0.instance.0.no-output.update.1
+        - transformation.tlb_miss_records_virtual_address_L0.forward.0.tlb_miss_0.instance.0.no-output.update.0
+        - transformation.tlb_miss_records_virtual_address_L0.forward.0.tlb_miss_0.instance.0.no-output.update.2
+        changes:
+        - state: LSU.ldq[0].addr_is_virtual
+          before: false
+          after: true
+          origins:
+          - transformation.tlb_miss_records_virtual_address_L0.forward.0.tlb_miss_0.instance.0.no-output.update.1
+        - state: LSU.ldq[0].addr_valid
+          before: false
+          after: true
+          origins:
+          - transformation.tlb_miss_records_virtual_address_L0.forward.0.tlb_miss_0.instance.0.no-output.update.0
+        - state: LSU.ldq[0].address
+          before: EMPTY_ADDR
+          after: x
+          origins:
+          - transformation.tlb_miss_records_virtual_address_L0.forward.0.tlb_miss_0.instance.0.no-output.update.2
+      - cycle: 2
+        before:
+          LSU.ldq[0].valid: true
+          LSU.ldq[0].addr_valid: true
+          LSU.ldq[0].addr_is_virtual: true
+          LSU.ldq[0].addr_is_uncacheable: false
+          LSU.ldq[0].address: x
+          LSU.ldq[0].executed: false
+          LSU.ldq[0].succeeded: false
+          LSU.ldq[0].order_fail: false
+          LSU.ldq[0].observed: false
+          LSU.ldq[0].forward_std_val: false
+          LSU.ldq[0].forward_stq_idx: 63
+          LSU.ldq[0].ld_byte_mask: 255
+          LSU.ldq[0].value: UNSET_VALUE
+          LSU.ldq[0].squashed: false
+          LSU.ldq[0].executing_now: false
+          LSU.ldq[0].hart: 0
+          LSU.ldq[0].program_index: 0
+          LSU.ldq[0].performed: false
+          LSU.ldq[0].commit_eligible: false
+          LSU.ldq[0].forward_store_program_index: -1
+        after:
+          LSU.ldq[0].valid: true
+          LSU.ldq[0].addr_valid: false
+          LSU.ldq[0].addr_is_virtual: true
+          LSU.ldq[0].addr_is_uncacheable: false
+          LSU.ldq[0].address: x
+          LSU.ldq[0].executed: false
+          LSU.ldq[0].succeeded: false
+          LSU.ldq[0].order_fail: false
+          LSU.ldq[0].observed: false
+          LSU.ldq[0].forward_std_val: false
+          LSU.ldq[0].forward_stq_idx: 63
+          LSU.ldq[0].ld_byte_mask: 255
+          LSU.ldq[0].value: UNSET_VALUE
+          LSU.ldq[0].squashed: false
+          LSU.ldq[0].executing_now: false
+          LSU.ldq[0].hart: 0
+          LSU.ldq[0].program_index: 0
+          LSU.ldq[0].performed: false
+          LSU.ldq[0].commit_eligible: false
+          LSU.ldq[0].forward_store_program_index: -1
+        active_requirements:
+        - transformation.retry_enqueue_clears_ldq_address_L0.forward.0.retry_enqueue_0.instance.0.no-output.requirement.0
+        - transformation.retry_enqueue_clears_ldq_address_L0.forward.0.retry_enqueue_0.instance.0.no-output.requirement.1
+        - transformation.retry_enqueue_clears_ldq_address_L0.forward.0.retry_enqueue_0.instance.0.no-output.requirement.2
+        active_updates:
+        - transformation.retry_enqueue_clears_ldq_address_L0.forward.0.retry_enqueue_0.instance.0.no-output.update.0
+        changes:
+        - state: LSU.ldq[0].addr_valid
+          before: true
+          after: false
+          origins:
+          - transformation.retry_enqueue_clears_ldq_address_L0.forward.0.retry_enqueue_0.instance.0.no-output.update.0
+    active_transformations:
+    - name: transformation.ldq_allocate_L0.activation.0.0
+      transformation: ldq_allocate_L0
+      binding:
+        arch: load_0
+        alloc: ldq_allocate_0
+    - name: transformation.retry_enqueue_clears_ldq_address_L0.activation.0.0
+      transformation: retry_enqueue_clears_ldq_address_L0
+      binding:
+        enqueue: retry_enqueue_0
+    - name: transformation.retry_enqueue_requires_tlb_miss_L0.activation.0.0
+      transformation: retry_enqueue_requires_tlb_miss_L0
+      binding:
+        enqueue: retry_enqueue_0
+        miss: tlb_miss_0
+    - name: transformation.retry_issue_requires_enqueue_L0.activation.0.0
+      transformation: retry_issue_requires_enqueue_L0
+      binding:
+        issue: retry_issue_0
+        enqueue: retry_enqueue_0
+    - name: transformation.tlb_miss_records_virtual_address_L0.activation.0.0
+      transformation: tlb_miss_records_virtual_address_L0
+      binding:
+        miss: tlb_miss_0
+events:
+- id: load_0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    address: x
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      ldq_idx: 0
+- id: ldq_allocate_0
+  type: LSU.LDQAllocate
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+  cycle: 0
+  annotations:
+    role: ldq_allocation
+    source: dispatch
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: tlb_miss_0
+  type: LSU.TLBMiss
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 1
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retry_enqueue_0
+  type: LSU.RetryEnqueue
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 2
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: retry_issue_0
+  type: LSU.RetryIssue
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 0
+    vaddr: x
+  cycle: 3
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

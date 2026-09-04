@@ -1,0 +1,49 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-virtual-store-queue-v0.8
+policy: ports-only-public-surface
+modules:
+- module: virtual_store_queue
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: memory_commit
+    direction: input
+    event_type: Core.MemoryCommit
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  public_event_types:
+  - Core.MemoryCommit
+  - Core.MemoryIssue
+  - Core.Redirect
+  private_slot_ids:
+  - vsq_allocate_0
+  - vsq_allocate_1
+  - vsq_redirect_recover_0
+  - vsq_redirect_recover_1
+  - vsq_retire_0
+  - vsq_retire_1
+  private_event_types:
+  - SQ.Allocate
+  - SQ.RedirectRecover
+  - SQ.Retire
+  private_state_names:
+  - VSQ[SQHEAD].allocated
+  - VSQ[SQTAIL].allocated
+  private_transformation_names:
+  - committed_store_retires_vsq_0
+  - committed_store_retires_vsq_1
+  - redirect_recovery_reclaims_vsq_0
+  - redirect_recovery_reclaims_vsq_1
+  - redirect_selects_live_vsq_entry_0
+  - redirect_selects_live_vsq_entry_1
+  - store_issue_allocates_vsq_0
+  - store_issue_allocates_vsq_1
+  - younger_vsq_retire_waits_for_older_0
+  - younger_vsq_retire_waits_for_older_1
+  - younger_vsq_retire_waits_for_older_2
+  - younger_vsq_retire_waits_for_older_3

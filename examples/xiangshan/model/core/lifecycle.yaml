@@ -1,0 +1,363 @@
+schema_version: umcm.module.v0.15.0
+name: core_lifecycle
+metadata:
+  version: 0.2.0
+  stage: 2
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/backend/dispatch/Dispatch.scala:662-748
+  - src/main/scala/xiangshan/backend/rob/Rob.scala:464-493,599-724,792-855,881-929,1031-1085,1131-1150,1198-1269
+  - src/main/scala/xiangshan/backend/rob/RobBundles.scala:208-212
+  - src/main/scala/xiangshan/backend/rob/ExceptionGen.scala:34-180
+  scope: bounded scalar memory-uop allocation, issue, writeback, in-order commit, precise exception, and redirect squash
+  abstraction:
+  - program_index is the unwrapped age used to compare bounded trace operations; rob_idx remains the public hardware identity
+  - a successful Core.MemoryWriteback sets ROB completion; failed/replayed attempts do not
+  - vector element retirement is deferred to stage 12; Stage 6 load-queue redirects enter through the memory_order_redirect port
+ports:
+- {name: memory_instruction, direction: input, event_type: Core.MemoryInstruction, required_connection: false}
+- {name: memory_issue, direction: output, event_type: Core.MemoryIssue}
+- {name: memory_writeback, direction: input, event_type: Core.MemoryWriteback, required_connection: false}
+- {name: memory_fault, direction: input, event_type: Core.MemoryFault, required_connection: false}
+- {name: memory_commit, direction: output, event_type: Core.MemoryCommit}
+- {name: redirect, direction: output, event_type: Core.Redirect}
+- {name: memory_order_redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+internal_events:
+- Core.DispatchAllocate
+- Core.ROBWriteback
+- Core.ExceptionRecord
+- Core.ROBCommitSelect
+- Core.RedirectApply
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: memory_ops
+  as: op
+  include:
+    state_variables:
+    - {name: "Core.ROB[${op.op_id}].allocated", sort: {name: bool}, initial: false}
+    - {name: "Core.ROB[${op.op_id}].issued", sort: {name: bool}, initial: false}
+    - {name: "Core.ROB[${op.op_id}].completed", sort: {name: bool}, initial: false}
+    - {name: "Core.ROB[${op.op_id}].faulted", sort: {name: bool}, initial: false}
+    - {name: "Core.ROB[${op.op_id}].squashed", sort: {name: bool}, initial: false}
+    - {name: "Core.ROB[${op.op_id}].committed", sort: {name: bool}, initial: false}
+    slots:
+    - id: dispatch_allocate_${op.repeat_index}
+      type: Core.DispatchAllocate
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", rob_idx: "${op.rob_idx}", mem_kind: "${op.mem_kind}"}
+    - id: memory_issue_${op.repeat_index}
+      type: Core.MemoryIssue
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        mem_kind: ${op.mem_kind}
+        vaddr: ${op.vaddr}
+        address: ${op.address}
+        value: ${op.value}
+        write_value: ${op.write_value}
+        size: ${op.size}
+        byte_mask: ${op.byte_mask}
+        vector: ${op.vector}
+    - id: rob_writeback_${op.repeat_index}
+      type: Core.ROBWriteback
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", rob_idx: "${op.rob_idx}", mem_kind: "${op.mem_kind}", success: true}
+    - id: rob_commit_select_${op.repeat_index}
+      type: Core.ROBCommitSelect
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", program_index: "${op.program_index}", rob_idx: "${op.rob_idx}", mem_kind: "${op.mem_kind}"}
+    - id: memory_commit_${op.repeat_index}
+      type: Core.MemoryCommit
+      required: false
+      fields: {op_id: "${op.op_id}", hart: "${op.hart}", rob_idx: "${op.rob_idx}", mem_kind: "${op.mem_kind}"}
+    - id: exception_record_${op.repeat_index}
+      type: Core.ExceptionRecord
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        cause:
+          $expr: {node: symbol, name: "core::${op.op_id}::fault_cause", sort: {name: string}}
+    - id: exception_redirect_${op.repeat_index}
+      type: Core.Redirect
+      required: false
+      fields:
+        source_op_id: ${op.op_id}
+        target_op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        cause:
+          $expr: {node: symbol, name: "core::${op.op_id}::fault_cause", sort: {name: string}}
+        origin: exception
+        flush_self: true
+    transformations:
+    - name: dispatch_allocates_${op.repeat_index}
+      inputs: [{role: instruction, type: Core.MemoryInstruction}]
+      outputs: [{role: allocate, type: Core.DispatchAllocate}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: instruction, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Core.ROB[${op.op_id}].allocated", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Core.ROB[${op.op_id}].allocated", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [dispatch, rob, allocate]
+    - name: allocated_op_issues_${op.repeat_index}
+      inputs: [{role: allocate, type: Core.DispatchAllocate}]
+      outputs: [{role: issue, type: Core.MemoryIssue}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Core.ROB[${op.op_id}].allocated", at: issue, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].squashed", at: issue, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Core.ROB[${op.op_id}].issued", at: issue, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [dispatch, issue]
+    - name: rob_captures_successful_writeback_${op.repeat_index}
+      inputs:
+      - {role: issue, type: Core.MemoryIssue}
+      - {role: complete, type: Core.MemoryWriteback}
+      outputs: [{role: writeback, type: Core.ROBWriteback}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: complete, field: success, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Core.ROB[${op.op_id}].allocated", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].issued", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].faulted", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Core.ROB[${op.op_id}].squashed", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Core.ROB[${op.op_id}].completed", at: writeback, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rob, writeback]
+    - name: rob_selects_completed_op_${op.repeat_index}
+      inputs: [{role: writeback, type: Core.ROBWriteback}]
+      outputs: [{role: select, type: Core.ROBCommitSelect}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Core.ROB[${op.op_id}].completed", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].faulted", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Core.ROB[${op.op_id}].squashed", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Core.ROB[${op.op_id}].committed", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [rob, commit-select]
+    - name: rob_commits_selected_op_${op.repeat_index}
+      inputs: [{role: select, type: Core.ROBCommitSelect}]
+      outputs: [{role: commit, type: Core.MemoryCommit}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Core.ROB[${op.op_id}].completed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].faulted", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Core.ROB[${op.op_id}].squashed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Core.ROB[${op.op_id}].committed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Core.ROB[${op.op_id}].committed", at: commit, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rob, commit]
+    - name: exception_gen_records_fault_${op.repeat_index}
+      inputs:
+      - {role: issue, type: Core.MemoryIssue}
+      - {role: fault, type: Core.MemoryFault}
+      outputs: [{role: record, type: Core.ExceptionRecord}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: record, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: record, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: fault, field: cause, sort: {name: string}}, right: {node: event_field, event_id: record, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "Core.ROB[${op.op_id}].allocated", at: record, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].issued", at: record, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].squashed", at: record, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Core.ROB[${op.op_id}].committed", at: record, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Core.ROB[${op.op_id}].faulted", at: record, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [exception-gen, exception-record]
+    - name: rob_raises_precise_redirect_${op.repeat_index}
+      inputs: [{role: record, type: Core.ExceptionRecord}]
+      outputs: [{role: redirect, type: Core.Redirect}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: record, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: origin, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: exception}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: record, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: record, field: cause, sort: {name: string}}, right: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "Core.ROB[${op.op_id}].faulted", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${op.op_id}].squashed", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Core.ROB[${op.op_id}].committed", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [rob, precise-exception, redirect]
+
+repeat_product:
+- axes:
+  - {over: memory_ops, as: older}
+  - {over: memory_ops, as: target}
+  include:
+    transformations:
+    - name: commit_waits_for_older_${product.repeat_index}
+      inputs: [{role: commit, type: Core.MemoryCommit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${target.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${older.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${target.program_index}"}}
+      state_requirements:
+      - {state: "Core.ROB[${older.op_id}].committed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [rob, in-order-commit]
+    - name: precise_redirect_waits_for_older_${product.repeat_index}
+      inputs: [{role: redirect, type: Core.Redirect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${target.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: origin, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: exception}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${older.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${target.program_index}"}}
+      state_requirements:
+      - {state: "Core.ROB[${older.op_id}].committed", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [exception-gen, oldest, precise-exception]
+- axes:
+  - {over: memory_ops, as: source}
+  - {over: memory_ops, as: victim}
+  include:
+    slots:
+    - id: redirect_apply_${product.repeat_index}
+      type: Core.RedirectApply
+      required: false
+      fields:
+        op_id: ${victim.op_id}
+        source_op_id: ${source.op_id}
+        hart: ${victim.hart}
+        program_index: ${victim.program_index}
+        rob_idx: ${victim.rob_idx}
+        cause:
+          $expr: {node: symbol, name: "core::${source.op_id}::fault_cause", sort: {name: string}}
+    transformations:
+    - name: redirect_squashes_self_and_younger_${product.repeat_index}
+      inputs:
+      - {role: redirect, type: Core.Redirect}
+      - {role: instruction, type: Core.MemoryInstruction}
+      outputs: [{role: apply, type: Core.RedirectApply}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${source.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: instruction, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${victim.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: event_field, event_id: instruction, field: hart, sort: {name: int}}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${source.program_index}"}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${source.program_index}"}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: apply, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${victim.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: apply, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${source.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: apply, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}, right: {node: event_field, event_id: apply, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "Core.ROB[${victim.op_id}].allocated", at: apply, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Core.ROB[${victim.op_id}].committed", at: apply, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "Core.ROB[${victim.op_id}].squashed", at: apply, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [rob, redirect, squash]
+    - name: redirected_op_cannot_write_back_late_${product.repeat_index}
+      inputs:
+      - {role: redirect, type: Core.Redirect}
+      - {role: complete, type: Core.MemoryWriteback}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${source.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: complete, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${victim.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: event_field, event_id: complete, field: hart, sort: {name: int}}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${source.program_index}"}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${source.program_index}"}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: complete, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Core.ROB[${victim.op_id}].squashed", at: complete, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [rob, redirect, no-ghost-writeback]
+    - name: redirected_op_cannot_commit_late_${product.repeat_index}
+      inputs:
+      - {role: redirect, type: Core.Redirect}
+      - {role: commit, type: Core.MemoryCommit}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${source.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${victim.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: event_field, event_id: commit, field: hart, sort: {name: int}}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${source.program_index}"}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${source.program_index}"}, right: {node: literal, sort: {name: int}, value: "${victim.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "Core.ROB[${victim.op_id}].squashed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [rob, redirect, no-ghost-commit]

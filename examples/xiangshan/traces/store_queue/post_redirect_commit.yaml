@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: post-redirect-commit, expected: INFEASIBLE}
+events:
+- id: post_redirect_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SQPOST, hart: 0, program_index: 2, rob_idx: 2, mem_kind: store, vaddr: 12288, write_value: 7, size: 8, byte_mask: 255, sq_idx: 2, vector: false}
+- id: post_redirect_queue_redirect
+  type: Core.Redirect
+  occurs: true
+  cycle: 4
+  fields: {source_op_id: SQPREV, target_op_id: SQPREV, hart: 0, program_index: 1, rob_idx: 1, cause: branch_mispredict, origin: branch, flush_self: false}
+- id: forbidden_post_redirect_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 10
+  fields: {op_id: SQPOST, hart: 0, rob_idx: 2, mem_kind: store}
+constraints: []

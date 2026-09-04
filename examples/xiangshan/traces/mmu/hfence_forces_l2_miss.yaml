@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 4, case: hfence-forces-l2-miss, expected: FEASIBLE}
+events:
+- id: guest_page
+  type: MMU.PageMap
+  occurs: true
+  cycle: 0
+  fields: {map_id: MAP_HFENCE, hart: 0, entry_id: ge0, tlb_instance: ldtlb, vpn: 32, gpaddr: 12288, paddr: 32768, asid: 2, vmid: 7, translation_stage: all, initial_valid: false, page_level: 0, l2_initial_valid: true, stage1_valid: true, stage1_access_allowed: true, stage2_valid: true, stage2_access_allowed: true}
+- id: region_guest
+  type: MMU.ProtectionMap
+  occurs: true
+  cycle: 0
+  fields: {region_id: REGION_HFENCE, hart: 0, lower: 0, upper: 65536, access_kind: load, pmp_allow: true, pma_allow: true, bitmap_enabled: true, bitmap_allow: true, mpt_enabled: false, mpt_allow: false, cacheable: true, atomic: false}
+- id: hfence_gvma
+  type: Core.SFence
+  occurs: true
+  cycle: 1
+  fields: {op_id: HF0, hart: 0, vaddr: 131072, vpn: 32, asid: 2, vmid: 7, flush_kind: hfence_gvma}
+- id: guest_load_ptw
+  type: MMU.PTWRequest
+  occurs: true
+  cycle: 5
+  fields: {txn_id: HFLOAD0.a0, op_id: HFLOAD0, hart: 0, tlb_instance: ldtlb, vaddr: 131076, vpn: 32, access_kind: load, asid: 2, vmid: 7, translation_stage: all}
+constraints: []

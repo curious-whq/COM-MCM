@@ -1,0 +1,8 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: untrained-lookup, expected: FEASIBLE}
+events:
+- {id: load_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: EU, hart: 0, pc: 768, initial_valid: false, initial_ssid: 9, initial_strict: false}}
+- {id: load_lookup, type: MDP.Lookup, occurs: true, cycle: 2, fields: {op_id: LU, hart: 0, program_index: 1, rob_idx: 2, pc: 768, mem_kind: load}}
+- {id: load_issue, type: Core.MemoryIssue, occurs: true, cycle: 4, fields: {op_id: LU, hart: 0, program_index: 1, rob_idx: 2, mem_kind: load, vaddr: 8192, size: 8, byte_mask: 255, lq_idx: 2, vector: false}}
+constraints: []

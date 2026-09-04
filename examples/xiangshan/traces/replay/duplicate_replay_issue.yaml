@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: duplicate-replay-issue, expected: INFEASIBLE}
+events:
+- id: issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: RDUP, hart: 0, program_index: 6, rob_idx: 9, mem_kind: load, vaddr: 28672, size: 8, byte_mask: 255, lq_idx: 10, vector: false}
+- id: failed
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 5
+  fields: {op_id: RDUP, lq_idx: 10, address: 28672, byte_mask: 255, executed: true, succeeded: false, replay_cause: bank_conflict, attempt: 0, fault: false}
+- id: replay_once
+  type: Load.ReplayIssue
+  occurs: true
+  cycle: 9
+  fields: {op_id: RDUP, lq_idx: 10, cause: bank_conflict, hart: 0, program_index: 6, rob_idx: 9, vaddr: 28672, attempt: 1, priority: low}
+- id: replay_twice
+  type: Load.ReplayIssue
+  occurs: true
+  cycle: 10
+  fields: {op_id: RDUP, lq_idx: 10, cause: bank_conflict, hart: 0, program_index: 6, rob_idx: 9, vaddr: 28672, attempt: 1, priority: low}
+constraints: []

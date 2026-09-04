@@ -1,0 +1,32 @@
+schema_version: umcm.module.v0.15.0
+name: l1d
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: cache/dcache/DCacheWrapper.scala and child pipelines/queues
+ports:
+- {name: load_request, direction: input, event_type: L1.Request}
+- {name: sbuffer_request, direction: input, event_type: L1.Request}
+- {name: atomic_request, direction: input, event_type: L1.Request}
+- {name: response, direction: output, event_type: L1.Response}
+- {name: nack, direction: output, event_type: L1.Nack}
+- {name: release_notice, direction: output, event_type: L1.ReleaseNotice}
+- {name: tl_a, direction: output, event_type: TL.A}
+- {name: tl_b, direction: input, event_type: TL.B}
+- {name: tl_c, direction: output, event_type: TL.C}
+- {name: tl_d, direction: input, event_type: TL.D}
+- {name: tl_e, direction: output, event_type: TL.E}
+- {name: prefetch_request, direction: input, event_type: Prefetch.Request}
+- {name: prefetch_train, direction: output, event_type: Prefetch.Train}
+internal_events:
+- L1.TagLookup
+- L1.DataLookup
+- L1.MSHRAllocate
+- L1.Refill
+- L1.ProbeProcess
+- L1.Writeback
+slots: []
+state_variables: []
+transformations: []
+constraints: []

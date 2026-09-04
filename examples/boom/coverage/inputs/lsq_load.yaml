@@ -1,0 +1,13 @@
+schema_version: umcm.trace.v0.19.0
+partial: true
+metadata:
+  case: coverage-lsq-load
+  input_contract: architectural load only; TLB/retry outcomes are solver-selected
+events:
+- id: load_0
+  type: Arch.Load
+  occurs: true
+  cycle: 0
+  fields: {op_id: L0, hart: 0, program_index: 0, address: x, byte_mask: 255}
+  annotations: {microarch: {ldq_idx: 0}}
+constraints: []

@@ -1,0 +1,823 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-stage1-interface-baseline
+policy: ports-only-public-surface
+modules:
+- module: core_control
+  ports:
+  - name: arch_load
+    direction: input
+    event_type: Arch.Load
+    required_connection: false
+  - name: arch_store
+    direction: input
+    event_type: Arch.Store
+    required_connection: false
+  - name: arch_lr
+    direction: input
+    event_type: Arch.LR
+    required_connection: false
+  - name: arch_sc
+    direction: input
+    event_type: Arch.SC
+    required_connection: false
+  - name: arch_amo
+    direction: input
+    event_type: Arch.AMO
+    required_connection: false
+  - name: arch_fence
+    direction: input
+    event_type: Arch.Fence
+    required_connection: false
+  - name: memory_issue
+    direction: output
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: memory_commit
+    direction: output
+    event_type: Core.MemoryCommit
+    required_connection: false
+  - name: redirect
+    direction: output
+    event_type: Core.Redirect
+    required_connection: false
+  - name: sfence
+    direction: output
+    event_type: Core.SFence
+    required_connection: false
+  - name: fence_request
+    direction: output
+    event_type: Core.FenceRequest
+    required_connection: false
+  - name: load_writeback
+    direction: input
+    event_type: Core.MemoryWriteback
+    required_connection: true
+  - name: store_writeback
+    direction: input
+    event_type: Core.MemoryWriteback
+    required_connection: true
+  - name: atomic_writeback
+    direction: input
+    event_type: Core.MemoryWriteback
+    required_connection: true
+  - name: load_fault
+    direction: input
+    event_type: Core.MemoryFault
+    required_connection: true
+  - name: store_fault
+    direction: input
+    event_type: Core.MemoryFault
+    required_connection: true
+  - name: atomic_fault
+    direction: input
+    event_type: Core.MemoryFault
+    required_connection: true
+  - name: memory_violation
+    direction: input
+    event_type: Core.MemoryViolation
+    required_connection: true
+  - name: memory_ordered
+    direction: input
+    event_type: Core.MemoryOrdered
+    required_connection: true
+  - name: commit_read
+    direction: output
+    event_type: Arch.CommitRead
+    required_connection: false
+  public_event_types:
+  - Arch.AMO
+  - Arch.CommitRead
+  - Arch.Fence
+  - Arch.LR
+  - Arch.Load
+  - Arch.SC
+  - Arch.Store
+  - Core.FenceRequest
+  - Core.MemoryCommit
+  - Core.MemoryFault
+  - Core.MemoryIssue
+  - Core.MemoryOrdered
+  - Core.MemoryViolation
+  - Core.MemoryWriteback
+  - Core.Redirect
+  - Core.SFence
+  private_slot_ids: []
+  private_event_types:
+  - Core.DispatchAllocate
+  - Core.ROBCommitSelect
+  - Core.RedirectApply
+  private_state_names: []
+  private_transformation_names: []
+- module: dtlb
+  ports:
+  - name: load_request
+    direction: input
+    event_type: MMU.TranslateRequest
+    required_connection: true
+  - name: store_request
+    direction: input
+    event_type: MMU.TranslateRequest
+    required_connection: true
+  - name: atomic_request
+    direction: input
+    event_type: MMU.TranslateRequest
+    required_connection: true
+  - name: response
+    direction: output
+    event_type: MMU.TranslateResponse
+    required_connection: false
+  - name: ptw_request
+    direction: output
+    event_type: MMU.PTWRequest
+    required_connection: false
+  - name: ptw_response
+    direction: input
+    event_type: MMU.PTWResponse
+    required_connection: true
+  - name: sfence
+    direction: input
+    event_type: Core.SFence
+    required_connection: true
+  public_event_types:
+  - Core.SFence
+  - MMU.PTWRequest
+  - MMU.PTWResponse
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  private_slot_ids: []
+  private_event_types:
+  - MMU.L1TLBHit
+  - MMU.L1TLBMiss
+  - MMU.L1TLBRefill
+  private_state_names: []
+  private_transformation_names: []
+- module: translation_backend
+  ports:
+  - name: ptw_request
+    direction: input
+    event_type: MMU.PTWRequest
+    required_connection: true
+  - name: ptw_response
+    direction: output
+    event_type: MMU.PTWResponse
+    required_connection: false
+  - name: sfence
+    direction: input
+    event_type: Core.SFence
+    required_connection: true
+  public_event_types:
+  - Core.SFence
+  - MMU.PTWRequest
+  - MMU.PTWResponse
+  private_slot_ids: []
+  private_event_types:
+  - MMU.L2TLBHit
+  - MMU.L2TLBMiss
+  - MMU.PTWWalk
+  - MMU.ProtectionCheck
+  private_state_names: []
+  private_transformation_names: []
+- module: load_pipeline
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: true
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: true
+  - name: translate_request
+    direction: output
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: translate_response
+    direction: input
+    event_type: MMU.TranslateResponse
+    required_connection: true
+  - name: l1_request
+    direction: output
+    event_type: L1.Request
+    required_connection: false
+  - name: l1_response
+    direction: input
+    event_type: L1.Response
+    required_connection: true
+  - name: l1_nack
+    direction: input
+    event_type: L1.Nack
+    required_connection: true
+  - name: uncache_request
+    direction: output
+    event_type: Uncache.Request
+    required_connection: false
+  - name: uncache_response
+    direction: input
+    event_type: Uncache.Response
+    required_connection: true
+  - name: forward_query
+    direction: output
+    event_type: Store.ForwardQuery
+    required_connection: false
+  - name: forward_response
+    direction: input
+    event_type: Store.ForwardResponse
+    required_connection: true
+  - name: queue_update
+    direction: output
+    event_type: Load.PipelineUpdate
+    required_connection: false
+  - name: replay_issue
+    direction: input
+    event_type: Load.ReplayIssue
+    required_connection: true
+  - name: writeback
+    direction: output
+    event_type: Core.MemoryWriteback
+    required_connection: false
+  - name: memory_fault
+    direction: output
+    event_type: Core.MemoryFault
+    required_connection: false
+  - name: prefetch_train
+    direction: output
+    event_type: Prefetch.Train
+    required_connection: false
+  public_event_types:
+  - Core.MemoryFault
+  - Core.MemoryIssue
+  - Core.MemoryWriteback
+  - Core.Redirect
+  - L1.Nack
+  - L1.Request
+  - L1.Response
+  - Load.PipelineUpdate
+  - Load.ReplayIssue
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  - Prefetch.Train
+  - Store.ForwardQuery
+  - Store.ForwardResponse
+  - Uncache.Request
+  - Uncache.Response
+  private_slot_ids: []
+  private_event_types:
+  - Load.ForwardSelect
+  - Load.StageAdvance
+  private_state_names: []
+  private_transformation_names: []
+- module: load_queue
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: true
+  - name: memory_commit
+    direction: input
+    event_type: Core.MemoryCommit
+    required_connection: true
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: true
+  - name: pipeline_update
+    direction: input
+    event_type: Load.PipelineUpdate
+    required_connection: true
+  - name: release_notice
+    direction: input
+    event_type: L1.ReleaseNotice
+    required_connection: true
+  - name: replay_issue
+    direction: output
+    event_type: Load.ReplayIssue
+    required_connection: false
+  - name: memory_violation
+    direction: output
+    event_type: Core.MemoryViolation
+    required_connection: false
+  public_event_types:
+  - Core.MemoryCommit
+  - Core.MemoryIssue
+  - Core.MemoryViolation
+  - Core.Redirect
+  - L1.ReleaseNotice
+  - Load.PipelineUpdate
+  - Load.ReplayIssue
+  private_slot_ids: []
+  private_event_types:
+  - LQ.Allocate
+  - LQ.RARViolation
+  - LQ.RAWViolation
+  - LQ.ReplayEnqueue
+  private_state_names: []
+  private_transformation_names: []
+- module: store_pipeline
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: true
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: true
+  - name: translate_request
+    direction: output
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: translate_response
+    direction: input
+    event_type: MMU.TranslateResponse
+    required_connection: true
+  - name: address_ready
+    direction: output
+    event_type: Store.AddressReady
+    required_connection: false
+  - name: data_ready
+    direction: output
+    event_type: Store.DataReady
+    required_connection: false
+  - name: writeback
+    direction: output
+    event_type: Core.MemoryWriteback
+    required_connection: false
+  - name: memory_fault
+    direction: output
+    event_type: Core.MemoryFault
+    required_connection: false
+  - name: prefetch_train
+    direction: output
+    event_type: Prefetch.Train
+    required_connection: false
+  public_event_types:
+  - Core.MemoryFault
+  - Core.MemoryIssue
+  - Core.MemoryWriteback
+  - Core.Redirect
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  - Prefetch.Train
+  - Store.AddressReady
+  - Store.DataReady
+  private_slot_ids: []
+  private_event_types:
+  - Store.FaultDecision
+  - Store.ReplayDecision
+  - Store.StageAdvance
+  private_state_names: []
+  private_transformation_names: []
+- module: store_queue
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: true
+  - name: memory_commit
+    direction: input
+    event_type: Core.MemoryCommit
+    required_connection: true
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: true
+  - name: address_ready
+    direction: input
+    event_type: Store.AddressReady
+    required_connection: true
+  - name: data_ready
+    direction: input
+    event_type: Store.DataReady
+    required_connection: true
+  - name: forward_query
+    direction: input
+    event_type: Store.ForwardQuery
+    required_connection: true
+  - name: forward_response
+    direction: output
+    event_type: Store.ForwardResponse
+    required_connection: false
+  - name: store_drain
+    direction: output
+    event_type: Store.Drain
+    required_connection: false
+  - name: uncache_request
+    direction: output
+    event_type: Uncache.Request
+    required_connection: false
+  - name: uncache_response
+    direction: input
+    event_type: Uncache.Response
+    required_connection: true
+  public_event_types:
+  - Core.MemoryCommit
+  - Core.MemoryIssue
+  - Core.Redirect
+  - Store.AddressReady
+  - Store.DataReady
+  - Store.Drain
+  - Store.ForwardQuery
+  - Store.ForwardResponse
+  - Uncache.Request
+  - Uncache.Response
+  private_slot_ids: []
+  private_event_types:
+  - SQ.Allocate
+  - SQ.DrainSelect
+  - SQ.ForwardSelect
+  - SQ.RedirectRecover
+  - SQ.Retire
+  - SQ.UnalignedSplit
+  private_state_names: []
+  private_transformation_names: []
+- module: sbuffer
+  ports:
+  - name: store_drain
+    direction: input
+    event_type: Store.Drain
+    required_connection: true
+  - name: fence_request
+    direction: input
+    event_type: Core.FenceRequest
+    required_connection: true
+  - name: l1_request
+    direction: output
+    event_type: L1.Request
+    required_connection: false
+  - name: l1_response
+    direction: input
+    event_type: L1.Response
+    required_connection: true
+  - name: memory_ordered
+    direction: output
+    event_type: Core.MemoryOrdered
+    required_connection: false
+  - name: prefetch_train
+    direction: output
+    event_type: Prefetch.Train
+    required_connection: false
+  public_event_types:
+  - Core.FenceRequest
+  - Core.MemoryOrdered
+  - L1.Request
+  - L1.Response
+  - Prefetch.Train
+  - Store.Drain
+  private_slot_ids: []
+  private_event_types:
+  - SBuffer.DrainSelect
+  - SBuffer.Merge
+  private_state_names: []
+  private_transformation_names: []
+- module: uncache
+  ports:
+  - name: load_request
+    direction: input
+    event_type: Uncache.Request
+    required_connection: true
+  - name: store_request
+    direction: input
+    event_type: Uncache.Request
+    required_connection: true
+  - name: response
+    direction: output
+    event_type: Uncache.Response
+    required_connection: false
+  - name: memory_request
+    direction: output
+    event_type: Memory.Request
+    required_connection: false
+  - name: memory_response
+    direction: input
+    event_type: Memory.Response
+    required_connection: true
+  public_event_types:
+  - Memory.Request
+  - Memory.Response
+  - Uncache.Request
+  - Uncache.Response
+  private_slot_ids: []
+  private_event_types:
+  - Uncache.Arbitrate
+  private_state_names: []
+  private_transformation_names: []
+- module: atomic
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: true
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: true
+  - name: translate_request
+    direction: output
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: translate_response
+    direction: input
+    event_type: MMU.TranslateResponse
+    required_connection: true
+  - name: l1_request
+    direction: output
+    event_type: L1.Request
+    required_connection: false
+  - name: l1_response
+    direction: input
+    event_type: L1.Response
+    required_connection: true
+  - name: l1_nack
+    direction: input
+    event_type: L1.Nack
+    required_connection: true
+  - name: writeback
+    direction: output
+    event_type: Core.MemoryWriteback
+    required_connection: false
+  - name: memory_fault
+    direction: output
+    event_type: Core.MemoryFault
+    required_connection: false
+  public_event_types:
+  - Core.MemoryFault
+  - Core.MemoryIssue
+  - Core.MemoryWriteback
+  - Core.Redirect
+  - L1.Nack
+  - L1.Request
+  - L1.Response
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  private_slot_ids: []
+  private_event_types:
+  - Atomic.ReservationClear
+  - Atomic.ReservationSet
+  - Atomic.Serialize
+  private_state_names: []
+  private_transformation_names: []
+- module: l1d
+  ports:
+  - name: load_request
+    direction: input
+    event_type: L1.Request
+    required_connection: true
+  - name: sbuffer_request
+    direction: input
+    event_type: L1.Request
+    required_connection: true
+  - name: atomic_request
+    direction: input
+    event_type: L1.Request
+    required_connection: true
+  - name: response
+    direction: output
+    event_type: L1.Response
+    required_connection: false
+  - name: nack
+    direction: output
+    event_type: L1.Nack
+    required_connection: false
+  - name: release_notice
+    direction: output
+    event_type: L1.ReleaseNotice
+    required_connection: false
+  - name: tl_a
+    direction: output
+    event_type: TL.A
+    required_connection: false
+  - name: tl_b
+    direction: input
+    event_type: TL.B
+    required_connection: true
+  - name: tl_c
+    direction: output
+    event_type: TL.C
+    required_connection: false
+  - name: tl_d
+    direction: input
+    event_type: TL.D
+    required_connection: true
+  - name: tl_e
+    direction: output
+    event_type: TL.E
+    required_connection: false
+  - name: prefetch_request
+    direction: input
+    event_type: Prefetch.Request
+    required_connection: true
+  - name: prefetch_train
+    direction: output
+    event_type: Prefetch.Train
+    required_connection: false
+  public_event_types:
+  - L1.Nack
+  - L1.ReleaseNotice
+  - L1.Request
+  - L1.Response
+  - Prefetch.Request
+  - Prefetch.Train
+  - TL.A
+  - TL.B
+  - TL.C
+  - TL.D
+  - TL.E
+  private_slot_ids: []
+  private_event_types:
+  - L1.DataLookup
+  - L1.MSHRAllocate
+  - L1.ProbeProcess
+  - L1.Refill
+  - L1.TagLookup
+  - L1.Writeback
+  private_state_names: []
+  private_transformation_names: []
+- module: coupled_l2
+  ports:
+  - name: tl_a
+    direction: input
+    event_type: TL.A
+    required_connection: true
+  - name: tl_b
+    direction: output
+    event_type: TL.B
+    required_connection: false
+  - name: tl_c
+    direction: input
+    event_type: TL.C
+    required_connection: true
+  - name: tl_d
+    direction: output
+    event_type: TL.D
+    required_connection: false
+  - name: tl_e
+    direction: input
+    event_type: TL.E
+    required_connection: true
+  - name: chi_txreq
+    direction: output
+    event_type: CHI.TXREQ
+    required_connection: false
+  - name: chi_txdat
+    direction: output
+    event_type: CHI.TXDAT
+    required_connection: false
+  - name: chi_txrsp
+    direction: output
+    event_type: CHI.TXRSP
+    required_connection: false
+  - name: chi_rxsnp
+    direction: input
+    event_type: CHI.RXSNP
+    required_connection: true
+  - name: chi_rxdat
+    direction: input
+    event_type: CHI.RXDAT
+    required_connection: true
+  - name: chi_rxrsp
+    direction: input
+    event_type: CHI.RXRSP
+    required_connection: true
+  - name: prefetch_request
+    direction: input
+    event_type: Prefetch.Request
+    required_connection: true
+  - name: prefetch_train
+    direction: output
+    event_type: Prefetch.Train
+    required_connection: false
+  public_event_types:
+  - CHI.RXDAT
+  - CHI.RXRSP
+  - CHI.RXSNP
+  - CHI.TXDAT
+  - CHI.TXREQ
+  - CHI.TXRSP
+  - Prefetch.Request
+  - Prefetch.Train
+  - TL.A
+  - TL.B
+  - TL.C
+  - TL.D
+  - TL.E
+  private_slot_ids: []
+  private_event_types:
+  - L2.DirectoryLookup
+  - L2.GrantIssue
+  - L2.MSHRAllocate
+  - L2.ProbeIssue
+  private_state_names: []
+  private_transformation_names: []
+- module: open_llc
+  ports:
+  - name: chi_txreq
+    direction: input
+    event_type: CHI.TXREQ
+    required_connection: true
+  - name: chi_txdat
+    direction: input
+    event_type: CHI.TXDAT
+    required_connection: true
+  - name: chi_txrsp
+    direction: input
+    event_type: CHI.TXRSP
+    required_connection: true
+  - name: chi_rxsnp
+    direction: output
+    event_type: CHI.RXSNP
+    required_connection: false
+  - name: chi_rxdat
+    direction: output
+    event_type: CHI.RXDAT
+    required_connection: false
+  - name: chi_rxrsp
+    direction: output
+    event_type: CHI.RXRSP
+    required_connection: false
+  - name: memory_request
+    direction: output
+    event_type: Memory.Request
+    required_connection: false
+  - name: memory_response
+    direction: input
+    event_type: Memory.Response
+    required_connection: true
+  - name: prefetch_request
+    direction: input
+    event_type: Prefetch.Request
+    required_connection: true
+  public_event_types:
+  - CHI.RXDAT
+  - CHI.RXRSP
+  - CHI.RXSNP
+  - CHI.TXDAT
+  - CHI.TXREQ
+  - CHI.TXRSP
+  - Memory.Request
+  - Memory.Response
+  - Prefetch.Request
+  private_slot_ids: []
+  private_event_types:
+  - L3.DirectoryLookup
+  - L3.MemoryIssue
+  - L3.Refill
+  - L3.SnoopIssue
+  private_state_names: []
+  private_transformation_names: []
+- module: prefetch
+  ports:
+  - name: load_train
+    direction: input
+    event_type: Prefetch.Train
+    required_connection: true
+  - name: sbuffer_train
+    direction: input
+    event_type: Prefetch.Train
+    required_connection: true
+  - name: l1_train
+    direction: input
+    event_type: Prefetch.Train
+    required_connection: true
+  - name: l2_train
+    direction: input
+    event_type: Prefetch.Train
+    required_connection: true
+  - name: request
+    direction: output
+    event_type: Prefetch.Request
+    required_connection: false
+  public_event_types:
+  - Prefetch.Request
+  - Prefetch.Train
+  private_slot_ids: []
+  private_event_types:
+  - Prefetch.Filter
+  - Prefetch.Generate
+  private_state_names: []
+  private_transformation_names: []
+- module: memory_environment
+  ports:
+  - name: l3_request
+    direction: input
+    event_type: Memory.Request
+    required_connection: true
+  - name: uncache_request
+    direction: input
+    event_type: Memory.Request
+    required_connection: true
+  - name: response
+    direction: output
+    event_type: Memory.Response
+    required_connection: false
+  - name: write_visible
+    direction: output
+    event_type: Memory.WriteVisible
+    required_connection: false
+  public_event_types:
+  - Memory.Request
+  - Memory.Response
+  - Memory.WriteVisible
+  private_slot_ids: []
+  private_event_types: []
+  private_state_names: []
+  private_transformation_names: []

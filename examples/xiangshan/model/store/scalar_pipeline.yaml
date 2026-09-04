@@ -1,0 +1,538 @@
+schema_version: umcm.module.v0.15.0
+name: scalar_store_pipeline
+metadata:
+  version: 0.8.0
+  stage: 8
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/mem/pipeline/NewStoreUnit.scala:37-247,248-537,538-700,701-827,844-975
+  - src/main/scala/xiangshan/mem/pipeline/StdExeUnit.scala:28-83
+  - src/main/scala/xiangshan/mem/pipeline/Bundles.scala:304-318
+  - src/main/scala/xiangshan/mem/pipeline/package.scala:153-190
+  - src/main/scala/xiangshan/mem/MemBlock.scala:957-977
+  scope: bounded first-attempt aligned scalar cached-store STA S0-S3 and independent STD path through SQ address/data readiness and abstract ROB completion
+  hierarchy: stage registers, replay/fault classification, and redirect kill are private; core, DTLB, and StoreQueue communication uses public ports
+  abstractions:
+  - STA and STD are expanded as independent paths for one dynamic store identity; neither address-ready nor data-ready is ordered before the other
+  - one public store writeback summarizes completion of the split STA/STD micro-ops and is enabled only after both SQ payloads are present
+  - an S1 TLB replay does not publish AddressReady even though RTL writes a not-ready SQ address record carrying tlbMiss; the public event means usable physical address
+  - S2 cacheability/MMIO and DCache training are deferred to Stages 11 and 13; unaligned S4, vector, CBO, and atomic paths are deferred to Stages 12 and 16
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+- {name: translate_request, direction: output, event_type: MMU.TranslateRequest}
+- {name: translate_response, direction: input, event_type: MMU.TranslateResponse, required_connection: false}
+- {name: address_ready, direction: output, event_type: Store.AddressReady}
+- {name: data_ready, direction: output, event_type: Store.DataReady}
+- {name: writeback, direction: output, event_type: Core.MemoryWriteback}
+- {name: memory_fault, direction: output, event_type: Core.MemoryFault}
+internal_events:
+- Store.StageAdvance
+- Store.ReplayDecision
+- Store.FaultDecision
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: store_ops
+  as: op
+  include:
+    state_variables:
+    - {name: "StorePipeline[${op.op_id}].live", sort: {name: bool}, initial: false}
+    slots:
+    - id: store_s0_${op.repeat_index}
+      type: Store.StageAdvance
+      required: false
+      fields: &store_s0_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        sq_idx: ${op.sq_idx}
+        mem_kind: store
+        vaddr: ${op.vaddr}
+        paddr: {$expr: {node: symbol, name: "store::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        address: {$expr: {node: symbol, name: "store::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        value: ${op.write_value}
+        size: ${op.size}
+        byte_mask: ${op.byte_mask}
+        attempt: 0
+        stage: s0
+        path: sta
+        data_valid: false
+    - id: store_std_${op.repeat_index}
+      type: Store.StageAdvance
+      required: false
+      fields:
+        <<: *store_s0_fields
+        stage: std
+        path: std
+        data_valid: true
+    - id: store_s1_${op.repeat_index}
+      type: Store.StageAdvance
+      required: false
+      fields:
+        <<: *store_s0_fields
+        stage: s1
+        path: translated
+    - id: store_s2_${op.repeat_index}
+      type: Store.StageAdvance
+      required: false
+      fields:
+        <<: *store_s0_fields
+        stage: s2
+        path: checked
+    - id: store_s3_${op.repeat_index}
+      type: Store.StageAdvance
+      required: false
+      fields:
+        <<: *store_s0_fields
+        stage: s3
+        path: writeback
+    - id: store_translate_request_${op.repeat_index}
+      type: MMU.TranslateRequest
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        attempt: 0
+        access_kind: store
+        size: ${op.size}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+    - id: store_address_ready_${op.repeat_index}
+      type: Store.AddressReady
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        sq_idx: ${op.sq_idx}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        address: {$expr: {node: symbol, name: "store::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        byte_mask: ${op.byte_mask}
+    - id: store_data_ready_${op.repeat_index}
+      type: Store.DataReady
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        sq_idx: ${op.sq_idx}
+        value: ${op.write_value}
+        byte_mask: ${op.byte_mask}
+    - id: store_tlb_replay_${op.repeat_index}
+      type: Store.ReplayDecision
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        sq_idx: ${op.sq_idx}
+        mem_kind: store
+        vaddr: ${op.vaddr}
+        attempt: 0
+        replay_source: tlb
+        path: replay
+        cause: {$expr: {node: symbol, name: "store::${op.op_id}::replay_cause", sort: {name: string}}}
+    - id: store_fault_decision_${op.repeat_index}
+      type: Store.FaultDecision
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        sq_idx: ${op.sq_idx}
+        mem_kind: store
+        vaddr: ${op.vaddr}
+        paddr: {$expr: {node: symbol, name: "store::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        attempt: 0
+        fault: true
+        fault_source: translation
+        path: fault
+        cause: {$expr: {node: symbol, name: "store::${op.op_id}::fault_cause", sort: {name: string}}}
+    - id: store_redirect_kill_${op.repeat_index}
+      type: Store.ReplayDecision
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        sq_idx: ${op.sq_idx}
+        mem_kind: store
+        vaddr: ${op.vaddr}
+        attempt: 0
+        replay_source: redirect
+        path: killed
+        cause: {$expr: {node: symbol, name: "store::${op.op_id}::redirect_cause", sort: {name: string}}}
+    - id: store_writeback_${op.repeat_index}
+      type: Core.MemoryWriteback
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        rob_idx: ${op.rob_idx}
+        mem_kind: store
+        value: ${op.write_value}
+        success: true
+    - id: store_memory_fault_${op.repeat_index}
+      type: Core.MemoryFault
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        rob_idx: ${op.rob_idx}
+        vaddr: ${op.vaddr}
+        cause: {$expr: {node: symbol, name: "store::${op.op_id}::fault_cause", sort: {name: string}}}
+    transformations:
+    - name: issue_enters_store_sta_s0_${op.repeat_index}
+      inputs: [{role: issue, type: Core.MemoryIssue}]
+      outputs: [{role: stage, type: Store.StageAdvance}]
+      when: &store_issue_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when: &sta_s0_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s0}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "StorePipeline[${op.op_id}].live", at: stage, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "StorePipeline[${op.op_id}].live", at: stage, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [store, sta, s0, source:NewStoreUnit.scala:37-247]
+    - name: issue_enters_independent_std_${op.repeat_index}
+      inputs: [{role: issue, type: Core.MemoryIssue}]
+      outputs: [{role: stage, type: Store.StageAdvance}]
+      when: *store_issue_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: std}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [store, std, independent, source:StdExeUnit.scala:46-81]
+    - name: sta_s0_requests_translation_${op.repeat_index}
+      inputs: [{role: stage, type: Store.StageAdvance}]
+      outputs: [{role: request, type: MMU.TranslateRequest}]
+      when: *sta_s0_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [store, sta, tlb-request, source:NewStoreUnit.scala:174-232]
+    - name: std_writes_store_data_${op.repeat_index}
+      inputs: [{role: stage, type: Store.StageAdvance}]
+      outputs: [{role: data, type: Store.DataReady}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: std}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: data, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [store, std, data-ready, source:StdExeUnit.scala:64-81]
+    - name: translation_success_enters_store_s1_${op.repeat_index}
+      inputs:
+      - {role: s0, type: Store.StageAdvance}
+      - {role: request, type: MMU.TranslateRequest}
+      - {role: response, type: MMU.TranslateResponse}
+      outputs: [{role: stage, type: Store.StageAdvance}]
+      when: &store_translation_success
+        node: nary
+        op: and
+        operands:
+        - node: nary
+          op: and
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: s0, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: s0, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: access_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: replay, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      output_when: &store_s1_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}, right: {node: event_field, event_id: stage, field: paddr, sort: {name: address, width: 64}}}
+      state_requirements:
+      - {state: "StorePipeline[${op.op_id}].live", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [store, sta, s1, tlb-hit, source:NewStoreUnit.scala:306-450]
+    - name: store_s1_publishes_address_${op.repeat_index}
+      inputs: [{role: stage, type: Store.StageAdvance}]
+      outputs: [{role: address, type: Store.AddressReady}]
+      when: *store_s1_scope
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: address, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [store, sta, address-ready, source:NewStoreUnit.scala:424-507]
+    - name: store_s1_advances_to_s2_${op.repeat_index}
+      inputs: [{role: prev, type: Store.StageAdvance}]
+      outputs: [{role: stage, type: Store.StageAdvance}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: prev, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: prev, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1}}
+      output_when: &store_s2_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: prev, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [store, sta, s2, protection-summary, source:NewStoreUnit.scala:538-700]
+    - name: checked_store_advances_to_s3_${op.repeat_index}
+      inputs: [{role: prev, type: Store.StageAdvance}]
+      outputs: [{role: stage, type: Store.StageAdvance}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: prev, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: prev, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+      output_when: &store_s3_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s3}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: prev, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [store, sta, s3, source:NewStoreUnit.scala:701-827]
+    - name: address_data_pair_completes_store_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Store.StageAdvance}
+      - {role: address, type: Store.AddressReady}
+      - {role: data, type: Store.DataReady}
+      outputs: [{role: writeback, type: Core.MemoryWriteback}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *store_s3_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: sq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.sq_idx}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: sq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.sq_idx}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: address, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "StorePipeline[${op.op_id}].live", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "StorePipeline[${op.op_id}].live", at: writeback, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [store, pair, writeback, source:NewStoreUnit.scala:739-820,StdExeUnit.scala:64-81]
+    - name: store_tlb_miss_requests_replay_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Store.StageAdvance}
+      - {role: request, type: MMU.TranslateRequest}
+      - {role: response, type: MMU.TranslateResponse}
+      outputs: [{role: decision, type: Store.ReplayDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *sta_s0_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: response, field: replay, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: replay_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tlb}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cause, sort: {name: string}}, right: {node: event_field, event_id: decision, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "StorePipeline[${op.op_id}].live", at: decision, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "StorePipeline[${op.op_id}].live", at: decision, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [store, replay, tlb-miss, source:NewStoreUnit.scala:366-423,481-504]
+    - name: store_translation_fault_is_classified_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Store.StageAdvance}
+      - {role: request, type: MMU.TranslateRequest}
+      - {role: response, type: MMU.TranslateResponse}
+      outputs: [{role: decision, type: Store.FaultDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *sta_s0_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: response, field: fault, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: translation}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cause, sort: {name: string}}, right: {node: event_field, event_id: decision, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "StorePipeline[${op.op_id}].live", at: decision, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "StorePipeline[${op.op_id}].live", at: decision, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [store, fault, translation, source:NewStoreUnit.scala:331-356,586-665,701-820]
+    - name: store_fault_reaches_core_${op.repeat_index}
+      inputs: [{role: decision, type: Store.FaultDecision}]
+      outputs: [{role: fault, type: Core.MemoryFault}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: decision, field: fault, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: fault, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: cause, sort: {name: string}}, right: {node: event_field, event_id: fault, field: cause, sort: {name: string}}}
+      exact: true
+      tags: [store, fault, core, source:NewStoreUnit.scala:748-820]
+    - name: redirect_kills_live_store_pipeline_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Store.StageAdvance}
+      - {role: redirect, type: Core.Redirect}
+      outputs: [{role: decision, type: Store.ReplayDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *sta_s0_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: killed}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}, right: {node: event_field, event_id: decision, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "StorePipeline[${op.op_id}].live", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [store, redirect, kill, source:NewStoreUnit.scala:126-130,323-324,586-587,734-735]
+    - name: redirected_store_pipeline_becomes_dead_${op.repeat_index}
+      inputs: [{role: decision, type: Store.ReplayDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: killed}}
+      state_requirements:
+      - {state: "StorePipeline[${op.op_id}].live", at: decision, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "StorePipeline[${op.op_id}].live", at: decision, value: {node: literal, sort: {name: bool}, value: false}}
+      tags: [store, redirect, state-kill]
+
+repeat_product:
+- axes:
+  - {over: translation_observations, as: translation}
+  - {over: address_observations, as: address_observation}
+  include:
+    transformations:
+    - name: observed_store_address_matches_translation_${product.repeat_index}
+      inputs:
+      - {role: response, type: MMU.TranslateResponse}
+      - {role: address, type: Store.AddressReady}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${translation.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${translation.paddr}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: replay, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${address_observation.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: sq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${address_observation.sq_idx}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${address_observation.address}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${translation.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${address_observation.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}, right: {node: event_field, event_id: address, field: address, sort: {name: address, width: 64}}}
+      tags: [store, observed-output, address-integrity]
+- axes:
+  - {over: store_ops, as: store}
+  - {over: data_observations, as: data_observation}
+  include:
+    transformations:
+    - name: observed_store_data_matches_std_${product.repeat_index}
+      inputs: [{role: data, type: Store.DataReady}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${data_observation.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${data_observation.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: sq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${data_observation.sq_idx}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${data_observation.value}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${store.write_value}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: sq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store.sq_idx}"}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: data, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${store.byte_mask}"}}
+      tags: [store, observed-output, data-integrity]

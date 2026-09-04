@@ -1,0 +1,85 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-load-queue-v0.6
+policy: ports-only-public-surface
+modules:
+- module: load_queue_lifecycle
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: pipeline_update
+    direction: input
+    event_type: Load.PipelineUpdate
+    required_connection: false
+  - name: order_query
+    direction: input
+    event_type: Load.OrderQuery
+    required_connection: false
+  - name: store_address_ready
+    direction: input
+    event_type: Store.AddressReady
+    required_connection: false
+  - name: release_notice
+    direction: input
+    event_type: L1.ReleaseNotice
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: memory_violation
+    direction: output
+    event_type: Core.MemoryViolation
+    required_connection: false
+  - name: violation_redirect
+    direction: output
+    event_type: Core.Redirect
+    required_connection: false
+  public_event_types:
+  - Core.MemoryIssue
+  - Core.MemoryViolation
+  - Core.Redirect
+  - L1.ReleaseNotice
+  - Load.OrderQuery
+  - Load.PipelineUpdate
+  - Store.AddressReady
+  private_slot_ids:
+  - rar_release_0
+  - rar_track_0
+  - rar_violation_0
+  - raw_track_0
+  - raw_violation_0
+  - vlq_allocate_0
+  - vlq_complete_deallocate_0
+  - vlq_redirect_deallocate_0
+  private_event_types:
+  - LQ.Allocate
+  - LQ.Deallocate
+  - LQ.RARTrack
+  - LQ.RARViolation
+  - LQ.RAWTrack
+  - LQ.RAWViolation
+  private_state_names:
+  - RAR[LRAW->LRAW].released
+  - RAR[LRAW->LRAW].tracked
+  - RAW[S0->LRAW].tracked
+  - VLQ[LRAW].allocated
+  - VLQ[LRAW].completed
+  private_transformation_names:
+  - completed_dequeue_waits_for_older_0
+  - completed_load_releases_vlq_0
+  - load_issue_allocates_vlq_0
+  - load_tracks_unresolved_older_store_0
+  - older_load_detects_rar_violation_0
+  - rar_report_redirects_after_older_0
+  - rar_track_activates_state_0
+  - rar_violation_is_reported_0
+  - raw_report_redirects_load_and_younger_0
+  - raw_track_activates_state_0
+  - raw_violation_is_reported_0
+  - redirect_cancels_live_vlq_0
+  - redirected_deallocation_reclaims_vlq_0
+  - release_marks_rar_watch_0
+  - resolved_store_detects_raw_violation_0
+  - younger_load_tracks_unfinished_older_0

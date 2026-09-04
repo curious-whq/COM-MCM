@@ -1,0 +1,2455 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: write-upgrade
+  expected: FEASIBLE
+  input_contract: BtoT and invalidation are derived
+  completion:
+    backend: z3
+    horizon: 32
+    model:
+      version: 0.18.0
+      purpose: Source-pinned BOOM L1 TileLink client plus the matching Chipyard SiFive
+        InclusiveCache.
+      encapsulation: strict
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          boom_l1_coherence_client:
+            public_ports:
+            - name: line_init
+              direction: input
+              event_type: Coherence.LineInit
+              required_connection: false
+            - name: access
+              direction: input
+              event_type: Coherence.Access
+              required_connection: false
+            - name: evict
+              direction: input
+              event_type: Coherence.Evict
+              required_connection: false
+            - name: acquire
+              direction: output
+              event_type: TL.Acquire
+              required_connection: false
+            - name: probe
+              direction: input
+              event_type: TL.Probe
+              required_connection: true
+            - name: probe_ack
+              direction: output
+              event_type: TL.ProbeAck
+              required_connection: false
+            - name: grant
+              direction: input
+              event_type: TL.Grant
+              required_connection: true
+            - name: grant_ack
+              direction: output
+              event_type: TL.GrantAck
+              required_connection: false
+            - name: release
+              direction: output
+              event_type: TL.Release
+              required_connection: false
+            - name: release_ack
+              direction: input
+              event_type: TL.ReleaseAck
+              required_connection: true
+            - name: load_result
+              direction: output
+              event_type: Coherence.LoadResult
+              required_connection: false
+            - name: store_performed
+              direction: output
+              event_type: Coherence.StorePerformed
+              required_connection: false
+            - name: access_complete
+              direction: output
+              event_type: Coherence.AccessComplete
+              required_connection: false
+            public_event_types:
+            - Coherence.Access
+            - Coherence.AccessComplete
+            - Coherence.Evict
+            - Coherence.LineInit
+            - Coherence.LoadResult
+            - Coherence.StorePerformed
+            - TL.Acquire
+            - TL.Grant
+            - TL.GrantAck
+            - TL.Probe
+            - TL.ProbeAck
+            - TL.Release
+            - TL.ReleaseAck
+            private_slot_ids: []
+            private_event_types: []
+            private_state_names:
+            - L1.h0.line[x].dirty
+            - L1.h0.line[x].perm
+            - L1.h0.line[x].source
+            - L1.h0.line[x].value
+            - L1.h0.line[x].version
+            - L1.h1.line[x].dirty
+            - L1.h1.line[x].perm
+            - L1.h1.line[x].source
+            - L1.h1.line[x].value
+            - L1.h1.line[x].version
+            private_transformation_names:
+            - acquire_has_one_architectural_source_0
+            - acquire_has_one_architectural_source_1
+            - acquire_has_one_architectural_source_2
+            - consume_probe_ack_h0_0
+            - consume_probe_ack_h0_1
+            - consume_probe_ack_h0_2
+            - consume_probe_ack_h1_0
+            - consume_probe_ack_h1_1
+            - consume_probe_ack_h1_2
+            - explicit_access_dependency_0
+            - explicit_access_dependency_1
+            - explicit_access_dependency_2
+            - explicit_access_dependency_3
+            - explicit_access_dependency_4
+            - explicit_access_dependency_5
+            - explicit_access_dependency_6
+            - explicit_access_dependency_7
+            - explicit_access_dependency_8
+            - grant_ack_0
+            - grant_ack_1
+            - grant_ack_2
+            - install_grant_data_h0_0
+            - install_grant_data_h0_1
+            - install_grant_data_h0_2
+            - install_grant_data_h1_0
+            - install_grant_data_h1_1
+            - install_grant_data_h1_2
+            - install_grant_nodata_h0_0
+            - install_grant_nodata_h0_1
+            - install_grant_nodata_h0_2
+            - install_grant_nodata_h1_0
+            - install_grant_nodata_h1_1
+            - install_grant_nodata_h1_2
+            - load_access_must_complete_0
+            - load_access_must_complete_1
+            - load_access_must_complete_2
+            - load_completes_0
+            - load_completes_1
+            - load_completes_2
+            - load_hit_h0_0
+            - load_hit_h0_1
+            - load_hit_h0_2
+            - load_hit_h1_0
+            - load_hit_h1_1
+            - load_hit_h1_2
+            - load_miss_acquire_h0_0
+            - load_miss_acquire_h0_1
+            - load_miss_acquire_h0_2
+            - load_miss_acquire_h1_0
+            - load_miss_acquire_h1_1
+            - load_miss_acquire_h1_2
+            - load_refill_0
+            - load_refill_1
+            - load_refill_2
+            - probe_ack_clean_h0_0
+            - probe_ack_clean_h0_1
+            - probe_ack_clean_h0_2
+            - probe_ack_clean_h1_0
+            - probe_ack_clean_h1_1
+            - probe_ack_clean_h1_2
+            - probe_ack_dirty_h0_0
+            - probe_ack_dirty_h0_1
+            - probe_ack_dirty_h0_2
+            - probe_ack_dirty_h1_0
+            - probe_ack_dirty_h1_1
+            - probe_ack_dirty_h1_2
+            - store_access_must_complete_0
+            - store_access_must_complete_1
+            - store_access_must_complete_2
+            - store_completes_0
+            - store_completes_1
+            - store_completes_2
+            - store_from_b_h0_0
+            - store_from_b_h0_1
+            - store_from_b_h0_2
+            - store_from_b_h1_0
+            - store_from_b_h1_1
+            - store_from_b_h1_2
+            - store_from_n_h0_0
+            - store_from_n_h0_1
+            - store_from_n_h0_2
+            - store_from_n_h1_0
+            - store_from_n_h1_1
+            - store_from_n_h1_2
+            - store_hit_h0_0
+            - store_hit_h0_1
+            - store_hit_h0_2
+            - store_hit_h1_0
+            - store_hit_h1_1
+            - store_hit_h1_2
+            - store_refill_0
+            - store_refill_1
+            - store_refill_2
+            - store_updates_h0_0
+            - store_updates_h0_1
+            - store_updates_h0_2
+            - store_updates_h1_0
+            - store_updates_h1_1
+            - store_updates_h1_2
+          sifive_inclusive_l2:
+            public_ports:
+            - name: line_init
+              direction: input
+              event_type: Coherence.LineInit
+              required_connection: false
+            - name: acquire
+              direction: input
+              event_type: TL.Acquire
+              required_connection: true
+            - name: probe
+              direction: output
+              event_type: TL.Probe
+              required_connection: false
+            - name: probe_ack
+              direction: input
+              event_type: TL.ProbeAck
+              required_connection: true
+            - name: grant
+              direction: output
+              event_type: TL.Grant
+              required_connection: false
+            - name: grant_ack
+              direction: input
+              event_type: TL.GrantAck
+              required_connection: true
+            - name: release
+              direction: input
+              event_type: TL.Release
+              required_connection: true
+            - name: release_ack
+              direction: output
+              event_type: TL.ReleaseAck
+              required_connection: false
+            - name: version_publish
+              direction: output
+              event_type: Coherence.VersionPublish
+              required_connection: false
+            public_event_types:
+            - Coherence.LineInit
+            - Coherence.VersionPublish
+            - TL.Acquire
+            - TL.Grant
+            - TL.GrantAck
+            - TL.Probe
+            - TL.ProbeAck
+            - TL.Release
+            - TL.ReleaseAck
+            private_slot_ids:
+            - l2_directory_result_0
+            - l2_directory_result_1
+            - l2_directory_result_2
+            - l2_outer_acquire_0
+            - l2_outer_acquire_1
+            - l2_outer_acquire_2
+            - l2_outer_grant_0
+            - l2_outer_grant_1
+            - l2_outer_grant_2
+            private_event_types:
+            - L2.DirectoryResult
+            - L2.OuterAcquire
+            - L2.OuterGrant
+            private_state_names:
+            - L2.line[x].busy
+            - L2.line[x].current_txn
+            - L2.line[x].directory_checked
+            - L2.line[x].dirty
+            - L2.line[x].grant_pending
+            - L2.line[x].h0_perm
+            - L2.line[x].h1_perm
+            - L2.line[x].outer_ready
+            - L2.line[x].owner
+            - L2.line[x].source
+            - L2.line[x].state
+            - L2.line[x].value
+            - L2.line[x].version
+            private_transformation_names:
+            - accept_probe_clean_h0_0
+            - accept_probe_clean_h0_1
+            - accept_probe_clean_h0_2
+            - accept_probe_clean_h1_0
+            - accept_probe_clean_h1_1
+            - accept_probe_clean_h1_2
+            - accept_probe_data_h0_0
+            - accept_probe_data_h0_1
+            - accept_probe_data_h0_2
+            - accept_probe_data_h1_0
+            - accept_probe_data_h1_1
+            - accept_probe_data_h1_2
+            - acquire_allocates_line_mshr_0
+            - acquire_allocates_line_mshr_1
+            - acquire_allocates_line_mshr_2
+            - apply_grant_b_h0_0
+            - apply_grant_b_h0_1
+            - apply_grant_b_h0_2
+            - apply_grant_b_h1_0
+            - apply_grant_b_h1_1
+            - apply_grant_b_h1_2
+            - apply_grant_t_h0_0
+            - apply_grant_t_h0_1
+            - apply_grant_t_h0_2
+            - apply_grant_t_h1_0
+            - apply_grant_t_h1_1
+            - apply_grant_t_h1_2
+            - directory_hit_is_ready_0
+            - directory_hit_is_ready_1
+            - directory_hit_is_ready_2
+            - directory_hit_support_0
+            - directory_hit_support_1
+            - directory_hit_support_2
+            - directory_lookup_obligation_0
+            - directory_lookup_obligation_1
+            - directory_lookup_obligation_2
+            - directory_miss_requests_outer_0
+            - directory_miss_requests_outer_1
+            - directory_miss_requests_outer_2
+            - directory_miss_support_0
+            - directory_miss_support_1
+            - directory_miss_support_2
+            - grant_ack_retires_transaction_0
+            - grant_ack_retires_transaction_1
+            - grant_ack_retires_transaction_2
+            - grant_obligation_0
+            - grant_obligation_1
+            - grant_obligation_2
+            - grant_to_b_h0_0
+            - grant_to_b_h0_1
+            - grant_to_b_h0_2
+            - grant_to_b_h1_0
+            - grant_to_b_h1_1
+            - grant_to_b_h1_2
+            - grant_to_t_h0_0
+            - grant_to_t_h0_1
+            - grant_to_t_h0_2
+            - grant_to_t_h1_0
+            - grant_to_t_h1_1
+            - grant_to_t_h1_2
+            - outer_memory_grants_0
+            - outer_memory_grants_1
+            - outer_memory_grants_2
+            - probe_data_is_published_before_grant_0
+            - probe_data_is_published_before_grant_1
+            - probe_data_is_published_before_grant_2
+            - probe_h0_to_b_0
+            - probe_h0_to_b_1
+            - probe_h0_to_b_2
+            - probe_h0_to_n_0
+            - probe_h0_to_n_1
+            - probe_h0_to_n_2
+            - probe_h1_to_b_0
+            - probe_h1_to_b_1
+            - probe_h1_to_b_2
+            - probe_h1_to_n_0
+            - probe_h1_to_n_1
+            - probe_h1_to_n_2
+      bounds:
+        harts: 2
+        transactions_per_line: serialized
+        transfer: one-line-event
+      composition:
+        name: boom-sifive-inclusive-coherence-v018
+        resolved_roles:
+          lines:
+          - event_id: init_x
+            event_type: Coherence.LineInit
+            line_id: x
+            address: x
+            value: 0
+            version: 0
+            source_op_id: InitX
+          accesses:
+          - event_id: load_h0
+            event_type: Coherence.Access
+            op_id: L0
+            hart: 0
+            program_index: 0
+            line_id: x
+            address: x
+            mem_kind: load
+            write_value: 0
+            after_op_id: NONE
+          - event_id: load_h1
+            event_type: Coherence.Access
+            op_id: L1
+            hart: 1
+            program_index: 0
+            line_id: x
+            address: x
+            mem_kind: load
+            write_value: 0
+            after_op_id: L0
+          - event_id: store_h0
+            event_type: Coherence.Access
+            op_id: W0
+            hart: 0
+            program_index: 1
+            line_id: x
+            address: x
+            mem_kind: store
+            write_value: 1
+            after_op_id: L1
+          evictions: []
+        modules:
+        - boom_l1_coherence_client
+        - sifive_inclusive_l2
+        connections:
+        - name: l1_acquire_to_l2
+          mode: shared_event
+          source: boom_l1_coherence_client.acquire
+          target: sifive_inclusive_l2.acquire
+        - name: l2_probe_to_l1
+          mode: shared_event
+          source: sifive_inclusive_l2.probe
+          target: boom_l1_coherence_client.probe
+        - name: l1_probe_ack_to_l2
+          mode: shared_event
+          source: boom_l1_coherence_client.probe_ack
+          target: sifive_inclusive_l2.probe_ack
+        - name: l2_grant_to_l1
+          mode: shared_event
+          source: sifive_inclusive_l2.grant
+          target: boom_l1_coherence_client.grant
+        - name: l1_grant_ack_to_l2
+          mode: shared_event
+          source: boom_l1_coherence_client.grant_ack
+          target: sifive_inclusive_l2.grant_ack
+        - name: l1_release_to_l2
+          mode: shared_event
+          source: boom_l1_coherence_client.release
+          target: sifive_inclusive_l2.release
+        - name: l2_release_ack_to_l1
+          mode: shared_event
+          source: sifive_inclusive_l2.release_ack
+          target: boom_l1_coherence_client.release_ack
+        generated_transformations: []
+    selected_slots:
+    - l1_acquire_0
+    - l1_load_result_0
+    - l1_access_complete_0
+    - l1_grant_ack_0
+    - l1_acquire_1
+    - l1_load_result_1
+    - l1_access_complete_1
+    - l1_grant_ack_1
+    - l1_probe_ack_1_h0
+    - l1_acquire_2
+    - l1_store_performed_2
+    - l1_access_complete_2
+    - l1_grant_ack_2
+    - l1_probe_ack_2_h1
+    - l2_directory_result_0
+    - l2_outer_acquire_0
+    - l2_outer_grant_0
+    - l2_grant_0
+    - l2_directory_result_1
+    - l2_probe_1_h0
+    - l2_grant_1
+    - l2_directory_result_2
+    - l2_probe_2_h1
+    - l2_grant_2
+    state:
+      initial:
+        L1.h0.line[x].perm: N
+        L1.h0.line[x].dirty: false
+        L1.h0.line[x].value: 0
+        L1.h0.line[x].version: 0
+        L1.h0.line[x].source: InitX
+        L1.h1.line[x].perm: N
+        L1.h1.line[x].dirty: false
+        L1.h1.line[x].value: 0
+        L1.h1.line[x].version: 0
+        L1.h1.line[x].source: InitX
+        L2.line[x].state: INVALID
+        L2.line[x].dirty: false
+        L2.line[x].owner: -1
+        L2.line[x].h0_perm: N
+        L2.line[x].h1_perm: N
+        L2.line[x].value: 0
+        L2.line[x].version: 0
+        L2.line[x].source: InitX
+        L2.line[x].busy: false
+        L2.line[x].current_txn: EMPTY
+        L2.line[x].directory_checked: false
+        L2.line[x].outer_ready: false
+        L2.line[x].grant_pending: false
+      final:
+        L1.h0.line[x].perm: T
+        L1.h0.line[x].dirty: true
+        L1.h0.line[x].value: 1
+        L1.h0.line[x].version: 1
+        L1.h0.line[x].source: W0
+        L1.h1.line[x].perm: N
+        L1.h1.line[x].dirty: false
+        L1.h1.line[x].value: 0
+        L1.h1.line[x].version: 0
+        L1.h1.line[x].source: InitX
+        L2.line[x].state: TRUNK
+        L2.line[x].dirty: false
+        L2.line[x].owner: 0
+        L2.line[x].h0_perm: T
+        L2.line[x].h1_perm: N
+        L2.line[x].value: 0
+        L2.line[x].version: 0
+        L2.line[x].source: InitX
+        L2.line[x].busy: false
+        L2.line[x].current_txn: W0
+        L2.line[x].directory_checked: true
+        L2.line[x].outer_ready: true
+        L2.line[x].grant_pending: false
+      steps:
+      - cycle: 2
+        before:
+          L1.h0.line[x].perm: N
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: INVALID
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: N
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: false
+          L2.line[x].current_txn: EMPTY
+          L2.line[x].directory_checked: false
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: N
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: INVALID
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: N
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: false
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.update.0
+        - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.update.1
+        - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.update.2
+        - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.update.4
+        - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.update.3
+        changes:
+        - state: L2.line[x].busy
+          before: false
+          after: true
+          origins:
+          - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.update.0
+        - state: L2.line[x].current_txn
+          before: EMPTY
+          after: L0
+          origins:
+          - transformation.acquire_allocates_line_mshr_0.forward.0.l1_acquire_0.instance.0.no-output.update.1
+      - cycle: 3
+        before:
+          L1.h0.line[x].perm: N
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: INVALID
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: N
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: false
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: N
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: INVALID
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: N
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        active_requirements: []
+        active_updates:
+        - transformation.directory_miss_requests_outer_0.forward.0.l2_directory_result_0.instance.0.l2_outer_acquire_0.update.0
+        changes:
+        - state: L2.line[x].directory_checked
+          before: false
+          after: true
+          origins:
+          - transformation.directory_miss_requests_outer_0.forward.0.l2_directory_result_0.instance.0.l2_outer_acquire_0.update.0
+      - cycle: 6
+        before:
+          L1.h0.line[x].perm: N
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: INVALID
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: N
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: N
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: INVALID
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: N
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.outer_memory_grants_0.forward.0.l2_outer_acquire_0.instance.0.l2_outer_grant_0.requirement.0
+        - transformation.outer_memory_grants_0.forward.0.l2_outer_acquire_0.instance.0.l2_outer_grant_0.requirement.1
+        - transformation.outer_memory_grants_0.forward.0.l2_outer_acquire_0.instance.0.l2_outer_grant_0.requirement.2
+        active_updates:
+        - transformation.outer_memory_grants_0.forward.0.l2_outer_acquire_0.instance.0.l2_outer_grant_0.update.0
+        changes:
+        - state: L2.line[x].outer_ready
+          before: false
+          after: true
+          origins:
+          - transformation.outer_memory_grants_0.forward.0.l2_outer_acquire_0.instance.0.l2_outer_grant_0.update.0
+      - cycle: 7
+        before:
+          L1.h0.line[x].perm: N
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: INVALID
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: N
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: true
+        active_requirements:
+        - transformation.grant_obligation_0.forward.0.l1_acquire_0,l2_directory_result_0.instance.0.l2_grant_0.requirement.0
+        - transformation.grant_obligation_0.forward.0.l1_acquire_0,l2_directory_result_0.instance.0.l2_grant_0.requirement.1
+        - transformation.grant_obligation_0.forward.0.l1_acquire_0,l2_directory_result_0.instance.0.l2_grant_0.requirement.2
+        - transformation.grant_obligation_0.forward.0.l1_acquire_0,l2_directory_result_0.instance.0.l2_grant_0.requirement.3
+        - transformation.grant_obligation_0.forward.0.l1_acquire_0,l2_directory_result_0.instance.0.l2_grant_0.requirement.4
+        - coverage.coherence_write_upgrade.2.activation.0.state.0
+        - coverage.coherence_write_upgrade.2.activation.0.state.1
+        - coverage.coherence_write_upgrade.2.activation.0.state.2
+        - coverage.coherence_write_upgrade.2.activation.0.state.3
+        - coverage.coherence_write_upgrade.2.activation.0.state.4
+        - coverage.coherence_write_upgrade.2.activation.0.state.5
+        - coverage.coherence_write_upgrade.2.activation.0.state.6
+        - coverage.coherence_write_upgrade.2.activation.0.state.7
+        - coverage.coherence_write_upgrade.2.activation.0.state.8
+        active_updates:
+        - transformation.install_grant_data_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.1
+        - transformation.install_grant_data_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.0
+        - transformation.install_grant_data_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.4
+        - transformation.install_grant_data_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.2
+        - transformation.install_grant_data_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.3
+        - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.3
+        - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.2
+        - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.1
+        - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.0
+        changes:
+        - state: L1.h0.line[x].perm
+          before: N
+          after: T
+          origins:
+          - transformation.install_grant_data_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.0
+        - state: L2.line[x].grant_pending
+          before: false
+          after: true
+          origins:
+          - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.3
+        - state: L2.line[x].h0_perm
+          before: N
+          after: T
+          origins:
+          - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.2
+        - state: L2.line[x].owner
+          before: -1
+          after: 0
+          origins:
+          - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.1
+        - state: L2.line[x].state
+          before: INVALID
+          after: TRUNK
+          origins:
+          - transformation.apply_grant_t_h0_0.forward.0.l2_grant_0.instance.0.no-output.update.0
+      - cycle: 8
+        before:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: true
+        after:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: false
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.grant_ack_retires_transaction_0.forward.0.l1_grant_ack_0.instance.0.no-output.requirement.0
+        - transformation.grant_ack_retires_transaction_0.forward.0.l1_grant_ack_0.instance.0.no-output.requirement.1
+        - transformation.grant_ack_retires_transaction_0.forward.0.l1_grant_ack_0.instance.0.no-output.requirement.2
+        active_updates:
+        - transformation.grant_ack_retires_transaction_0.forward.0.l1_grant_ack_0.instance.0.no-output.update.0
+        - transformation.grant_ack_retires_transaction_0.forward.0.l1_grant_ack_0.instance.0.no-output.update.1
+        changes:
+        - state: L2.line[x].busy
+          before: true
+          after: false
+          origins:
+          - transformation.grant_ack_retires_transaction_0.forward.0.l1_grant_ack_0.instance.0.no-output.update.0
+        - state: L2.line[x].grant_pending
+          before: true
+          after: false
+          origins:
+          - transformation.grant_ack_retires_transaction_0.forward.0.l1_grant_ack_0.instance.0.no-output.update.1
+      - cycle: 11
+        before:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: false
+          L2.line[x].current_txn: L0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: false
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.0
+        - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.1
+        - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.2
+        - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.4
+        - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.3
+        changes:
+        - state: L2.line[x].busy
+          before: false
+          after: true
+          origins:
+          - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.0
+        - state: L2.line[x].current_txn
+          before: L0
+          after: L1
+          origins:
+          - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.1
+        - state: L2.line[x].directory_checked
+          before: true
+          after: false
+          origins:
+          - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.2
+        - state: L2.line[x].outer_ready
+          before: true
+          after: false
+          origins:
+          - transformation.acquire_allocates_line_mshr_1.forward.1.l1_acquire_1.instance.0.no-output.update.3
+      - cycle: 12
+        before:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: false
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements: []
+        active_updates:
+        - transformation.directory_hit_is_ready_1.forward.1.l2_directory_result_1.instance.0.no-output.update.0
+        - transformation.directory_hit_is_ready_1.forward.1.l2_directory_result_1.instance.0.no-output.update.1
+        changes:
+        - state: L2.line[x].directory_checked
+          before: false
+          after: true
+          origins:
+          - transformation.directory_hit_is_ready_1.forward.1.l2_directory_result_1.instance.0.no-output.update.0
+        - state: L2.line[x].outer_ready
+          before: false
+          after: true
+          origins:
+          - transformation.directory_hit_is_ready_1.forward.1.l2_directory_result_1.instance.0.no-output.update.1
+      - cycle: 14
+        before:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.accept_probe_clean_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.requirement.0
+        - transformation.accept_probe_clean_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.requirement.1
+        active_updates:
+        - transformation.consume_probe_ack_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.update.1
+        - transformation.consume_probe_ack_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.update.0
+        - transformation.accept_probe_clean_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.update.0
+        - transformation.accept_probe_clean_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.update.1
+        changes:
+        - state: L1.h0.line[x].perm
+          before: T
+          after: B
+          origins:
+          - transformation.consume_probe_ack_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.update.0
+        - state: L2.line[x].h0_perm
+          before: T
+          after: B
+          origins:
+          - transformation.accept_probe_clean_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.update.0
+        - state: L2.line[x].owner
+          before: 0
+          after: -1
+          origins:
+          - transformation.accept_probe_clean_h0_1.forward.2.l1_probe_ack_1_h0.instance.0.no-output.update.1
+      - cycle: 15
+        before:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: true
+        active_requirements:
+        - transformation.grant_obligation_1.forward.4.l1_acquire_1,l2_directory_result_1.instance.1.l2_grant_1.requirement.0
+        - transformation.grant_obligation_1.forward.4.l1_acquire_1,l2_directory_result_1.instance.1.l2_grant_1.requirement.1
+        - transformation.grant_obligation_1.forward.4.l1_acquire_1,l2_directory_result_1.instance.1.l2_grant_1.requirement.2
+        - transformation.grant_obligation_1.forward.4.l1_acquire_1,l2_directory_result_1.instance.1.l2_grant_1.requirement.3
+        - transformation.grant_obligation_1.forward.4.l1_acquire_1,l2_directory_result_1.instance.1.l2_grant_1.requirement.4
+        active_updates:
+        - transformation.install_grant_data_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.1
+        - transformation.install_grant_data_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.0
+        - transformation.install_grant_data_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.4
+        - transformation.install_grant_data_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.2
+        - transformation.install_grant_data_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.3
+        - transformation.apply_grant_b_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.3
+        - transformation.apply_grant_b_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.2
+        - transformation.apply_grant_b_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.1
+        - transformation.apply_grant_b_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.0
+        changes:
+        - state: L1.h1.line[x].perm
+          before: N
+          after: B
+          origins:
+          - transformation.install_grant_data_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.0
+        - state: L2.line[x].grant_pending
+          before: false
+          after: true
+          origins:
+          - transformation.apply_grant_b_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.3
+        - state: L2.line[x].h1_perm
+          before: N
+          after: B
+          origins:
+          - transformation.apply_grant_b_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.2
+        - state: L2.line[x].state
+          before: TRUNK
+          after: TIP
+          origins:
+          - transformation.apply_grant_b_h1_1.forward.1.l2_grant_1.instance.0.no-output.update.0
+      - cycle: 16
+        before:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: true
+        after:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: false
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.grant_ack_retires_transaction_1.forward.1.l1_grant_ack_1.instance.0.no-output.requirement.0
+        - transformation.grant_ack_retires_transaction_1.forward.1.l1_grant_ack_1.instance.0.no-output.requirement.1
+        - transformation.grant_ack_retires_transaction_1.forward.1.l1_grant_ack_1.instance.0.no-output.requirement.2
+        active_updates:
+        - transformation.grant_ack_retires_transaction_1.forward.1.l1_grant_ack_1.instance.0.no-output.update.0
+        - transformation.grant_ack_retires_transaction_1.forward.1.l1_grant_ack_1.instance.0.no-output.update.1
+        changes:
+        - state: L2.line[x].busy
+          before: true
+          after: false
+          origins:
+          - transformation.grant_ack_retires_transaction_1.forward.1.l1_grant_ack_1.instance.0.no-output.update.0
+        - state: L2.line[x].grant_pending
+          before: true
+          after: false
+          origins:
+          - transformation.grant_ack_retires_transaction_1.forward.1.l1_grant_ack_1.instance.0.no-output.update.1
+      - cycle: 21
+        before:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: false
+          L2.line[x].current_txn: L1
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: false
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.requirement.0
+        - coverage.coherence_write_upgrade.0.activation.26.state.0
+        active_updates:
+        - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.0
+        - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.1
+        - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.2
+        - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.4
+        - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.3
+        changes:
+        - state: L2.line[x].busy
+          before: false
+          after: true
+          origins:
+          - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.0
+        - state: L2.line[x].current_txn
+          before: L1
+          after: W0
+          origins:
+          - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.1
+        - state: L2.line[x].directory_checked
+          before: true
+          after: false
+          origins:
+          - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.2
+        - state: L2.line[x].outer_ready
+          before: true
+          after: false
+          origins:
+          - transformation.acquire_allocates_line_mshr_2.forward.2.l1_acquire_2.instance.0.no-output.update.3
+      - cycle: 22
+        before:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: false
+          L2.line[x].outer_ready: false
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements: []
+        active_updates:
+        - transformation.directory_hit_is_ready_2.forward.2.l2_directory_result_2.instance.0.no-output.update.0
+        - transformation.directory_hit_is_ready_2.forward.2.l2_directory_result_2.instance.0.no-output.update.1
+        changes:
+        - state: L2.line[x].directory_checked
+          before: false
+          after: true
+          origins:
+          - transformation.directory_hit_is_ready_2.forward.2.l2_directory_result_2.instance.0.no-output.update.0
+        - state: L2.line[x].outer_ready
+          before: false
+          after: true
+          origins:
+          - transformation.directory_hit_is_ready_2.forward.2.l2_directory_result_2.instance.0.no-output.update.1
+      - cycle: 23
+        before:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - coverage.coherence_write_upgrade.1.activation.161.state.0
+        active_updates: []
+        changes: []
+      - cycle: 24
+        before:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: B
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: B
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.accept_probe_clean_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.requirement.0
+        - transformation.accept_probe_clean_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.requirement.1
+        active_updates:
+        - transformation.consume_probe_ack_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.update.1
+        - transformation.consume_probe_ack_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.update.0
+        - transformation.accept_probe_clean_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.update.0
+        - transformation.accept_probe_clean_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.update.1
+        changes:
+        - state: L1.h1.line[x].perm
+          before: B
+          after: N
+          origins:
+          - transformation.consume_probe_ack_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.update.0
+        - state: L2.line[x].h1_perm
+          before: B
+          after: N
+          origins:
+          - transformation.accept_probe_clean_h1_2.forward.5.l1_probe_ack_2_h1.instance.0.no-output.update.0
+      - cycle: 25
+        before:
+          L1.h0.line[x].perm: B
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TIP
+          L2.line[x].dirty: false
+          L2.line[x].owner: -1
+          L2.line[x].h0_perm: B
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        after:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: true
+        active_requirements:
+        - transformation.grant_obligation_2.forward.8.l1_acquire_2,l2_directory_result_2.instance.2.l2_grant_2.requirement.0
+        - transformation.grant_obligation_2.forward.8.l1_acquire_2,l2_directory_result_2.instance.2.l2_grant_2.requirement.1
+        - transformation.grant_obligation_2.forward.8.l1_acquire_2,l2_directory_result_2.instance.2.l2_grant_2.requirement.2
+        - transformation.grant_obligation_2.forward.8.l1_acquire_2,l2_directory_result_2.instance.2.l2_grant_2.requirement.3
+        - transformation.grant_obligation_2.forward.8.l1_acquire_2,l2_directory_result_2.instance.2.l2_grant_2.requirement.4
+        - coverage.coherence_write_upgrade.2.activation.80.state.0
+        - coverage.coherence_write_upgrade.2.activation.80.state.1
+        - coverage.coherence_write_upgrade.2.activation.80.state.2
+        - coverage.coherence_write_upgrade.2.activation.80.state.3
+        - coverage.coherence_write_upgrade.2.activation.80.state.4
+        - coverage.coherence_write_upgrade.2.activation.80.state.5
+        - coverage.coherence_write_upgrade.2.activation.80.state.6
+        - coverage.coherence_write_upgrade.2.activation.80.state.7
+        - coverage.coherence_write_upgrade.2.activation.80.state.8
+        active_updates:
+        - transformation.install_grant_nodata_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.0
+        - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.3
+        - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.2
+        - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.1
+        - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.0
+        changes:
+        - state: L1.h0.line[x].perm
+          before: B
+          after: T
+          origins:
+          - transformation.install_grant_nodata_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.0
+        - state: L2.line[x].grant_pending
+          before: false
+          after: true
+          origins:
+          - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.3
+        - state: L2.line[x].h0_perm
+          before: B
+          after: T
+          origins:
+          - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.2
+        - state: L2.line[x].owner
+          before: -1
+          after: 0
+          origins:
+          - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.1
+        - state: L2.line[x].state
+          before: TIP
+          after: TRUNK
+          origins:
+          - transformation.apply_grant_t_h0_2.forward.2.l2_grant_2.instance.0.no-output.update.0
+      - cycle: 26
+        before:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: false
+          L1.h0.line[x].value: 0
+          L1.h0.line[x].version: 0
+          L1.h0.line[x].source: InitX
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: true
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: true
+        after:
+          L1.h0.line[x].perm: T
+          L1.h0.line[x].dirty: true
+          L1.h0.line[x].value: 1
+          L1.h0.line[x].version: 1
+          L1.h0.line[x].source: W0
+          L1.h1.line[x].perm: N
+          L1.h1.line[x].dirty: false
+          L1.h1.line[x].value: 0
+          L1.h1.line[x].version: 0
+          L1.h1.line[x].source: InitX
+          L2.line[x].state: TRUNK
+          L2.line[x].dirty: false
+          L2.line[x].owner: 0
+          L2.line[x].h0_perm: T
+          L2.line[x].h1_perm: N
+          L2.line[x].value: 0
+          L2.line[x].version: 0
+          L2.line[x].source: InitX
+          L2.line[x].busy: false
+          L2.line[x].current_txn: W0
+          L2.line[x].directory_checked: true
+          L2.line[x].outer_ready: true
+          L2.line[x].grant_pending: false
+        active_requirements:
+        - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.requirement.0
+        - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.requirement.1
+        - transformation.grant_ack_retires_transaction_2.forward.2.l1_grant_ack_2.instance.0.no-output.requirement.0
+        - transformation.grant_ack_retires_transaction_2.forward.2.l1_grant_ack_2.instance.0.no-output.requirement.1
+        - transformation.grant_ack_retires_transaction_2.forward.2.l1_grant_ack_2.instance.0.no-output.requirement.2
+        active_updates:
+        - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.0
+        - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.3
+        - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.1
+        - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.2
+        - transformation.grant_ack_retires_transaction_2.forward.2.l1_grant_ack_2.instance.0.no-output.update.0
+        - transformation.grant_ack_retires_transaction_2.forward.2.l1_grant_ack_2.instance.0.no-output.update.1
+        changes:
+        - state: L1.h0.line[x].dirty
+          before: false
+          after: true
+          origins:
+          - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.0
+        - state: L1.h0.line[x].source
+          before: InitX
+          after: W0
+          origins:
+          - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.3
+        - state: L1.h0.line[x].value
+          before: 0
+          after: 1
+          origins:
+          - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.1
+        - state: L1.h0.line[x].version
+          before: 0
+          after: 1
+          origins:
+          - transformation.store_updates_h0_2.forward.2.l1_store_performed_2.instance.0.no-output.update.2
+        - state: L2.line[x].busy
+          before: true
+          after: false
+          origins:
+          - transformation.grant_ack_retires_transaction_2.forward.2.l1_grant_ack_2.instance.0.no-output.update.0
+        - state: L2.line[x].grant_pending
+          before: true
+          after: false
+          origins:
+          - transformation.grant_ack_retires_transaction_2.forward.2.l1_grant_ack_2.instance.0.no-output.update.1
+    active_transformations:
+    - name: transformation.accept_probe_clean_h0_1.activation.2.0
+      transformation: accept_probe_clean_h0_1
+      binding:
+        ack: l1_probe_ack_1_h0
+    - name: transformation.accept_probe_clean_h1_2.activation.5.0
+      transformation: accept_probe_clean_h1_2
+      binding:
+        ack: l1_probe_ack_2_h1
+    - name: transformation.acquire_allocates_line_mshr_0.activation.0.0
+      transformation: acquire_allocates_line_mshr_0
+      binding:
+        acquire: l1_acquire_0
+    - name: transformation.acquire_allocates_line_mshr_1.activation.1.0
+      transformation: acquire_allocates_line_mshr_1
+      binding:
+        acquire: l1_acquire_1
+    - name: transformation.acquire_allocates_line_mshr_2.activation.2.0
+      transformation: acquire_allocates_line_mshr_2
+      binding:
+        acquire: l1_acquire_2
+    - name: transformation.acquire_has_one_architectural_source_0.activation.0.0
+      transformation: acquire_has_one_architectural_source_0
+      binding:
+        access: load_h0
+        acquire: l1_acquire_0
+    - name: transformation.acquire_has_one_architectural_source_1.activation.1.1
+      transformation: acquire_has_one_architectural_source_1
+      binding:
+        access: load_h1
+        acquire: l1_acquire_1
+    - name: transformation.acquire_has_one_architectural_source_2.activation.2.2
+      transformation: acquire_has_one_architectural_source_2
+      binding:
+        access: store_h0
+        acquire: l1_acquire_2
+    - name: transformation.apply_grant_b_h1_1.activation.1.0
+      transformation: apply_grant_b_h1_1
+      binding:
+        grant: l2_grant_1
+    - name: transformation.apply_grant_t_h0_0.activation.0.0
+      transformation: apply_grant_t_h0_0
+      binding:
+        grant: l2_grant_0
+    - name: transformation.apply_grant_t_h0_2.activation.2.0
+      transformation: apply_grant_t_h0_2
+      binding:
+        grant: l2_grant_2
+    - name: transformation.consume_probe_ack_h0_1.activation.2.0
+      transformation: consume_probe_ack_h0_1
+      binding:
+        ack: l1_probe_ack_1_h0
+    - name: transformation.consume_probe_ack_h1_2.activation.5.0
+      transformation: consume_probe_ack_h1_2
+      binding:
+        ack: l1_probe_ack_2_h1
+    - name: transformation.directory_hit_is_ready_1.activation.1.0
+      transformation: directory_hit_is_ready_1
+      binding:
+        result: l2_directory_result_1
+    - name: transformation.directory_hit_is_ready_2.activation.2.0
+      transformation: directory_hit_is_ready_2
+      binding:
+        result: l2_directory_result_2
+    - name: transformation.directory_hit_support_1.activation.1.1
+      transformation: directory_hit_support_1
+      binding:
+        acquire: l1_acquire_1
+        result: l2_directory_result_1
+    - name: transformation.directory_hit_support_2.activation.2.2
+      transformation: directory_hit_support_2
+      binding:
+        acquire: l1_acquire_2
+        result: l2_directory_result_2
+    - name: transformation.directory_lookup_obligation_0.activation.0.0
+      transformation: directory_lookup_obligation_0
+      binding:
+        acquire: l1_acquire_0
+        result: l2_directory_result_0
+    - name: transformation.directory_lookup_obligation_1.activation.1.1
+      transformation: directory_lookup_obligation_1
+      binding:
+        acquire: l1_acquire_1
+        result: l2_directory_result_1
+    - name: transformation.directory_lookup_obligation_2.activation.2.2
+      transformation: directory_lookup_obligation_2
+      binding:
+        acquire: l1_acquire_2
+        result: l2_directory_result_2
+    - name: transformation.directory_miss_requests_outer_0.activation.0.0
+      transformation: directory_miss_requests_outer_0
+      binding:
+        result: l2_directory_result_0
+        outer_acquire: l2_outer_acquire_0
+    - name: transformation.directory_miss_support_0.activation.0.0
+      transformation: directory_miss_support_0
+      binding:
+        acquire: l1_acquire_0
+        result: l2_directory_result_0
+    - name: transformation.explicit_access_dependency_1.activation.1.0
+      transformation: explicit_access_dependency_1
+      binding:
+        complete: l1_access_complete_0
+        access: load_h1
+    - name: transformation.explicit_access_dependency_5.activation.5.0
+      transformation: explicit_access_dependency_5
+      binding:
+        complete: l1_access_complete_1
+        access: store_h0
+    - name: transformation.grant_ack_0.activation.0.0
+      transformation: grant_ack_0
+      binding:
+        grant: l2_grant_0
+        ack: l1_grant_ack_0
+    - name: transformation.grant_ack_1.activation.1.1
+      transformation: grant_ack_1
+      binding:
+        grant: l2_grant_1
+        ack: l1_grant_ack_1
+    - name: transformation.grant_ack_2.activation.2.2
+      transformation: grant_ack_2
+      binding:
+        grant: l2_grant_2
+        ack: l1_grant_ack_2
+    - name: transformation.grant_ack_retires_transaction_0.activation.0.0
+      transformation: grant_ack_retires_transaction_0
+      binding:
+        ack: l1_grant_ack_0
+    - name: transformation.grant_ack_retires_transaction_1.activation.1.0
+      transformation: grant_ack_retires_transaction_1
+      binding:
+        ack: l1_grant_ack_1
+    - name: transformation.grant_ack_retires_transaction_2.activation.2.0
+      transformation: grant_ack_retires_transaction_2
+      binding:
+        ack: l1_grant_ack_2
+    - name: transformation.grant_obligation_0.activation.0.0
+      transformation: grant_obligation_0
+      binding:
+        acquire: l1_acquire_0
+        directory: l2_directory_result_0
+        grant: l2_grant_0
+    - name: transformation.grant_obligation_1.activation.4.1
+      transformation: grant_obligation_1
+      binding:
+        acquire: l1_acquire_1
+        directory: l2_directory_result_1
+        grant: l2_grant_1
+    - name: transformation.grant_obligation_2.activation.8.2
+      transformation: grant_obligation_2
+      binding:
+        acquire: l1_acquire_2
+        directory: l2_directory_result_2
+        grant: l2_grant_2
+    - name: transformation.grant_to_b_h1_1.activation.4.1
+      transformation: grant_to_b_h1_1
+      binding:
+        acquire: l1_acquire_1
+        directory: l2_directory_result_1
+        grant: l2_grant_1
+    - name: transformation.grant_to_t_h0_0.activation.0.0
+      transformation: grant_to_t_h0_0
+      binding:
+        acquire: l1_acquire_0
+        directory: l2_directory_result_0
+        grant: l2_grant_0
+    - name: transformation.grant_to_t_h0_2.activation.8.2
+      transformation: grant_to_t_h0_2
+      binding:
+        acquire: l1_acquire_2
+        directory: l2_directory_result_2
+        grant: l2_grant_2
+    - name: transformation.install_grant_data_h0_0.activation.0.0
+      transformation: install_grant_data_h0_0
+      binding:
+        grant: l2_grant_0
+    - name: transformation.install_grant_data_h1_1.activation.1.0
+      transformation: install_grant_data_h1_1
+      binding:
+        grant: l2_grant_1
+    - name: transformation.install_grant_nodata_h0_2.activation.2.0
+      transformation: install_grant_nodata_h0_2
+      binding:
+        grant: l2_grant_2
+    - name: transformation.load_access_must_complete_0.activation.0.0
+      transformation: load_access_must_complete_0
+      binding:
+        access: load_h0
+        result: l1_load_result_0
+    - name: transformation.load_access_must_complete_1.activation.1.1
+      transformation: load_access_must_complete_1
+      binding:
+        access: load_h1
+        result: l1_load_result_1
+    - name: transformation.load_completes_0.activation.0.0
+      transformation: load_completes_0
+      binding:
+        result: l1_load_result_0
+        complete: l1_access_complete_0
+    - name: transformation.load_completes_1.activation.1.1
+      transformation: load_completes_1
+      binding:
+        result: l1_load_result_1
+        complete: l1_access_complete_1
+    - name: transformation.load_miss_acquire_h0_0.activation.0.0
+      transformation: load_miss_acquire_h0_0
+      binding:
+        access: load_h0
+        acquire: l1_acquire_0
+    - name: transformation.load_miss_acquire_h1_1.activation.1.1
+      transformation: load_miss_acquire_h1_1
+      binding:
+        access: load_h1
+        acquire: l1_acquire_1
+    - name: transformation.load_refill_0.activation.0.0
+      transformation: load_refill_0
+      binding:
+        access: load_h0
+        grant: l2_grant_0
+        result: l1_load_result_0
+    - name: transformation.load_refill_1.activation.4.1
+      transformation: load_refill_1
+      binding:
+        access: load_h1
+        grant: l2_grant_1
+        result: l1_load_result_1
+    - name: transformation.outer_memory_grants_0.activation.0.0
+      transformation: outer_memory_grants_0
+      binding:
+        outer_acquire: l2_outer_acquire_0
+        outer_grant: l2_outer_grant_0
+    - name: transformation.probe_ack_clean_h0_1.activation.2.2
+      transformation: probe_ack_clean_h0_1
+      binding:
+        probe: l2_probe_1_h0
+        ack: l1_probe_ack_1_h0
+    - name: transformation.probe_ack_clean_h1_2.activation.5.5
+      transformation: probe_ack_clean_h1_2
+      binding:
+        probe: l2_probe_2_h1
+        ack: l1_probe_ack_2_h1
+    - name: transformation.probe_h0_to_b_1.activation.4.2
+      transformation: probe_h0_to_b_1
+      binding:
+        acquire: l1_acquire_1
+        directory: l2_directory_result_1
+        probe: l2_probe_1_h0
+    - name: transformation.probe_h1_to_n_2.activation.8.5
+      transformation: probe_h1_to_n_2
+      binding:
+        acquire: l1_acquire_2
+        directory: l2_directory_result_2
+        probe: l2_probe_2_h1
+    - name: transformation.store_access_must_complete_2.activation.2.2
+      transformation: store_access_must_complete_2
+      binding:
+        access: store_h0
+        store: l1_store_performed_2
+    - name: transformation.store_completes_2.activation.2.2
+      transformation: store_completes_2
+      binding:
+        store: l1_store_performed_2
+        complete: l1_access_complete_2
+    - name: transformation.store_from_b_h0_2.activation.2.2
+      transformation: store_from_b_h0_2
+      binding:
+        access: store_h0
+        acquire: l1_acquire_2
+    - name: transformation.store_refill_2.activation.8.2
+      transformation: store_refill_2
+      binding:
+        access: store_h0
+        grant: l2_grant_2
+        store: l1_store_performed_2
+    - name: transformation.store_updates_h0_2.activation.2.0
+      transformation: store_updates_h0_2
+      binding:
+        store: l1_store_performed_2
+events:
+- id: init_x
+  type: Coherence.LineInit
+  occurs: true
+  fields:
+    line_id: x
+    address: x
+    value: 0
+    version: 0
+    source_op_id: InitX
+  cycle: 0
+- id: load_h0
+  type: Coherence.Access
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    line_id: x
+    address: x
+    mem_kind: load
+    write_value: 0
+    after_op_id: NONE
+  cycle: 1
+- id: load_h1
+  type: Coherence.Access
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 1
+    program_index: 0
+    line_id: x
+    address: x
+    mem_kind: load
+    write_value: 0
+    after_op_id: L0
+  cycle: 10
+- id: store_h0
+  type: Coherence.Access
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 0
+    program_index: 1
+    line_id: x
+    address: x
+    mem_kind: store
+    write_value: 1
+    after_op_id: L1
+  cycle: 20
+- id: l1_acquire_0
+  type: TL.Acquire
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 0
+    line_id: x
+    address: x
+    grow: NtoB
+    need_data: true
+  cycle: 2
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - acquire
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_load_result_0
+  type: Coherence.LoadResult
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    line_id: x
+    address: x
+    value: 0
+    version: 0
+    source_op_id: InitX
+    path: refill
+  cycle: 8
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - load_result
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_access_complete_0
+  type: Coherence.AccessComplete
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 0
+    mem_kind: load
+  cycle: 9
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - access_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_grant_ack_0
+  type: TL.GrantAck
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 0
+    sink_id: 0
+  cycle: 8
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - grant_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_acquire_1
+  type: TL.Acquire
+  occurs: true
+  fields:
+    txn_id: L1
+    hart: 1
+    line_id: x
+    address: x
+    grow: NtoB
+    need_data: true
+  cycle: 11
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - acquire
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_load_result_1
+  type: Coherence.LoadResult
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 1
+    line_id: x
+    address: x
+    value: 0
+    version: 0
+    source_op_id: InitX
+    path: refill
+  cycle: 16
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - load_result
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_access_complete_1
+  type: Coherence.AccessComplete
+  occurs: true
+  fields:
+    op_id: L1
+    hart: 1
+    program_index: 0
+    mem_kind: load
+  cycle: 19
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - access_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_grant_ack_1
+  type: TL.GrantAck
+  occurs: true
+  fields:
+    txn_id: L1
+    hart: 1
+    sink_id: 1
+  cycle: 16
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - grant_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_probe_ack_1_h0
+  type: TL.ProbeAck
+  occurs: true
+  fields:
+    txn_id: L1
+    hart: 0
+    line_id: x
+    address: x
+    cap: B
+    has_data: false
+    value: 0
+    version: 0
+    source_op_id: InitX
+  cycle: 14
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - probe_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_acquire_2
+  type: TL.Acquire
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 0
+    line_id: x
+    address: x
+    grow: BtoT
+    need_data: false
+  cycle: 21
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - acquire
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_store_performed_2
+  type: Coherence.StorePerformed
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 0
+    line_id: x
+    address: x
+    value: 1
+    version: 1
+    source_op_id: W0
+    path: refill
+  cycle: 26
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - store_performed
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_access_complete_2
+  type: Coherence.AccessComplete
+  occurs: true
+  fields:
+    op_id: W0
+    hart: 0
+    program_index: 1
+    mem_kind: store
+  cycle: 27
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - access_complete
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_grant_ack_2
+  type: TL.GrantAck
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 0
+    sink_id: 2
+  cycle: 26
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - grant_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l1_probe_ack_2_h1
+  type: TL.ProbeAck
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 1
+    line_id: x
+    address: x
+    cap: N
+    has_data: false
+    value: 0
+    version: 0
+    source_op_id: InitX
+  cycle: 24
+  annotations:
+    module_spec: boom_l1_coherence_client
+    module_visibility: public
+    interface_ports:
+    - probe_ack
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_directory_result_0
+  type: L2.DirectoryResult
+  occurs: true
+  fields:
+    txn_id: L0
+    line_id: x
+    hit: false
+  cycle: 3
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_outer_acquire_0
+  type: L2.OuterAcquire
+  occurs: true
+  fields:
+    txn_id: L0
+    line_id: x
+    address: x
+  cycle: 4
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_outer_grant_0
+  type: L2.OuterGrant
+  occurs: true
+  fields:
+    txn_id: L0
+    line_id: x
+    address: x
+    value: 0
+    version: 0
+    source_op_id: InitX
+  cycle: 6
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_grant_0
+  type: TL.Grant
+  occurs: true
+  fields:
+    txn_id: L0
+    hart: 0
+    line_id: x
+    address: x
+    cap: T
+    has_data: true
+    value: 0
+    version: 0
+    source_op_id: InitX
+    sink_id: 0
+  cycle: 7
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: public
+    interface_ports:
+    - grant
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_directory_result_1
+  type: L2.DirectoryResult
+  occurs: true
+  fields:
+    txn_id: L1
+    line_id: x
+    hit: true
+  cycle: 12
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_probe_1_h0
+  type: TL.Probe
+  occurs: true
+  fields:
+    txn_id: L1
+    requester_hart: 1
+    target_hart: 0
+    line_id: x
+    address: x
+    cap: B
+  cycle: 13
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: public
+    interface_ports:
+    - probe
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_grant_1
+  type: TL.Grant
+  occurs: true
+  fields:
+    txn_id: L1
+    hart: 1
+    line_id: x
+    address: x
+    cap: B
+    has_data: true
+    value: 0
+    version: 0
+    source_op_id: InitX
+    sink_id: 1
+  cycle: 15
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: public
+    interface_ports:
+    - grant
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_directory_result_2
+  type: L2.DirectoryResult
+  occurs: true
+  fields:
+    txn_id: W0
+    line_id: x
+    hit: true
+  cycle: 22
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_probe_2_h1
+  type: TL.Probe
+  occurs: true
+  fields:
+    txn_id: W0
+    requester_hart: 0
+    target_hart: 1
+    line_id: x
+    address: x
+    cap: N
+  cycle: 23
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: public
+    interface_ports:
+    - probe
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: l2_grant_2
+  type: TL.Grant
+  occurs: true
+  fields:
+    txn_id: W0
+    hart: 0
+    line_id: x
+    address: x
+    cap: T
+    has_data: false
+    value: 0
+    version: 0
+    source_op_id: InitX
+    sink_id: 2
+  cycle: 25
+  annotations:
+    module_spec: sifive_inclusive_l2
+    module_visibility: public
+    interface_ports:
+    - grant
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

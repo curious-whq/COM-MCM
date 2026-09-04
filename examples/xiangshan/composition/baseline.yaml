@@ -1,0 +1,121 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-stage1-interface-baseline
+horizon: 1
+metadata:
+  version: 0.1.0
+  stage: 1
+  purpose: Validate the complete public hierarchy while all modules remain behavior-free.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: core_control, path: ../model/core/boundary.yaml}
+- {name: dtlb, path: ../model/mmu/dtlb_boundary.yaml}
+- {name: translation_backend, path: ../model/mmu/translation_backend_boundary.yaml}
+- {name: load_pipeline, path: ../model/load/boundary.yaml}
+- {name: load_queue, path: ../model/load/queue_boundary.yaml}
+- {name: store_pipeline, path: ../model/store/boundary.yaml}
+- {name: store_queue, path: ../model/store/queue_boundary.yaml}
+- {name: sbuffer, path: ../model/store/sbuffer_boundary.yaml}
+- {name: uncache, path: ../model/special/uncache_boundary.yaml}
+- {name: atomic, path: ../model/special/atomic_boundary.yaml}
+- {name: l1d, path: ../model/l1/boundary.yaml}
+- {name: coupled_l2, path: ../model/l2/boundary.yaml}
+- {name: open_llc, path: ../model/l3/boundary.yaml}
+- {name: prefetch, path: ../model/background/prefetch_boundary.yaml}
+- {name: memory_environment, path: ../model/environment/memory_boundary.yaml}
+connections:
+
+# Core issue, commit and recovery fan-out.
+- {name: issue_to_load_pipeline, source: {module: core_control, port: memory_issue}, target: {module: load_pipeline, port: memory_issue}, mode: shared_event}
+- {name: issue_to_load_queue, source: {module: core_control, port: memory_issue}, target: {module: load_queue, port: memory_issue}, mode: shared_event}
+- {name: issue_to_store_pipeline, source: {module: core_control, port: memory_issue}, target: {module: store_pipeline, port: memory_issue}, mode: shared_event}
+- {name: issue_to_store_queue, source: {module: core_control, port: memory_issue}, target: {module: store_queue, port: memory_issue}, mode: shared_event}
+- {name: issue_to_atomic, source: {module: core_control, port: memory_issue}, target: {module: atomic, port: memory_issue}, mode: shared_event}
+- {name: commit_to_load_queue, source: {module: core_control, port: memory_commit}, target: {module: load_queue, port: memory_commit}, mode: shared_event}
+- {name: commit_to_store_queue, source: {module: core_control, port: memory_commit}, target: {module: store_queue, port: memory_commit}, mode: shared_event}
+- {name: redirect_to_load_pipeline, source: {module: core_control, port: redirect}, target: {module: load_pipeline, port: redirect}, mode: shared_event}
+- {name: redirect_to_load_queue, source: {module: core_control, port: redirect}, target: {module: load_queue, port: redirect}, mode: shared_event}
+- {name: redirect_to_store_pipeline, source: {module: core_control, port: redirect}, target: {module: store_pipeline, port: redirect}, mode: shared_event}
+- {name: redirect_to_store_queue, source: {module: core_control, port: redirect}, target: {module: store_queue, port: redirect}, mode: shared_event}
+- {name: redirect_to_atomic, source: {module: core_control, port: redirect}, target: {module: atomic, port: redirect}, mode: shared_event}
+- {name: sfence_to_dtlb, source: {module: core_control, port: sfence}, target: {module: dtlb, port: sfence}, mode: shared_event}
+- {name: sfence_to_translation_backend, source: {module: core_control, port: sfence}, target: {module: translation_backend, port: sfence}, mode: shared_event}
+- {name: fence_to_sbuffer, source: {module: core_control, port: fence_request}, target: {module: sbuffer, port: fence_request}, mode: shared_event}
+
+# Translation request/response paths.
+- {name: load_to_dtlb, source: {module: load_pipeline, port: translate_request}, target: {module: dtlb, port: load_request}, mode: shared_event}
+- {name: store_to_dtlb, source: {module: store_pipeline, port: translate_request}, target: {module: dtlb, port: store_request}, mode: shared_event}
+- {name: atomic_to_dtlb, source: {module: atomic, port: translate_request}, target: {module: dtlb, port: atomic_request}, mode: shared_event}
+- {name: dtlb_to_load, source: {module: dtlb, port: response}, target: {module: load_pipeline, port: translate_response}, mode: shared_event}
+- {name: dtlb_to_store, source: {module: dtlb, port: response}, target: {module: store_pipeline, port: translate_response}, mode: shared_event}
+- {name: dtlb_to_atomic, source: {module: dtlb, port: response}, target: {module: atomic, port: translate_response}, mode: shared_event}
+- {name: dtlb_to_ptw, source: {module: dtlb, port: ptw_request}, target: {module: translation_backend, port: ptw_request}, mode: shared_event}
+- {name: ptw_to_dtlb, source: {module: translation_backend, port: ptw_response}, target: {module: dtlb, port: ptw_response}, mode: shared_event}
+
+# Load queue, forwarding, cached and uncached load paths.
+- {name: load_update_to_queue, source: {module: load_pipeline, port: queue_update}, target: {module: load_queue, port: pipeline_update}, mode: shared_event}
+- {name: load_replay_to_pipeline, source: {module: load_queue, port: replay_issue}, target: {module: load_pipeline, port: replay_issue}, mode: shared_event}
+- {name: load_forward_query_to_store_queue, source: {module: load_pipeline, port: forward_query}, target: {module: store_queue, port: forward_query}, mode: shared_event}
+- {name: store_forward_response_to_load, source: {module: store_queue, port: forward_response}, target: {module: load_pipeline, port: forward_response}, mode: shared_event}
+- {name: load_request_to_l1, source: {module: load_pipeline, port: l1_request}, target: {module: l1d, port: load_request}, mode: shared_event}
+- {name: l1_response_to_load, source: {module: l1d, port: response}, target: {module: load_pipeline, port: l1_response}, mode: shared_event}
+- {name: l1_nack_to_load, source: {module: l1d, port: nack}, target: {module: load_pipeline, port: l1_nack}, mode: shared_event}
+- {name: l1_release_to_load_queue, source: {module: l1d, port: release_notice}, target: {module: load_queue, port: release_notice}, mode: shared_event}
+- {name: load_uncache_request, source: {module: load_pipeline, port: uncache_request}, target: {module: uncache, port: load_request}, mode: shared_event}
+- {name: uncache_response_to_load, source: {module: uncache, port: response}, target: {module: load_pipeline, port: uncache_response}, mode: shared_event}
+
+# Store queue and committed-store drain.
+- {name: store_address_to_queue, source: {module: store_pipeline, port: address_ready}, target: {module: store_queue, port: address_ready}, mode: shared_event}
+- {name: store_data_to_queue, source: {module: store_pipeline, port: data_ready}, target: {module: store_queue, port: data_ready}, mode: shared_event}
+- {name: store_queue_to_sbuffer, source: {module: store_queue, port: store_drain}, target: {module: sbuffer, port: store_drain}, mode: shared_event}
+- {name: sbuffer_request_to_l1, source: {module: sbuffer, port: l1_request}, target: {module: l1d, port: sbuffer_request}, mode: shared_event}
+- {name: l1_response_to_sbuffer, source: {module: l1d, port: response}, target: {module: sbuffer, port: l1_response}, mode: shared_event}
+- {name: store_uncache_request, source: {module: store_queue, port: uncache_request}, target: {module: uncache, port: store_request}, mode: shared_event}
+- {name: uncache_response_to_store, source: {module: uncache, port: response}, target: {module: store_queue, port: uncache_response}, mode: shared_event}
+
+# Atomic/LR-SC path through L1D.
+- {name: atomic_request_to_l1, source: {module: atomic, port: l1_request}, target: {module: l1d, port: atomic_request}, mode: shared_event}
+- {name: l1_response_to_atomic, source: {module: l1d, port: response}, target: {module: atomic, port: l1_response}, mode: shared_event}
+- {name: l1_nack_to_atomic, source: {module: l1d, port: nack}, target: {module: atomic, port: l1_nack}, mode: shared_event}
+
+# Memory-system results back to the core.
+- {name: load_writeback_to_core, source: {module: load_pipeline, port: writeback}, target: {module: core_control, port: load_writeback}, mode: shared_event}
+- {name: store_writeback_to_core, source: {module: store_pipeline, port: writeback}, target: {module: core_control, port: store_writeback}, mode: shared_event}
+- {name: atomic_writeback_to_core, source: {module: atomic, port: writeback}, target: {module: core_control, port: atomic_writeback}, mode: shared_event}
+- {name: load_fault_to_core, source: {module: load_pipeline, port: memory_fault}, target: {module: core_control, port: load_fault}, mode: shared_event}
+- {name: store_fault_to_core, source: {module: store_pipeline, port: memory_fault}, target: {module: core_control, port: store_fault}, mode: shared_event}
+- {name: atomic_fault_to_core, source: {module: atomic, port: memory_fault}, target: {module: core_control, port: atomic_fault}, mode: shared_event}
+- {name: load_violation_to_core, source: {module: load_queue, port: memory_violation}, target: {module: core_control, port: memory_violation}, mode: shared_event}
+- {name: sbuffer_ordered_to_core, source: {module: sbuffer, port: memory_ordered}, target: {module: core_control, port: memory_ordered}, mode: shared_event}
+
+# L1D-L2 TileLink A-E channels.
+- {name: l1_tl_a_to_l2, source: {module: l1d, port: tl_a}, target: {module: coupled_l2, port: tl_a}, mode: shared_event}
+- {name: l2_tl_b_to_l1, source: {module: coupled_l2, port: tl_b}, target: {module: l1d, port: tl_b}, mode: shared_event}
+- {name: l1_tl_c_to_l2, source: {module: l1d, port: tl_c}, target: {module: coupled_l2, port: tl_c}, mode: shared_event}
+- {name: l2_tl_d_to_l1, source: {module: coupled_l2, port: tl_d}, target: {module: l1d, port: tl_d}, mode: shared_event}
+- {name: l1_tl_e_to_l2, source: {module: l1d, port: tl_e}, target: {module: coupled_l2, port: tl_e}, mode: shared_event}
+
+# CoupledL2-OpenLLC CHI channels.
+- {name: l2_txreq_to_l3, source: {module: coupled_l2, port: chi_txreq}, target: {module: open_llc, port: chi_txreq}, mode: shared_event}
+- {name: l2_txdat_to_l3, source: {module: coupled_l2, port: chi_txdat}, target: {module: open_llc, port: chi_txdat}, mode: shared_event}
+- {name: l2_txrsp_to_l3, source: {module: coupled_l2, port: chi_txrsp}, target: {module: open_llc, port: chi_txrsp}, mode: shared_event}
+- {name: l3_rxsnp_to_l2, source: {module: open_llc, port: chi_rxsnp}, target: {module: coupled_l2, port: chi_rxsnp}, mode: shared_event}
+- {name: l3_rxdat_to_l2, source: {module: open_llc, port: chi_rxdat}, target: {module: coupled_l2, port: chi_rxdat}, mode: shared_event}
+- {name: l3_rxrsp_to_l2, source: {module: open_llc, port: chi_rxrsp}, target: {module: coupled_l2, port: chi_rxrsp}, mode: shared_event}
+
+# External memory requests.
+- {name: l3_request_to_memory, source: {module: open_llc, port: memory_request}, target: {module: memory_environment, port: l3_request}, mode: shared_event}
+- {name: memory_response_to_l3, source: {module: memory_environment, port: response}, target: {module: open_llc, port: memory_response}, mode: shared_event}
+- {name: uncache_request_to_memory, source: {module: uncache, port: memory_request}, target: {module: memory_environment, port: uncache_request}, mode: shared_event}
+- {name: memory_response_to_uncache, source: {module: memory_environment, port: response}, target: {module: uncache, port: memory_response}, mode: shared_event}
+
+# Prefetch training and target requests.
+- {name: load_train_to_prefetch, source: {module: load_pipeline, port: prefetch_train}, target: {module: prefetch, port: load_train}, mode: shared_event}
+- {name: sbuffer_train_to_prefetch, source: {module: sbuffer, port: prefetch_train}, target: {module: prefetch, port: sbuffer_train}, mode: shared_event}
+- {name: l1_train_to_prefetch, source: {module: l1d, port: prefetch_train}, target: {module: prefetch, port: l1_train}, mode: shared_event}
+- {name: l2_train_to_prefetch, source: {module: coupled_l2, port: prefetch_train}, target: {module: prefetch, port: l2_train}, mode: shared_event}
+- {name: prefetch_request_to_l1, source: {module: prefetch, port: request}, target: {module: l1d, port: prefetch_request}, mode: shared_event}
+- {name: prefetch_request_to_l2, source: {module: prefetch, port: request}, target: {module: coupled_l2, port: prefetch_request}, mode: shared_event}
+- {name: prefetch_request_to_l3, source: {module: prefetch, port: request}, target: {module: open_llc, port: prefetch_request}, mode: shared_event}
+roles: []
+constraints: []

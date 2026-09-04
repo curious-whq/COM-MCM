@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 6, case: normal-release, expected: FEASIBLE}
+events:
+- id: normal_load_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: L0, hart: 0, program_index: 0, rob_idx: 0, mem_kind: load, vaddr: 4096, address: 4096, value: 1, size: 8, byte_mask: 255, lq_idx: 0, vector: false}
+- id: normal_load_update
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 8
+  fields: {op_id: L0, lq_idx: 0, address: 4096, byte_mask: 255, executed: true, succeeded: true, replay_cause: none, attempt: 0, fault: false}
+constraints: []

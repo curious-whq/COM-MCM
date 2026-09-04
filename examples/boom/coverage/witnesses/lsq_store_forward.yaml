@@ -1,0 +1,892 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  case: coverage-lsq-store-forward
+  input_contract: architectural store and load only; forwarding is a coverage obligation
+  completion:
+    backend: z3
+    horizon: 20
+    model:
+      component: LSQ only
+      version: 0.12.0
+      composition:
+        name: boom-lsq
+        resolved_roles:
+          init_write: []
+          loads:
+          - event_id: load_0
+            event_type: Arch.Load
+            op_id: L0
+            address: x
+            hart: 0
+            program_index: 1
+            byte_mask: 255
+            cycle: 1
+            ldq_idx: 1
+          local_stores:
+          - event_id: store_0
+            event_type: Arch.Store
+            op_id: S0
+            address: x
+            value: 42
+            hart: 0
+            program_index: 0
+            byte_mask: 255
+            cycle: 0
+            stq_idx: 0
+            is_amo: false
+          fences: []
+        modules:
+        - lsu
+        connections: []
+        generated_transformations: []
+      hierarchy:
+        policy: ports-only-public-surface
+        modules:
+          lsu:
+            public_ports:
+            - name: arch_load
+              direction: input
+              event_type: Arch.Load
+              required_connection: false
+            - name: commit_load
+              direction: input
+              event_type: Arch.CommitLoad
+              required_connection: false
+            - name: branch_kill
+              direction: input
+              event_type: Core.BranchKill
+              required_connection: false
+            - name: exception
+              direction: input
+              event_type: Core.Exception
+              required_connection: false
+            - name: squash_load
+              direction: input
+              event_type: Core.SquashLoad
+              required_connection: false
+            - name: dcache_req_fire
+              direction: input
+              event_type: LSU.DCacheReqFire
+              required_connection: false
+            - name: dcache_req_ready
+              direction: input
+              event_type: DCache.ReqReady
+              required_connection: false
+            - name: dcache_probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: dcache_long_latency_response
+              direction: input
+              event_type: DCache.LongLatencyLoadResponse
+              required_connection: false
+            - name: dcache_req_valid
+              direction: output
+              event_type: LSU.DCacheReqValid
+              required_connection: false
+            - name: memory_order_exception
+              direction: output
+              event_type: Core.MemoryOrderingException
+              required_connection: false
+            - name: dcache_load_nack
+              direction: input
+              event_type: DCache.LoadNack
+              required_connection: false
+            - name: arch_store
+              direction: input
+              event_type: Arch.Store
+              required_connection: false
+            - name: commit_store
+              direction: input
+              event_type: Arch.CommitStore
+              required_connection: false
+            - name: arch_fence
+              direction: input
+              event_type: Arch.Fence
+              required_connection: false
+            - name: commit_fence
+              direction: input
+              event_type: Arch.CommitFence
+              required_connection: false
+            - name: dcache_store_ack
+              direction: input
+              event_type: DCache.StoreAck
+              required_connection: false
+            - name: dcache_ordered
+              direction: input
+              event_type: DCache.Ordered
+              required_connection: false
+            - name: probe_release
+              direction: input
+              event_type: DCache.ProbeRelease
+              required_connection: false
+            - name: dcache_load_response
+              direction: input
+              event_type: DCache.LoadResponse
+              required_connection: false
+            - name: dcache_ll_response
+              direction: input
+              event_type: DCache.LongLatencyLoadResponse
+              required_connection: false
+            - name: store_drain
+              direction: output
+              event_type: LSU.StoreDrainIssue
+              required_connection: false
+            - name: fence_release
+              direction: output
+              event_type: LSU.FenceRelease
+              required_connection: false
+            public_event_types:
+            - Arch.CommitFence
+            - Arch.CommitLoad
+            - Arch.CommitStore
+            - Arch.Fence
+            - Arch.Load
+            - Arch.Store
+            - Core.BranchKill
+            - Core.Exception
+            - Core.MemoryOrderingException
+            - Core.SquashLoad
+            - DCache.LoadNack
+            - DCache.LoadResponse
+            - DCache.LongLatencyLoadResponse
+            - DCache.Ordered
+            - DCache.ProbeRelease
+            - DCache.ReqReady
+            - DCache.StoreAck
+            - LSU.DCacheReqFire
+            - LSU.DCacheReqValid
+            - LSU.FenceRelease
+            - LSU.StoreDrainIssue
+            private_slot_ids:
+            - blocked_by_amo_0_0
+            - ldld_assert_0_0
+            - ldld_conflict_0_0
+            - ldld_search_0_0
+            - ldld_search_0_1
+            - ldq_allocate_0
+            - load_executed_0
+            - load_nack_seen_0
+            - load_observed_0
+            - load_sleep_0
+            - load_succeeded_hit_0
+            - load_succeeded_ll_0
+            - load_wakeup_0
+            - retry_enqueue_0
+            - retry_issue_0
+            - stld_order_fail_0_0
+            - stld_search_0
+            - stld_violation_unforwarded_0_0
+            - stld_violation_wrong_forward_0_0
+            - store_addr_0
+            - store_cleared_0
+            - store_committed_0
+            - store_data_0
+            - store_flushed_0
+            - store_load_forward_0_0
+            - store_retry_enqueue_0
+            - store_retry_issue_0
+            - store_tlb_hit_0
+            - store_tlb_miss_0
+            - stq_allocate_0
+            - tlb_hit_0
+            - tlb_miss_0
+            private_event_types:
+            - LSU.AssertViolation
+            - LSU.LDLDConflict
+            - LSU.LDLDSearch
+            - LSU.LDQAllocate
+            - LSU.LoadBlockedByOlderAMO
+            - LSU.LoadExecuted
+            - LSU.LoadNackSeen
+            - LSU.LoadObserved
+            - LSU.LoadOrderFail
+            - LSU.LoadSleep
+            - LSU.LoadSucceeded
+            - LSU.LoadWakeup
+            - LSU.RetryEnqueue
+            - LSU.RetryIssue
+            - LSU.STLDSearch
+            - LSU.STLDViolation
+            - LSU.STQAllocate
+            - LSU.StoreAddressReady
+            - LSU.StoreCleared
+            - LSU.StoreCommitted
+            - LSU.StoreDataReady
+            - LSU.StoreFlushed
+            - LSU.StoreLoadForward
+            - LSU.StoreRetryEnqueue
+            - LSU.StoreRetryIssue
+            - LSU.StoreTLBHit
+            - LSU.StoreTLBMiss
+            - LSU.TLBHit
+            - LSU.TLBMiss
+            private_state_names:
+            - LSU.ldq[1].addr_is_uncacheable
+            - LSU.ldq[1].addr_is_virtual
+            - LSU.ldq[1].addr_valid
+            - LSU.ldq[1].address
+            - LSU.ldq[1].commit_eligible
+            - LSU.ldq[1].executed
+            - LSU.ldq[1].executing_now
+            - LSU.ldq[1].forward_std_val
+            - LSU.ldq[1].forward_store_program_index
+            - LSU.ldq[1].forward_stq_idx
+            - LSU.ldq[1].hart
+            - LSU.ldq[1].ld_byte_mask
+            - LSU.ldq[1].observed
+            - LSU.ldq[1].order_fail
+            - LSU.ldq[1].performed
+            - LSU.ldq[1].program_index
+            - LSU.ldq[1].squashed
+            - LSU.ldq[1].succeeded
+            - LSU.ldq[1].valid
+            - LSU.ldq[1].value
+            - LSU.stq[0].addr_is_virtual
+            - LSU.stq[0].addr_valid
+            - LSU.stq[0].address
+            - LSU.stq[0].byte_mask
+            - LSU.stq[0].can_execute
+            - LSU.stq[0].cleared
+            - LSU.stq[0].committed
+            - LSU.stq[0].data
+            - LSU.stq[0].data_valid
+            - LSU.stq[0].hart
+            - LSU.stq[0].is_amo
+            - LSU.stq[0].program_index
+            - LSU.stq[0].succeeded
+            - LSU.stq[0].valid
+            private_transformation_names:
+            - accepted_request_marks_executed_L0
+            - acked_committed_store_can_clear_S0
+            - amo_block_clears_executed_S0_L0
+            - architectural_store_commit_S0
+            - branch_kill_invalidates_load_L0
+            - branch_kill_invalidates_store_S0
+            - buggy_ldld_assert_L0_L0
+            - commit_requires_valid_executed_succeeded_L0
+            - dcache_fire_records_load_address_L0
+            - dcache_nack_clears_executed_L0
+            - dcache_response_to_success_L0
+            - dcache_valid_requires_tlb_hit_L0
+            - exception_flush_invalidates_load_L0
+            - exception_flushes_uncommitted_store_S0
+            - executed_load_generates_ldld_search_L0
+            - ldld_conflict_L0_L0
+            - ldld_search_ends_executing_window_L0
+            - ldq_allocate_L0
+            - ll_response_to_success_L0
+            - load_executed_sets_ldq_bit_L0
+            - load_observed_sets_ldq_bit_L0
+            - load_order_fail_raises_memory_ordering_exception_L0
+            - load_order_fail_sets_ldq_bit_L0
+            - load_succeeded_sets_value_L0
+            - load_wakeup_requires_sleeping_entry_L0
+            - matching_release_marks_observed_L0
+            - nack_seen_L0
+            - older_amo_blocks_load_S0_L0
+            - retry_enqueue_clears_ldq_address_L0
+            - retry_enqueue_requires_tlb_miss_L0
+            - retry_issue_requires_enqueue_L0
+            - selected_store_load_forward_S0_L0
+            - squash_invalidates_load_L0
+            - stld_unforwarded_violation_S0_L0
+            - stld_violation_marks_order_fail_S0_L0
+            - stld_wrong_forward_violation_S0_L0
+            - store_ack_sets_succeeded_S0
+            - store_address_generates_stld_search_S0
+            - store_address_ready_S0
+            - store_clear_deallocates_S0
+            - store_data_ready_S0
+            - store_drain_requires_ready_committed_S0
+            - store_flush_invalidates_entry_S0
+            - store_retry_enqueue_clears_address_S0
+            - store_retry_enqueue_requires_miss_S0
+            - store_retry_issue_requires_enqueue_S0
+            - store_tlb_hit_exposes_physical_address_S0
+            - store_tlb_hit_requires_retry_issue_S0
+            - store_tlb_miss_records_virtual_S0
+            - stq_allocate_S0
+            - tlb_hit_records_physical_address_L0
+            - tlb_miss_records_virtual_address_L0
+    selected_slots:
+    - ldq_allocate_0
+    - stq_allocate_0
+    - store_addr_0
+    - store_data_0
+    - stld_search_0
+    - store_load_forward_0_0
+    state:
+      initial:
+        LSU.ldq[1].valid: false
+        LSU.ldq[1].addr_valid: false
+        LSU.ldq[1].addr_is_virtual: false
+        LSU.ldq[1].addr_is_uncacheable: false
+        LSU.ldq[1].address: EMPTY_ADDR
+        LSU.ldq[1].executed: false
+        LSU.ldq[1].succeeded: false
+        LSU.ldq[1].order_fail: false
+        LSU.ldq[1].observed: false
+        LSU.ldq[1].forward_std_val: false
+        LSU.ldq[1].forward_stq_idx: 63
+        LSU.ldq[1].ld_byte_mask: 0
+        LSU.ldq[1].value: UNSET_VALUE
+        LSU.ldq[1].squashed: false
+        LSU.ldq[1].executing_now: false
+        LSU.ldq[1].hart: -1
+        LSU.ldq[1].program_index: -1
+        LSU.ldq[1].performed: false
+        LSU.ldq[1].commit_eligible: false
+        LSU.ldq[1].forward_store_program_index: -1
+        LSU.stq[0].valid: false
+        LSU.stq[0].addr_valid: false
+        LSU.stq[0].addr_is_virtual: false
+        LSU.stq[0].address: EMPTY_ADDR
+        LSU.stq[0].byte_mask: 0
+        LSU.stq[0].data_valid: false
+        LSU.stq[0].data: UNSET_VALUE
+        LSU.stq[0].committed: false
+        LSU.stq[0].succeeded: false
+        LSU.stq[0].can_execute: false
+        LSU.stq[0].cleared: false
+        LSU.stq[0].hart: -1
+        LSU.stq[0].program_index: -1
+        LSU.stq[0].is_amo: false
+      final:
+        LSU.ldq[1].valid: true
+        LSU.ldq[1].addr_valid: false
+        LSU.ldq[1].addr_is_virtual: false
+        LSU.ldq[1].addr_is_uncacheable: false
+        LSU.ldq[1].address: EMPTY_ADDR
+        LSU.ldq[1].executed: false
+        LSU.ldq[1].succeeded: true
+        LSU.ldq[1].order_fail: false
+        LSU.ldq[1].observed: false
+        LSU.ldq[1].forward_std_val: true
+        LSU.ldq[1].forward_stq_idx: 0
+        LSU.ldq[1].ld_byte_mask: 255
+        LSU.ldq[1].value: 42
+        LSU.ldq[1].squashed: false
+        LSU.ldq[1].executing_now: false
+        LSU.ldq[1].hart: 0
+        LSU.ldq[1].program_index: 1
+        LSU.ldq[1].performed: true
+        LSU.ldq[1].commit_eligible: true
+        LSU.ldq[1].forward_store_program_index: 0
+        LSU.stq[0].valid: true
+        LSU.stq[0].addr_valid: true
+        LSU.stq[0].addr_is_virtual: false
+        LSU.stq[0].address: x
+        LSU.stq[0].byte_mask: 255
+        LSU.stq[0].data_valid: true
+        LSU.stq[0].data: 42
+        LSU.stq[0].committed: false
+        LSU.stq[0].succeeded: false
+        LSU.stq[0].can_execute: false
+        LSU.stq[0].cleared: false
+        LSU.stq[0].hart: 0
+        LSU.stq[0].program_index: 0
+        LSU.stq[0].is_amo: false
+      steps:
+      - cycle: 0
+        before:
+          LSU.ldq[1].valid: false
+          LSU.ldq[1].addr_valid: false
+          LSU.ldq[1].addr_is_virtual: false
+          LSU.ldq[1].addr_is_uncacheable: false
+          LSU.ldq[1].address: EMPTY_ADDR
+          LSU.ldq[1].executed: false
+          LSU.ldq[1].succeeded: false
+          LSU.ldq[1].order_fail: false
+          LSU.ldq[1].observed: false
+          LSU.ldq[1].forward_std_val: false
+          LSU.ldq[1].forward_stq_idx: 63
+          LSU.ldq[1].ld_byte_mask: 0
+          LSU.ldq[1].value: UNSET_VALUE
+          LSU.ldq[1].squashed: false
+          LSU.ldq[1].executing_now: false
+          LSU.ldq[1].hart: -1
+          LSU.ldq[1].program_index: -1
+          LSU.ldq[1].performed: false
+          LSU.ldq[1].commit_eligible: false
+          LSU.ldq[1].forward_store_program_index: -1
+          LSU.stq[0].valid: false
+          LSU.stq[0].addr_valid: false
+          LSU.stq[0].addr_is_virtual: false
+          LSU.stq[0].address: EMPTY_ADDR
+          LSU.stq[0].byte_mask: 0
+          LSU.stq[0].data_valid: false
+          LSU.stq[0].data: UNSET_VALUE
+          LSU.stq[0].committed: false
+          LSU.stq[0].succeeded: false
+          LSU.stq[0].can_execute: false
+          LSU.stq[0].cleared: false
+          LSU.stq[0].hart: -1
+          LSU.stq[0].program_index: -1
+          LSU.stq[0].is_amo: false
+        after:
+          LSU.ldq[1].valid: false
+          LSU.ldq[1].addr_valid: false
+          LSU.ldq[1].addr_is_virtual: false
+          LSU.ldq[1].addr_is_uncacheable: false
+          LSU.ldq[1].address: EMPTY_ADDR
+          LSU.ldq[1].executed: false
+          LSU.ldq[1].succeeded: false
+          LSU.ldq[1].order_fail: false
+          LSU.ldq[1].observed: false
+          LSU.ldq[1].forward_std_val: false
+          LSU.ldq[1].forward_stq_idx: 63
+          LSU.ldq[1].ld_byte_mask: 0
+          LSU.ldq[1].value: UNSET_VALUE
+          LSU.ldq[1].squashed: false
+          LSU.ldq[1].executing_now: false
+          LSU.ldq[1].hart: -1
+          LSU.ldq[1].program_index: -1
+          LSU.ldq[1].performed: false
+          LSU.ldq[1].commit_eligible: false
+          LSU.ldq[1].forward_store_program_index: -1
+          LSU.stq[0].valid: true
+          LSU.stq[0].addr_valid: false
+          LSU.stq[0].addr_is_virtual: false
+          LSU.stq[0].address: EMPTY_ADDR
+          LSU.stq[0].byte_mask: 0
+          LSU.stq[0].data_valid: false
+          LSU.stq[0].data: UNSET_VALUE
+          LSU.stq[0].committed: false
+          LSU.stq[0].succeeded: false
+          LSU.stq[0].can_execute: false
+          LSU.stq[0].cleared: false
+          LSU.stq[0].hart: 0
+          LSU.stq[0].program_index: 0
+          LSU.stq[0].is_amo: false
+        active_requirements: []
+        active_updates:
+        - transformation.stq_allocate_S0.forward.0.store_0.instance.0.stq_allocate_0.update.1
+        - transformation.stq_allocate_S0.forward.0.store_0.instance.0.stq_allocate_0.update.3
+        - transformation.stq_allocate_S0.forward.0.store_0.instance.0.stq_allocate_0.update.2
+        - transformation.stq_allocate_S0.forward.0.store_0.instance.0.stq_allocate_0.update.0
+        changes:
+        - state: LSU.stq[0].hart
+          before: -1
+          after: 0
+          origins:
+          - transformation.stq_allocate_S0.forward.0.store_0.instance.0.stq_allocate_0.update.1
+        - state: LSU.stq[0].program_index
+          before: -1
+          after: 0
+          origins:
+          - transformation.stq_allocate_S0.forward.0.store_0.instance.0.stq_allocate_0.update.2
+        - state: LSU.stq[0].valid
+          before: false
+          after: true
+          origins:
+          - transformation.stq_allocate_S0.forward.0.store_0.instance.0.stq_allocate_0.update.0
+      - cycle: 1
+        before:
+          LSU.ldq[1].valid: false
+          LSU.ldq[1].addr_valid: false
+          LSU.ldq[1].addr_is_virtual: false
+          LSU.ldq[1].addr_is_uncacheable: false
+          LSU.ldq[1].address: EMPTY_ADDR
+          LSU.ldq[1].executed: false
+          LSU.ldq[1].succeeded: false
+          LSU.ldq[1].order_fail: false
+          LSU.ldq[1].observed: false
+          LSU.ldq[1].forward_std_val: false
+          LSU.ldq[1].forward_stq_idx: 63
+          LSU.ldq[1].ld_byte_mask: 0
+          LSU.ldq[1].value: UNSET_VALUE
+          LSU.ldq[1].squashed: false
+          LSU.ldq[1].executing_now: false
+          LSU.ldq[1].hart: -1
+          LSU.ldq[1].program_index: -1
+          LSU.ldq[1].performed: false
+          LSU.ldq[1].commit_eligible: false
+          LSU.ldq[1].forward_store_program_index: -1
+          LSU.stq[0].valid: true
+          LSU.stq[0].addr_valid: false
+          LSU.stq[0].addr_is_virtual: false
+          LSU.stq[0].address: EMPTY_ADDR
+          LSU.stq[0].byte_mask: 0
+          LSU.stq[0].data_valid: false
+          LSU.stq[0].data: UNSET_VALUE
+          LSU.stq[0].committed: false
+          LSU.stq[0].succeeded: false
+          LSU.stq[0].can_execute: false
+          LSU.stq[0].cleared: false
+          LSU.stq[0].hart: 0
+          LSU.stq[0].program_index: 0
+          LSU.stq[0].is_amo: false
+        after:
+          LSU.ldq[1].valid: true
+          LSU.ldq[1].addr_valid: false
+          LSU.ldq[1].addr_is_virtual: false
+          LSU.ldq[1].addr_is_uncacheable: false
+          LSU.ldq[1].address: EMPTY_ADDR
+          LSU.ldq[1].executed: false
+          LSU.ldq[1].succeeded: false
+          LSU.ldq[1].order_fail: false
+          LSU.ldq[1].observed: false
+          LSU.ldq[1].forward_std_val: false
+          LSU.ldq[1].forward_stq_idx: 63
+          LSU.ldq[1].ld_byte_mask: 255
+          LSU.ldq[1].value: UNSET_VALUE
+          LSU.ldq[1].squashed: false
+          LSU.ldq[1].executing_now: false
+          LSU.ldq[1].hart: 0
+          LSU.ldq[1].program_index: 1
+          LSU.ldq[1].performed: false
+          LSU.ldq[1].commit_eligible: false
+          LSU.ldq[1].forward_store_program_index: -1
+          LSU.stq[0].valid: true
+          LSU.stq[0].addr_valid: true
+          LSU.stq[0].addr_is_virtual: false
+          LSU.stq[0].address: x
+          LSU.stq[0].byte_mask: 255
+          LSU.stq[0].data_valid: true
+          LSU.stq[0].data: 42
+          LSU.stq[0].committed: false
+          LSU.stq[0].succeeded: false
+          LSU.stq[0].can_execute: false
+          LSU.stq[0].cleared: false
+          LSU.stq[0].hart: 0
+          LSU.stq[0].program_index: 0
+          LSU.stq[0].is_amo: false
+        active_requirements:
+        - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.requirement.0
+        - transformation.store_data_ready_S0.forward.0.store_data_0.instance.0.no-output.requirement.0
+        active_updates:
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.1
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.12
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.2
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.6
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.13
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.8
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.10
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.5
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.4
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.11
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.9
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.7
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.3
+        - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.0
+        - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.update.1
+        - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.update.0
+        - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.update.2
+        - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.update.3
+        - transformation.store_data_ready_S0.forward.0.store_data_0.instance.0.no-output.update.1
+        - transformation.store_data_ready_S0.forward.0.store_data_0.instance.0.no-output.update.0
+        changes:
+        - state: LSU.ldq[1].hart
+          before: -1
+          after: 0
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.8
+        - state: LSU.ldq[1].ld_byte_mask
+          before: 0
+          after: 255
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.10
+        - state: LSU.ldq[1].program_index
+          before: -1
+          after: 1
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.9
+        - state: LSU.ldq[1].valid
+          before: false
+          after: true
+          origins:
+          - transformation.ldq_allocate_L0.forward.0.load_0.instance.0.ldq_allocate_0.update.0
+        - state: LSU.stq[0].addr_valid
+          before: false
+          after: true
+          origins:
+          - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.update.0
+        - state: LSU.stq[0].address
+          before: EMPTY_ADDR
+          after: x
+          origins:
+          - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.update.2
+        - state: LSU.stq[0].byte_mask
+          before: 0
+          after: 255
+          origins:
+          - transformation.store_address_ready_S0.forward.0.store_addr_0.instance.0.no-output.update.3
+        - state: LSU.stq[0].data
+          before: UNSET_VALUE
+          after: 42
+          origins:
+          - transformation.store_data_ready_S0.forward.0.store_data_0.instance.0.no-output.update.1
+        - state: LSU.stq[0].data_valid
+          before: false
+          after: true
+          origins:
+          - transformation.store_data_ready_S0.forward.0.store_data_0.instance.0.no-output.update.0
+      - cycle: 2
+        before:
+          LSU.ldq[1].valid: true
+          LSU.ldq[1].addr_valid: false
+          LSU.ldq[1].addr_is_virtual: false
+          LSU.ldq[1].addr_is_uncacheable: false
+          LSU.ldq[1].address: EMPTY_ADDR
+          LSU.ldq[1].executed: false
+          LSU.ldq[1].succeeded: false
+          LSU.ldq[1].order_fail: false
+          LSU.ldq[1].observed: false
+          LSU.ldq[1].forward_std_val: false
+          LSU.ldq[1].forward_stq_idx: 63
+          LSU.ldq[1].ld_byte_mask: 255
+          LSU.ldq[1].value: UNSET_VALUE
+          LSU.ldq[1].squashed: false
+          LSU.ldq[1].executing_now: false
+          LSU.ldq[1].hart: 0
+          LSU.ldq[1].program_index: 1
+          LSU.ldq[1].performed: false
+          LSU.ldq[1].commit_eligible: false
+          LSU.ldq[1].forward_store_program_index: -1
+          LSU.stq[0].valid: true
+          LSU.stq[0].addr_valid: true
+          LSU.stq[0].addr_is_virtual: false
+          LSU.stq[0].address: x
+          LSU.stq[0].byte_mask: 255
+          LSU.stq[0].data_valid: true
+          LSU.stq[0].data: 42
+          LSU.stq[0].committed: false
+          LSU.stq[0].succeeded: false
+          LSU.stq[0].can_execute: false
+          LSU.stq[0].cleared: false
+          LSU.stq[0].hart: 0
+          LSU.stq[0].program_index: 0
+          LSU.stq[0].is_amo: false
+        after:
+          LSU.ldq[1].valid: true
+          LSU.ldq[1].addr_valid: false
+          LSU.ldq[1].addr_is_virtual: false
+          LSU.ldq[1].addr_is_uncacheable: false
+          LSU.ldq[1].address: EMPTY_ADDR
+          LSU.ldq[1].executed: false
+          LSU.ldq[1].succeeded: true
+          LSU.ldq[1].order_fail: false
+          LSU.ldq[1].observed: false
+          LSU.ldq[1].forward_std_val: true
+          LSU.ldq[1].forward_stq_idx: 0
+          LSU.ldq[1].ld_byte_mask: 255
+          LSU.ldq[1].value: 42
+          LSU.ldq[1].squashed: false
+          LSU.ldq[1].executing_now: false
+          LSU.ldq[1].hart: 0
+          LSU.ldq[1].program_index: 1
+          LSU.ldq[1].performed: true
+          LSU.ldq[1].commit_eligible: true
+          LSU.ldq[1].forward_store_program_index: 0
+          LSU.stq[0].valid: true
+          LSU.stq[0].addr_valid: true
+          LSU.stq[0].addr_is_virtual: false
+          LSU.stq[0].address: x
+          LSU.stq[0].byte_mask: 255
+          LSU.stq[0].data_valid: true
+          LSU.stq[0].data: 42
+          LSU.stq[0].committed: false
+          LSU.stq[0].succeeded: false
+          LSU.stq[0].can_execute: false
+          LSU.stq[0].cleared: false
+          LSU.stq[0].hart: 0
+          LSU.stq[0].program_index: 0
+          LSU.stq[0].is_amo: false
+        active_requirements:
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.requirement.0
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.requirement.1
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.requirement.2
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.requirement.3
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.requirement.4
+        active_updates:
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.2
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.3
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.5
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.4
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.1
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.0
+        - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.6
+        changes:
+        - state: LSU.ldq[1].commit_eligible
+          before: false
+          after: true
+          origins:
+          - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.2
+        - state: LSU.ldq[1].forward_std_val
+          before: false
+          after: true
+          origins:
+          - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.3
+        - state: LSU.ldq[1].forward_store_program_index
+          before: -1
+          after: 0
+          origins:
+          - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.5
+        - state: LSU.ldq[1].forward_stq_idx
+          before: 63
+          after: 0
+          origins:
+          - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.4
+        - state: LSU.ldq[1].performed
+          before: false
+          after: true
+          origins:
+          - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.1
+        - state: LSU.ldq[1].succeeded
+          before: false
+          after: true
+          origins:
+          - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.0
+        - state: LSU.ldq[1].value
+          before: UNSET_VALUE
+          after: 42
+          origins:
+          - transformation.selected_store_load_forward_S0_L0.forward.0.store_load_forward_0_0.instance.0.no-output.update.6
+    active_transformations:
+    - name: transformation.ldq_allocate_L0.activation.0.0
+      transformation: ldq_allocate_L0
+      binding:
+        arch: load_0
+        alloc: ldq_allocate_0
+    - name: transformation.selected_store_load_forward_S0_L0.activation.0.0
+      transformation: selected_store_load_forward_S0_L0
+      binding:
+        fwd: store_load_forward_0_0
+    - name: transformation.store_address_generates_stld_search_S0.activation.0.0
+      transformation: store_address_generates_stld_search_S0
+      binding:
+        addr: store_addr_0
+        search: stld_search_0
+    - name: transformation.store_address_ready_S0.activation.0.0
+      transformation: store_address_ready_S0
+      binding:
+        addr: store_addr_0
+    - name: transformation.store_data_ready_S0.activation.0.0
+      transformation: store_data_ready_S0
+      binding:
+        data: store_data_0
+    - name: transformation.stq_allocate_S0.activation.0.0
+      transformation: stq_allocate_S0
+      binding:
+        arch: store_0
+        alloc: stq_allocate_0
+events:
+- id: store_0
+  type: Arch.Store
+  occurs: true
+  fields:
+    op_id: S0
+    hart: 0
+    program_index: 0
+    address: x
+    value: 42
+    byte_mask: 255
+  cycle: 0
+  annotations:
+    microarch:
+      stq_idx: 0
+      is_amo: false
+- id: load_0
+  type: Arch.Load
+  occurs: true
+  fields:
+    op_id: L0
+    hart: 0
+    program_index: 1
+    address: x
+    byte_mask: 255
+  cycle: 1
+  annotations:
+    microarch:
+      ldq_idx: 1
+- id: ldq_allocate_0
+  type: LSU.LDQAllocate
+  occurs: true
+  fields:
+    op_id: L0
+    ldq_idx: 1
+  cycle: 1
+  annotations:
+    role: ldq_allocation
+    source: dispatch
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: stq_allocate_0
+  type: LSU.STQAllocate
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 0
+  cycle: 0
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: store_addr_0
+  type: LSU.StoreAddressReady
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 0
+    address: x
+    byte_mask: 255
+  cycle: 1
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: store_data_0
+  type: LSU.StoreDataReady
+  occurs: true
+  fields:
+    op_id: S0
+    stq_idx: 0
+    value: 42
+  cycle: 1
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: stld_search_0
+  type: LSU.STLDSearch
+  occurs: true
+  fields:
+    store_op_id: S0
+    store_stq_idx: 0
+    address: x
+  cycle: 2
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+- id: store_load_forward_0_0
+  type: LSU.StoreLoadForward
+  occurs: true
+  fields:
+    store_op_id: S0
+    store_stq_idx: 0
+    load_op_id: L0
+    load_ldq_idx: 1
+    address: x
+    value: 42
+  cycle: 2
+  annotations:
+    module_spec: lsu
+    module_visibility: private
+    completion_slot: true
+    required_slot: false
+    completed: true
+constraints: []

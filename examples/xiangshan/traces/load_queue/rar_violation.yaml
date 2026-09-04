@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 6, case: rar-violation, expected: FEASIBLE}
+events:
+- id: rar_older_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LOLD, hart: 0, program_index: 0, rob_idx: 3, mem_kind: load, vaddr: 16384, address: 16384, value: 7, size: 8, byte_mask: 255, lq_idx: 3, vector: false}
+- id: rar_younger_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 2
+  fields: {op_id: LYNG, hart: 0, program_index: 1, rob_idx: 4, mem_kind: load, vaddr: 16384, address: 16384, value: 7, size: 8, byte_mask: 255, lq_idx: 4, vector: false}
+- id: rar_younger_query
+  type: Load.OrderQuery
+  occurs: true
+  cycle: 8
+  fields: {op_id: LYNG, hart: 0, program_index: 1, rob_idx: 4, lq_idx: 4, address: 16384, byte_mask: 255, data_valid: true, nc: false}
+- id: rar_release
+  type: L1.ReleaseNotice
+  occurs: true
+  cycle: 16
+  fields: {txn_id: REL0, source_op_id: PROBE0, hart: 0, address: 16384, dirty: false}
+- id: rar_older_query
+  type: Load.OrderQuery
+  occurs: true
+  cycle: 24
+  fields: {op_id: LOLD, hart: 0, program_index: 0, rob_idx: 3, lq_idx: 3, address: 16384, byte_mask: 255, data_valid: true, nc: false}
+constraints: []

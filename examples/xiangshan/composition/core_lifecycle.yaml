@@ -1,0 +1,32 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-core-lifecycle-v0.2
+horizon: 24
+metadata:
+  version: 0.2.0
+  stage: 2
+  purpose: Executable Dispatch/ROB/ExceptionGen memory-uop lifecycle slice.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: core_lifecycle, path: ../model/core/lifecycle.yaml}
+connections: []
+roles:
+- name: memory_ops
+  event_type: Core.MemoryInstruction
+  where: {fields.vector: false}
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    vaddr: fields.vaddr
+    address: fields.address
+    value: fields.value
+    write_value: fields.write_value
+    size: fields.size
+    byte_mask: fields.byte_mask
+    vector: fields.vector
+constraints: []

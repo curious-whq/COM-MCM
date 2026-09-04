@@ -1,0 +1,74 @@
+schema_version: umcm.search.v0.20.0
+name: boom-rvwmo-hierarchical-search-v0.20
+catalog: ../events.yaml
+metadata:
+  version: 0.20.0
+  purpose: Two-level RVWMO skeleton and public-interface µMCM realization search.
+  acceptance_boundary: The coherence slice is executable; the detailed LSQ/L1/MSHR-to-v0.18 adapter remains an explicit blocker for v0.21 blind rediscovery.
+  forbidden_inputs: [TLBMiss, L1Hit, MSHR, Probe, ldq_idx, mshr_idx, expected_microarchitectural_path]
+
+bounds:
+  harts: 2
+  memory_ops: 3
+  addresses: 1
+  values: 2
+  max_assignments: 64
+  max_graph_candidates: 128
+
+architecture:
+  model: ../axioms/rvwmo.yaml
+  target: forbidden
+  events:
+    init_write: Arch.InitWrite
+    load: Arch.Load
+    store: Arch.Store
+    commit_read: Arch.CommitLoad
+    defaults:
+      load: {byte_mask: 255}
+      store: {byte_mask: 255}
+  init_writes:
+  - {id: InitX, address: x, value: 0}
+  operations:
+  - id: R0
+    kind: load
+    hart: 0
+    program_index: 0
+    address: x
+    value: [0, 1]
+  - id: R1
+    kind: load
+    hart: 0
+    program_index: 1
+    address: x
+    value: [0, 1]
+  - id: W
+    kind: store
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+
+realization:
+  stages:
+  - name: coherence_version_realization
+    kind: coherence_access
+    required: true
+    catalog: ../events.yaml
+    composition: ../composition/coherence_v018.yaml
+    input_event_types: [Coherence.LineInit, Coherence.Access]
+    event_types:
+      line_init: Coherence.LineInit
+      access: Coherence.Access
+      load_result: Coherence.LoadResult
+      store_result: Coherence.StorePerformed
+    cycle_start: 1
+    cycle_stride: 9
+    max_schedules: 6
+  - name: detailed_lsq_l1_mshr_join
+    kind: interface_gap
+    required: true
+    reason: The v0.15 detailed memory composition still binds ldq_idx/mshr_id and cache routing through Arch.Load annotations, and its MSHR memory-side vocabulary is not yet connected to the v0.18 TileLink coherence ports. Supplying those annotations would violate the blind-search input contract.
+    missing_interfaces:
+    - public finite allocation choice for LDQ/MSHR identities
+    - DCache/MSHR Acquire-Grant adapter to TileLink A/D/E
+    - coherence result to detailed DCache response and ROB retirement

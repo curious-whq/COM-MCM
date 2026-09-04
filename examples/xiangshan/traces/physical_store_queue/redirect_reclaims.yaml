@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 9, case: redirect-reclaims, expected: FEASIBLE}
+events:
+- id: sr_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SR, hart: 0, program_index: 2, rob_idx: 2, mem_kind: store, vaddr: 4096, write_value: 85, size: 2, byte_mask: 3, sq_idx: 0, vector: false}
+- id: sr_redirect
+  type: Core.Redirect
+  occurs: true
+  cycle: 4
+  fields: {hart: 0, program_index: 1, rob_idx: 1, cause: branch_mispredict, source_op_id: BR, target_op_id: SR, origin: branch, flush_self: false}
+constraints: []

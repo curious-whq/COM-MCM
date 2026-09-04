@@ -1,0 +1,907 @@
+schema_version: umcm.module.v0.15.0
+name: physical_store_queue
+metadata:
+  version: 0.9.0
+  stage: 9
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/mem/lsqueue/NewStoreQueue.scala:34-178,180-246,247-662,664-807,809-1389,1392-1471,1473-1581,1584-2081
+  - src/main/scala/xiangshan/mem/lsqueue/LSQBundle.scala:71-93,170-203,207-282
+  scope: bounded scalar PhysicalStoreQueue entry lifetime, byte-mask forwarding, 16-byte drain normalization, cross-16-byte splitting, cross-page tail-address buffering, and ordered handoff to SBuffer
+  hierarchy: entry valid bits, forwarding candidates, age fold, split beats, UnalignQueue occupancy, and drain arbitration are private; pipeline payloads, forward request/response, layout geometry, and SBuffer handoff are public ports
+  parameters:
+    physical_store_queue_size: 64
+    commit_width: 4
+    ensbuffer_width: 2
+    vector_length_bytes: 16
+    unalign_queue_size: 2
+  abstractions:
+  - program_index is the unwrapped finite age corresponding to SqPtr circular comparisons; candidate events serialize a combinational youngest-match priority fold without claiming extra RTL latency
+  - Store.Layout is the public 16-byte geometry boundary produced by the unaligned StoreUnit path modeled in Stage 12; Stage 9 consumes it exactly as DeqModule consumes normalized head/tail payloads
+  - Core.MemoryCommit is the executable proxy for the VSQ precommit/retired pointer crossing an all-valid PSQ entry
+  - cached scalar drains are modeled here through EnterSbufferQueue acceptance; SBuffer merge and external visibility begin in Stage 10
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: memory_commit, direction: input, event_type: Core.MemoryCommit, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+- {name: address_ready, direction: input, event_type: Store.AddressReady, required_connection: false}
+- {name: data_ready, direction: input, event_type: Store.DataReady, required_connection: false}
+- {name: layout, direction: input, event_type: Store.Layout, required_connection: false}
+- {name: unaligned_tail_ready, direction: input, event_type: Store.UnalignedTailReady, required_connection: false}
+- {name: forward_query, direction: input, event_type: Store.ForwardQuery, required_connection: false}
+- {name: forward_response, direction: output, event_type: Store.ForwardResponse}
+- {name: store_drain, direction: output, event_type: Store.Drain}
+internal_events:
+- SQ.PhysicalAllocate
+- SQ.AddressWrite
+- SQ.DataWrite
+- SQ.EntryReady
+- SQ.Commit
+- SQ.PhysicalCancel
+- SQ.UnalignedSplit
+- SQ.ForwardSelect
+- SQ.DrainSelect
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: store_ops
+  as: store
+  include:
+    state_variables:
+    - {name: "PSQ[${store.op_id}].live", sort: {name: bool}, initial: false}
+    - {name: "PSQ[${store.op_id}].address_valid", sort: {name: bool}, initial: false}
+    - {name: "PSQ[${store.op_id}].data_valid", sort: {name: bool}, initial: false}
+    - {name: "PSQ[${store.op_id}].ready", sort: {name: bool}, initial: false}
+    - {name: "PSQ[${store.op_id}].committed", sort: {name: bool}, initial: false}
+    - {name: "PSQ[${store.op_id}].ordered_done", sort: {name: bool}, initial: false}
+    slots:
+    - id: psq_allocate_${store.repeat_index}
+      type: SQ.PhysicalAllocate
+      required: false
+      fields: &psq_store_fields
+        op_id: ${store.op_id}
+        hart: ${store.hart}
+        program_index: ${store.program_index}
+        rob_idx: ${store.rob_idx}
+        sq_idx: ${store.sq_idx}
+        mem_kind: store
+        queue_kind: physical
+        path: issue
+    - id: psq_address_write_${store.repeat_index}
+      type: SQ.AddressWrite
+      required: false
+      fields:
+        <<: *psq_store_fields
+        address: {$expr: {node: symbol, name: "psq::${store.op_id}::address", sort: {name: address, width: 64}}}
+        byte_mask: ${store.byte_mask}
+        path: sta
+    - id: psq_data_write_${store.repeat_index}
+      type: SQ.DataWrite
+      required: false
+      fields:
+        <<: *psq_store_fields
+        value: ${store.write_value}
+        byte_mask: ${store.byte_mask}
+        data_valid: true
+        path: std
+    - id: psq_ready_${store.repeat_index}
+      type: SQ.EntryReady
+      required: false
+      fields:
+        <<: *psq_store_fields
+        address: {$expr: {node: symbol, name: "psq::${store.op_id}::address", sort: {name: address, width: 64}}}
+        value: ${store.write_value}
+        byte_mask: ${store.byte_mask}
+        data_valid: true
+        path: all_valid
+    - id: psq_commit_${store.repeat_index}
+      type: SQ.Commit
+      required: false
+      fields:
+        <<: *psq_store_fields
+        path: precommit
+        cause: all_valid
+    - id: psq_cancel_${store.repeat_index}
+      type: SQ.PhysicalCancel
+      required: false
+      fields:
+        <<: *psq_store_fields
+        path: redirect
+        cause: {$expr: {node: symbol, name: "psq::${store.op_id}::redirect_cause", sort: {name: string}}}
+    transformations:
+    - name: store_issue_opens_physical_entry_${store.repeat_index}
+      inputs: [{role: issue, type: Core.MemoryIssue}]
+      outputs: [{role: allocate, type: SQ.PhysicalAllocate}]
+      when: &store_issue_match
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: allocate, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].live", at: allocate, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [psq, allocate, source:NewStoreQueue.scala:1584-1614]
+    - name: usable_sta_writes_physical_address_${store.repeat_index}
+      inputs: [{role: address, type: Store.AddressReady}]
+      outputs: [{role: write, type: SQ.AddressWrite}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: sq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store.sq_idx}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${store.byte_mask}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: address, field: address, sort: {name: address, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: address, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: address, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].address_valid", at: write, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].address_valid", at: write, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [psq, address-valid, source:NewStoreQueue.scala:1616-1689,1881-1914]
+    - name: std_writes_physical_data_${store.repeat_index}
+      inputs: [{role: data, type: Store.DataReady}]
+      outputs: [{role: write, type: SQ.DataWrite}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: sq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store.sq_idx}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${store.write_value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${store.byte_mask}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: write, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: write, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: data, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].data_valid", at: write, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].data_valid", at: write, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [psq, data-valid, source:NewStoreQueue.scala:1794-1807,1916-1929]
+    - name: independent_payloads_make_entry_ready_${store.repeat_index}
+      inputs:
+      - {role: address, type: SQ.AddressWrite}
+      - {role: data, type: SQ.DataWrite}
+      outputs: [{role: ready, type: SQ.EntryReady}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: address, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: data, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: ready, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].address_valid", at: ready, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].data_valid", at: ready, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].ready", at: ready, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [psq, all-valid, source:NewStoreQueue.scala:141-159,1826-1873]
+    - name: retired_all_valid_entry_commits_psq_${store.repeat_index}
+      inputs:
+      - {role: ready, type: SQ.EntryReady}
+      - {role: core_commit, type: Core.MemoryCommit}
+      outputs: [{role: commit, type: SQ.Commit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: ready, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: core_commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: core_commit, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: ready, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: core_commit, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: core_commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].ready", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].committed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].committed", at: commit, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [psq, commit, precommit, source:NewStoreQueue.scala:1931-1977]
+    - name: redirect_selects_uncommitted_physical_entry_${store.repeat_index}
+      inputs:
+      - {role: allocate, type: SQ.PhysicalAllocate}
+      - {role: redirect, type: Core.Redirect}
+      outputs: [{role: cancel, type: SQ.PhysicalCancel}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: allocate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store.hart}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: lt, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store.program_index}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: redirect, field: program_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${store.program_index}"}}
+            - {node: event_field, event_id: redirect, field: flush_self, sort: {name: bool}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: cancel, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: allocate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: cancel, field: cycle, sort: {name: int}}, right: {node: binary, op: add, left: {node: event_field, event_id: redirect, field: cycle, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: cancel, field: cause, sort: {name: string}}, right: {node: event_field, event_id: redirect, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].committed", at: redirect, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [psq, redirect, source:NewStoreQueue.scala:1590-1609]
+    - name: physical_cancel_reclaims_entry_${store.repeat_index}
+      inputs: [{role: cancel, type: SQ.PhysicalCancel}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: cancel, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: cancel, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].live", at: cancel, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "PSQ[${store.op_id}].address_valid", at: cancel, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "PSQ[${store.op_id}].data_valid", at: cancel, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "PSQ[${store.op_id}].ready", at: cancel, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "PSQ[${store.op_id}].ordered_done", at: cancel, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [psq, redirect, reclaim]
+
+- over: load_ops
+  as: load
+  include:
+    state_variables:
+    - {name: "Forward[${load.op_id}].valid", sort: {name: bool}, initial: false}
+    - {name: "Forward[${load.op_id}].source", sort: {name: op_id}, initial: EMPTY}
+    - {name: "Forward[${load.op_id}].value", sort: {name: value, width: 64}, initial: 0}
+    - {name: "Forward[${load.op_id}].mask", sort: {name: bv, width: 64}, initial: 0}
+    - {name: "Forward[${load.op_id}].data_valid", sort: {name: bool}, initial: false}
+    slots:
+    - id: forward_hit_${load.repeat_index}
+      type: Store.ForwardResponse
+      required: false
+      fields:
+        op_id: ${load.op_id}
+        source_op_id: {$expr: {node: symbol, name: "forward::${load.op_id}::source", sort: {name: op_id}}}
+        value: {$expr: {node: symbol, name: "forward::${load.op_id}::value", sort: {name: value, width: 64}}}
+        byte_mask: {$expr: {node: symbol, name: "forward::${load.op_id}::mask", sort: {name: bv, width: 64}}}
+        match: true
+        data_invalid: false
+    - id: forward_data_invalid_${load.repeat_index}
+      type: Store.ForwardResponse
+      required: false
+      fields:
+        op_id: ${load.op_id}
+        source_op_id: {$expr: {node: symbol, name: "forward::${load.op_id}::invalid_source", sort: {name: op_id}}}
+        value: 0
+        byte_mask: {$expr: {node: symbol, name: "forward::${load.op_id}::invalid_mask", sort: {name: bv, width: 64}}}
+        match: true
+        data_invalid: true
+    - id: forward_miss_${load.repeat_index}
+      type: Store.ForwardResponse
+      required: false
+      fields:
+        op_id: ${load.op_id}
+        source_op_id: EMPTY
+        value: 0
+        byte_mask: 0
+        match: false
+        data_invalid: false
+    transformations:
+    - name: forward_query_requires_one_response_${load.repeat_index}
+      inputs: [{role: query, type: Store.ForwardQuery}]
+      outputs: [{role: response, type: Store.ForwardResponse}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: lq_idx, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${load.lq_idx}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${load.byte_mask}"}}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [forward, response, source:NewStoreQueue.scala:247-662]
+    - name: selected_ready_candidate_returns_data_${load.repeat_index}
+      inputs: [{role: query, type: Store.ForwardQuery}]
+      outputs: [{role: response, type: Store.ForwardResponse}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: event_field, event_id: response, field: match, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: data_invalid, sort: {name: bool}}}
+      state_requirements:
+      - {state: "Forward[${load.op_id}].valid", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Forward[${load.op_id}].data_valid", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Forward[${load.op_id}].source", at: response, op: eq, value: {node: event_field, event_id: response, field: source_op_id, sort: {name: op_id}}}
+      - {state: "Forward[${load.op_id}].value", at: response, op: eq, value: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}}
+      - {state: "Forward[${load.op_id}].mask", at: response, op: eq, value: {node: event_field, event_id: response, field: byte_mask, sort: {name: bv, width: 64}}}
+      state_mode: guard
+      exact: true
+      tags: [forward, hit, byte-mask]
+    - name: selected_address_without_data_replays_${load.repeat_index}
+      inputs: [{role: query, type: Store.ForwardQuery}]
+      outputs: [{role: response, type: Store.ForwardResponse}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: event_field, event_id: response, field: match, sort: {name: bool}}
+        - {node: event_field, event_id: response, field: data_invalid, sort: {name: bool}}
+      state_requirements:
+      - {state: "Forward[${load.op_id}].valid", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Forward[${load.op_id}].data_valid", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      - {state: "Forward[${load.op_id}].source", at: response, op: eq, value: {node: event_field, event_id: response, field: source_op_id, sort: {name: op_id}}}
+      - {state: "Forward[${load.op_id}].mask", at: response, op: eq, value: {node: event_field, event_id: response, field: byte_mask, sort: {name: bv, width: 64}}}
+      state_mode: guard
+      exact: true
+      tags: [forward, data-invalid, replay]
+    - name: no_address_candidate_returns_miss_${load.repeat_index}
+      inputs: [{role: query, type: Store.ForwardQuery}]
+      outputs: [{role: response, type: Store.ForwardResponse}]
+      when: {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: match, sort: {name: bool}}}
+      state_requirements:
+      - {state: "Forward[${load.op_id}].valid", at: response, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_mode: guard
+      exact: true
+      tags: [forward, miss]
+    constraints:
+    - node: unary
+      op: not
+      operand: {node: binary, op: and, left: {node: event_field, event_id: "forward_hit_${load.repeat_index}", field: occurs, sort: {name: bool}}, right: {node: event_field, event_id: "forward_data_invalid_${load.repeat_index}", field: occurs, sort: {name: bool}}}
+    - node: unary
+      op: not
+      operand: {node: binary, op: and, left: {node: event_field, event_id: "forward_hit_${load.repeat_index}", field: occurs, sort: {name: bool}}, right: {node: event_field, event_id: "forward_miss_${load.repeat_index}", field: occurs, sort: {name: bool}}}
+    - node: unary
+      op: not
+      operand: {node: binary, op: and, left: {node: event_field, event_id: "forward_data_invalid_${load.repeat_index}", field: occurs, sort: {name: bool}}, right: {node: event_field, event_id: "forward_miss_${load.repeat_index}", field: occurs, sort: {name: bool}}}
+
+repeat_product:
+- axes:
+  - {over: store_ops, as: older}
+  - {over: store_ops, as: younger}
+  include:
+    transformations:
+    - name: physical_commit_respects_store_age_${product.repeat_index}
+      inputs: [{role: commit, type: SQ.Commit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+      state_requirements:
+      - {state: "PSQ[${older.op_id}].committed", at: commit, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [psq, in-order-commit, source:NewStoreQueue.scala:1931-1977]
+    - name: physical_drain_respects_store_age_${product.repeat_index}
+      inputs: [{role: select, type: SQ.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+      state_requirements:
+      - {state: "PSQ[${older.op_id}].ordered_done", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      tags: [psq, in-order-drain, source:NewStoreQueue.scala:1258-1313]
+
+- axes:
+  - {over: store_ops, as: store}
+  - {over: load_ops, as: load}
+  include:
+    slots:
+    - id: forward_candidate_${product.repeat_index}
+      type: SQ.ForwardSelect
+      required: false
+      fields:
+        op_id: ${load.op_id}
+        source_op_id: ${store.op_id}
+        hart: ${load.hart}
+        program_index: ${store.program_index}
+        lq_idx: ${load.lq_idx}
+        sq_idx: ${store.sq_idx}
+        address: {$expr: {node: symbol, name: "psq::${store.op_id}::address", sort: {name: address, width: 64}}}
+        value: ${store.write_value}
+        byte_mask:
+          $expr:
+            node: call
+            function: mask_intersection
+            arguments:
+            - {node: literal, sort: {name: bv, width: 64}, value: "${store.byte_mask}"}
+            - {node: literal, sort: {name: bv, width: 64}, value: "${load.byte_mask}"}
+            sort: {name: bv, width: 64}
+        data_valid: {$expr: {node: symbol, name: "forward::${load.op_id}::${store.op_id}::data_valid", sort: {name: bool}}}
+        path: candidate
+    transformations:
+    - name: older_overlapping_address_becomes_candidate_${product.repeat_index}
+      inputs:
+      - {role: address, type: SQ.AddressWrite}
+      - {role: query, type: Store.ForwardQuery}
+      outputs: [{role: candidate, type: SQ.ForwardSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${store.hart}"}, right: {node: literal, sort: {name: int}, value: "${load.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${store.program_index}"}, right: {node: literal, sort: {name: int}, value: "${load.program_index}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: address, sort: {name: address, width: 64}}, right: {node: event_field, event_id: query, field: address, sort: {name: address, width: 64}}}
+        - node: call
+          function: mask_overlap
+          arguments:
+          - {node: event_field, event_id: address, field: byte_mask, sort: {name: bv, width: 64}}
+          - {node: event_field, event_id: query, field: byte_mask, sort: {name: bv, width: 64}}
+          sort: {name: bool}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: candidate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: candidate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: address, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: candidate, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: candidate, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].live", at: candidate, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].address_valid", at: candidate, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].data_valid", at: candidate, op: eq, value: {node: event_field, event_id: candidate, field: data_valid, sort: {name: bool}}}
+      state_updates:
+      - {state: "Forward[${load.op_id}].valid", at: candidate, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "Forward[${load.op_id}].source", at: candidate, value: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+      - {state: "Forward[${load.op_id}].value", at: candidate, value: {node: literal, sort: {name: value, width: 64}, value: "${store.write_value}"}}
+      - state: "Forward[${load.op_id}].mask"
+        at: candidate
+        value:
+          node: call
+          function: mask_intersection
+          arguments:
+          - {node: event_field, event_id: address, field: byte_mask, sort: {name: bv, width: 64}}
+          - {node: event_field, event_id: query, field: byte_mask, sort: {name: bv, width: 64}}
+          sort: {name: bv, width: 64}
+      - {state: "Forward[${load.op_id}].data_valid", at: candidate, value: {node: event_field, event_id: candidate, field: data_valid, sort: {name: bool}}}
+      exact: true
+      tags: [forward, candidate, byte-overlap, source:NewStoreQueue.scala:376-486]
+    - name: every_candidate_precedes_response_${product.repeat_index}
+      inputs:
+      - {role: candidate, type: SQ.ForwardSelect}
+      - {role: response, type: Store.ForwardResponse}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: candidate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: candidate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: candidate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      tags: [forward, response-after-fold]
+
+- axes:
+  - {over: store_ops, as: older}
+  - {over: store_ops, as: younger}
+  - {over: load_ops, as: load}
+  include:
+    transformations:
+    - name: forwarding_fold_keeps_youngest_match_${product.repeat_index}
+      inputs:
+      - {role: older_candidate, type: SQ.ForwardSelect}
+      - {role: younger_candidate, type: SQ.ForwardSelect}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: older_candidate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: younger_candidate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${load.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: older_candidate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${older.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: younger_candidate, field: source_op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${younger.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: int}, value: "${older.hart}"}, right: {node: literal, sort: {name: int}, value: "${younger.hart}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${older.program_index}"}, right: {node: literal, sort: {name: int}, value: "${younger.program_index}"}}
+        - {node: binary, op: lt, left: {node: literal, sort: {name: int}, value: "${younger.program_index}"}, right: {node: literal, sort: {name: int}, value: "${load.program_index}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: older_candidate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: younger_candidate, field: cycle, sort: {name: int}}}
+      tags: [forward, youngest-match, source:NewStoreQueue.scala:435-486]
+
+- axes:
+  - {over: store_ops, as: store}
+  - {over: layouts, as: layout}
+  include:
+    slots:
+    - id: drain_single_select_${product.repeat_index}
+      type: SQ.DrainSelect
+      required: false
+      fields: &single_drain_fields
+        op_id: ${store.op_id}
+        hart: ${store.hart}
+        program_index: ${store.program_index}
+        rob_idx: ${store.rob_idx}
+        sq_idx: ${store.sq_idx}
+        address: ${layout.low_address}
+        value: ${layout.low_value}
+        byte_mask: ${layout.low_mask}
+        element_index: 0
+        path: "${layout.kind}_${layout.op_id}"
+    - id: drain_single_${product.repeat_index}
+      type: Store.Drain
+      required: false
+      fields:
+        op_id: ${store.op_id}
+        beat: 0
+        hart: ${store.hart}
+        address: ${layout.low_address}
+        value: ${layout.low_value}
+        byte_mask: ${layout.low_mask}
+        last: true
+        cross_page: ${layout.cross_page}
+    - id: split_low_${product.repeat_index}
+      type: SQ.UnalignedSplit
+      required: false
+      fields: &split_low_fields
+        op_id: ${store.op_id}
+        hart: ${store.hart}
+        program_index: ${store.program_index}
+        rob_idx: ${store.rob_idx}
+        sq_idx: ${store.sq_idx}
+        address: ${layout.low_address}
+        value: ${layout.low_value}
+        byte_mask: ${layout.low_mask}
+        element_index: 0
+        path: "${layout.kind}_${layout.op_id}_low"
+    - id: split_high_${product.repeat_index}
+      type: SQ.UnalignedSplit
+      required: false
+      fields: &split_high_fields
+        <<: *split_low_fields
+        address: ${layout.high_address}
+        value: ${layout.high_value}
+        byte_mask: ${layout.high_mask}
+        element_index: 1
+        path: "${layout.kind}_${layout.op_id}_high"
+    - id: drain_low_select_${product.repeat_index}
+      type: SQ.DrainSelect
+      required: false
+      fields: *split_low_fields
+    - id: drain_high_select_${product.repeat_index}
+      type: SQ.DrainSelect
+      required: false
+      fields: *split_high_fields
+    - id: drain_low_${product.repeat_index}
+      type: Store.Drain
+      required: false
+      fields:
+        op_id: ${store.op_id}
+        beat: 0
+        hart: ${store.hart}
+        address: ${layout.low_address}
+        value: ${layout.low_value}
+        byte_mask: ${layout.low_mask}
+        last: false
+        cross_page: ${layout.cross_page}
+    - id: drain_high_${product.repeat_index}
+      type: Store.Drain
+      required: false
+      fields:
+        op_id: ${store.op_id}
+        beat: 1
+        hart: ${store.hart}
+        address: ${layout.high_address}
+        value: ${layout.high_value}
+        byte_mask: ${layout.high_mask}
+        last: true
+        cross_page: ${layout.cross_page}
+    transformations:
+    - name: aligned_entry_selects_single_drain_${product.repeat_index}
+      inputs:
+      - {role: commit, type: SQ.Commit}
+      - {role: address, type: SQ.AddressWrite}
+      - {role: data, type: SQ.DataWrite}
+      - {role: layout_event, type: Store.Layout}
+      outputs: [{role: select, type: SQ.DrainSelect}]
+      when: &aligned_layout_match
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: layout_event, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${layout.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${layout.kind}"}, right: {node: literal, sort: {name: string}, value: aligned}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: address, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${layout.low_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${layout.low_value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: data, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: bv, width: 64}, value: "${layout.high_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: layout_event, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].committed", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [drain, aligned, source:NewStoreQueue.scala:1160-1256]
+    - name: within16_entry_normalizes_to_single_drain_${product.repeat_index}
+      inputs:
+      - {role: commit, type: SQ.Commit}
+      - {role: layout_event, type: Store.Layout}
+      outputs: [{role: select, type: SQ.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: layout_event, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${layout.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${layout.kind}"}, right: {node: literal, sort: {name: string}, value: within16}}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: bv, width: 64}, value: "${layout.high_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].committed", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [drain, unaligned, within16, source:NewStoreQueue.scala:886-907,1094-1158]
+    - name: single_selection_enters_sbuffer_queue_${product.repeat_index}
+      inputs: [{role: select, type: SQ.DrainSelect}]
+      outputs: [{role: drain, type: Store.Drain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: beat, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: drain, field: last, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${layout.low_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: value, sort: {name: value, width: 64}}, right: {node: literal, sort: {name: value, width: 64}, value: "${layout.low_value}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: drain, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].ordered_done", at: drain, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].live", at: drain, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [drain, enter-sbuffer, source:NewStoreQueue.scala:664-807,1258-1313]
+    - name: cross16_entry_splits_two_drain_beats_${product.repeat_index}
+      inputs:
+      - {role: commit, type: SQ.Commit}
+      - {role: layout_event, type: Store.Layout}
+      outputs:
+      - {role: low, type: SQ.UnalignedSplit}
+      when: &cross16_nonpage_match
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: layout_event, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${layout.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${layout.kind}"}, right: {node: literal, sort: {name: string}, value: cross16}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: layout_event, field: cross_page, sort: {name: bool}}}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: bv, width: 64}, value: "${layout.high_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+        - node: unary
+          op: not
+          operand:
+            node: call
+            function: mask_overlap
+            arguments:
+            - {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}
+            - {node: literal, sort: {name: bv, width: 64}, value: "${layout.high_mask}"}
+            sort: {name: bool}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_low"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: low, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].committed", at: low, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [drain, split, cross16, source:NewStoreQueue.scala:1094-1256]
+    - name: split_low_materializes_high_beat_${product.repeat_index}
+      inputs: [{role: low, type: SQ.UnalignedSplit}]
+      outputs: [{role: high, type: SQ.UnalignedSplit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: high, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: high, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: high, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_high"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: low, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: high, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [drain, split, two-beat]
+    - name: split_low_selects_sbuffer_port0_${product.repeat_index}
+      inputs: [{role: split, type: SQ.UnalignedSplit}]
+      outputs: [{role: select, type: SQ.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: split, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: split, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_low"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: split, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [drain, split, port0]
+    - name: split_high_selects_sbuffer_port1_${product.repeat_index}
+      inputs: [{role: split, type: SQ.UnalignedSplit}]
+      outputs: [{role: select, type: SQ.DrainSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: split, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: split, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_high"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: split, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [drain, split, port1]
+    - name: split_low_enters_sbuffer_${product.repeat_index}
+      inputs: [{role: select, type: SQ.DrainSelect}]
+      outputs: [{role: drain, type: Store.Drain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_low"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: beat, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: drain, field: last, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${layout.low_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drain, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: drain, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [drain, split, enter-sbuffer, port0]
+    - name: split_high_enters_sbuffer_and_dequeues_${product.repeat_index}
+      inputs:
+      - {role: low_drain, type: Store.Drain}
+      - {role: select, type: SQ.DrainSelect}
+      outputs: [{role: high_drain, type: Store.Drain}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: low_drain, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low_drain, field: beat, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: low_drain, field: last, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_high"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: high_drain, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: high_drain, field: beat, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: high_drain, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${layout.high_address}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: high_drain, field: byte_mask, sort: {name: bv, width: 64}}, right: {node: literal, sort: {name: bv, width: 64}, value: "${layout.high_mask}"}}
+      ensure:
+      - {node: binary, op: le, left: {node: event_field, event_id: low_drain, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: high_drain, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: high_drain, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "PSQ[${store.op_id}].ordered_done", at: high_drain, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "PSQ[${store.op_id}].live", at: high_drain, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [drain, split, enter-sbuffer, deq-credit, port1, source:NewStoreQueue.scala:1160-1313]
+
+- axes:
+  - {over: store_ops, as: store}
+  - {over: layouts, as: layout}
+  include:
+    transformations:
+    - name: cross_page_tail_enables_two_beat_split_${product.repeat_index}
+      inputs:
+      - {role: commit, type: SQ.Commit}
+      - {role: layout_event, type: Store.Layout}
+      - {role: tail_event, type: Store.UnalignedTailReady}
+      outputs:
+      - {role: low, type: SQ.UnalignedSplit}
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: commit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: layout_event, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: tail_event, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: op_id}, value: "${layout.op_id}"}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: literal, sort: {name: string}, value: "${layout.kind}"}, right: {node: literal, sort: {name: string}, value: cross_page}}
+        - {node: event_field, event_id: layout_event, field: cross_page, sort: {name: bool}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: tail_event, field: address, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${layout.high_address}"}}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+        - {node: binary, op: ne, left: {node: literal, sort: {name: bv, width: 64}, value: "${layout.high_mask}"}, right: {node: literal, sort: {name: bv, width: 64}, value: 0}}
+        - node: unary
+          op: not
+          operand:
+            node: call
+            function: mask_overlap
+            arguments:
+            - {node: literal, sort: {name: bv, width: 64}, value: "${layout.low_mask}"}
+            - {node: literal, sort: {name: bv, width: 64}, value: "${layout.high_mask}"}
+            sort: {name: bool}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${store.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: element_index, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: low, field: path, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${layout.kind}_${layout.op_id}_low"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: tail_event, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: low, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: commit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: low, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "PSQ[${store.op_id}].committed", at: low, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [unalign-queue, cross-page, split, source:NewStoreQueue.scala:1094-1158,1392-1471]

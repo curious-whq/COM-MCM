@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 5, case: integrated-dtlb-hit, expected: FEASIBLE}
+events:
+- id: load_integrated_page
+  type: MMU.PageMap
+  occurs: true
+  cycle: 0
+  fields: {map_id: MAP_LOAD, hart: 0, entry_id: e0, tlb_instance: ldtlb, vpn: 16, paddr: 8192, asid: 1, vmid: 0, translation_stage: s1, initial_valid: true}
+- id: load_integrated_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LINT, hart: 0, program_index: 0, rob_idx: 11, mem_kind: load, vaddr: 65540, size: 8, byte_mask: 255, lq_idx: 11, vector: false, tlb_instance: ldtlb, vpn: 16, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_integrated_translate
+  type: MMU.TranslateRequest
+  occurs: true
+  cycle: 3
+  fields: {op_id: LINT, hart: 0, tlb_instance: ldtlb, vaddr: 65540, vpn: 16, attempt: 0, access_kind: load, size: 8, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_integrated_forward
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 16
+  fields: {op_id: LINT, value: 0, byte_mask: 0, match: false, data_invalid: false}
+- id: load_integrated_l1
+  type: L1.Response
+  occurs: true
+  cycle: 16
+  fields: {txn_id: LINT.load.a0, op_id: LINT, response_kind: hit, value: 123, success: true, denied: false, corrupt: false}
+constraints: []

@@ -1,0 +1,111 @@
+schema_version: umcm.execution_graph.v0.2
+candidate_id: 0
+metadata:
+  graph_model: rvwmo-v2.0-boom-projection-v0.17
+  rf_assignment:
+    R0: W
+    R1: InitX
+  co_orders:
+    x:
+    - InitX
+    - W
+  builtin_model: rvwmo
+  gmo_order: []
+operations:
+- id: InitX
+  kind: init_write
+  address: x
+  value: 0
+  source_event_id: search_init_0_InitX
+- id: R0
+  kind: read
+  address: x
+  value: 1
+  hart: 0
+  program_index: 0
+  source_event_id: search_load_0_R0
+  commit_event_id: search_commit_0_R0
+- id: R1
+  kind: read
+  address: x
+  value: 0
+  hart: 0
+  program_index: 1
+  source_event_id: search_load_1_R1
+  commit_event_id: search_commit_1_R1
+- id: W
+  kind: write
+  address: x
+  value: 1
+  hart: 1
+  program_index: 0
+  source_event_id: search_store_2_W
+relations:
+- name: co
+  edges:
+  - from: InitX
+    to: W
+- name: fr
+  edges:
+  - from: R1
+    to: W
+- name: fre
+  edges:
+  - from: R1
+    to: W
+- name: fri
+  edges: []
+- name: gmo
+  edges: []
+- name: pair
+  edges: []
+- name: po
+  edges:
+  - from: R0
+    to: R1
+- name: ppo
+  edges:
+  - from: R0
+    to: R1
+- name: ppo_rule1
+  edges: []
+- name: ppo_rule10
+  edges: []
+- name: ppo_rule11
+  edges: []
+- name: ppo_rule12
+  edges: []
+- name: ppo_rule13
+  edges: []
+- name: ppo_rule2
+  edges:
+  - from: R0
+    to: R1
+- name: ppo_rule3
+  edges: []
+- name: ppo_rule4
+  edges: []
+- name: ppo_rule5
+  edges: []
+- name: ppo_rule6
+  edges: []
+- name: ppo_rule7
+  edges: []
+- name: ppo_rule8
+  edges: []
+- name: ppo_rule9
+  edges: []
+- name: rf
+  edges:
+  - from: InitX
+    to: R1
+  - from: W
+    to: R0
+- name: rfe
+  edges:
+  - from: InitX
+    to: R1
+  - from: W
+    to: R0
+- name: rfi
+  edges: []

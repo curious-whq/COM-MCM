@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 2, case: ghost-commit, expected: INFEASIBLE}
+events:
+- id: load_without_writeback
+  type: Core.MemoryInstruction
+  occurs: true
+  cycle: 0
+  fields: {op_id: GHOST, hart: 0, program_index: 0, rob_idx: 0, mem_kind: load, vaddr: x, address: x, value: 0, write_value: 0, size: 8, byte_mask: 255, vector: false}
+- id: forbidden_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 8
+  fields: {op_id: GHOST, hart: 0, rob_idx: 0, mem_kind: load}
+constraints: []

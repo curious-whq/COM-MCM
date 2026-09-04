@@ -1,0 +1,31 @@
+schema_version: umcm.module.v0.15.0
+name: load_pipeline
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: mem/pipeline/NewLoadUnit.scala
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue}
+- {name: redirect, direction: input, event_type: Core.Redirect}
+- {name: translate_request, direction: output, event_type: MMU.TranslateRequest}
+- {name: translate_response, direction: input, event_type: MMU.TranslateResponse}
+- {name: l1_request, direction: output, event_type: L1.Request}
+- {name: l1_response, direction: input, event_type: L1.Response}
+- {name: l1_nack, direction: input, event_type: L1.Nack}
+- {name: uncache_request, direction: output, event_type: Uncache.Request}
+- {name: uncache_response, direction: input, event_type: Uncache.Response}
+- {name: forward_query, direction: output, event_type: Store.ForwardQuery}
+- {name: forward_response, direction: input, event_type: Store.ForwardResponse}
+- {name: queue_update, direction: output, event_type: Load.PipelineUpdate}
+- {name: replay_issue, direction: input, event_type: Load.ReplayIssue}
+- {name: writeback, direction: output, event_type: Core.MemoryWriteback}
+- {name: memory_fault, direction: output, event_type: Core.MemoryFault}
+- {name: prefetch_train, direction: output, event_type: Prefetch.Train}
+internal_events:
+- Load.StageAdvance
+- Load.ForwardSelect
+slots: []
+state_variables: []
+transformations: []
+constraints: []

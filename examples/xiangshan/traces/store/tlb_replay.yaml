@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: tlb-replay, expected: FEASIBLE}
+events:
+- id: store_replay_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SREP, hart: 0, program_index: 1, rob_idx: 1, mem_kind: store, vaddr: 131072, write_value: 7, size: 8, byte_mask: 255, sq_idx: 1, vector: false, tlb_instance: sttlb, vpn: 32, asid: 1, vmid: 0, translation_stage: s1}
+- id: store_replay_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: SREP, hart: 0, tlb_instance: sttlb, vaddr: 131072, vpn: 32, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 0, hit_level: miss, replay: true, fault: false, cause: tlb_miss}
+constraints: []

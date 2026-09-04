@@ -1,0 +1,94 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-translation-path-v0.4
+horizon: 64
+metadata:
+  version: 0.4.0
+  stage: 4
+  purpose: Integrated Stage 3 L1 DTLB and Stage 4 translation backend refill/retry path.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: dtlb, path: ../model/mmu/l1_dtlb.yaml}
+- {name: translation_backend, path: ../model/mmu/translation_backend.yaml}
+connections:
+- name: l1_miss_to_translation_backend
+  source: {module: dtlb, port: ptw_request}
+  target: {module: translation_backend, port: ptw_request}
+  mode: shared_event
+- name: translation_backend_to_l1_refill
+  source: {module: translation_backend, port: ptw_response}
+  target: {module: dtlb, port: ptw_response}
+  mode: shared_event
+roles:
+- name: pages
+  event_type: MMU.PageMap
+  cardinality: many
+  min_matches: 1
+  exports:
+    map_id: fields.map_id
+    hart: fields.hart
+    entry_id: fields.entry_id
+    tlb_instance: fields.tlb_instance
+    vpn: fields.vpn
+    gpaddr: fields.gpaddr
+    paddr: fields.paddr
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+    initial_valid: fields.initial_valid
+    page_level: fields.page_level
+    l2_initial_valid: fields.l2_initial_valid
+    stage1_valid: fields.stage1_valid
+    stage1_access_allowed: fields.stage1_access_allowed
+    stage2_valid: fields.stage2_valid
+    stage2_access_allowed: fields.stage2_access_allowed
+- name: translation_requests
+  event_type: MMU.TranslateRequest
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    tlb_instance: fields.tlb_instance
+    vaddr: fields.vaddr
+    vpn: fields.vpn
+    attempt: fields.attempt
+    access_kind: fields.access_kind
+    size: fields.size
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+- name: backend_requests
+  event_type: MMU.PTWRequest
+  cardinality: many
+  min_matches: 1
+  exports:
+    txn_id: fields.txn_id
+    op_id: fields.op_id
+    hart: fields.hart
+    tlb_instance: fields.tlb_instance
+    vaddr: fields.vaddr
+    vpn: fields.vpn
+    access_kind: fields.access_kind
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+- name: protection_regions
+  event_type: MMU.ProtectionMap
+  cardinality: many
+  min_matches: 1
+  exports:
+    region_id: fields.region_id
+    hart: fields.hart
+    lower: fields.lower
+    upper: fields.upper
+    access_kind: fields.access_kind
+    pmp_allow: fields.pmp_allow
+    pma_allow: fields.pma_allow
+    bitmap_enabled: fields.bitmap_enabled
+    bitmap_allow: fields.bitmap_allow
+    mpt_enabled: fields.mpt_enabled
+    mpt_allow: fields.mpt_allow
+    cacheable: fields.cacheable
+    atomic: fields.atomic
+constraints: []

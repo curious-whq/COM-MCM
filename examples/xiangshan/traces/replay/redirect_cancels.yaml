@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: redirect-cancels, expected: FEASIBLE}
+events:
+- id: issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: RKILL, hart: 0, program_index: 9, rob_idx: 20, mem_kind: load, vaddr: 24576, size: 8, byte_mask: 255, lq_idx: 9, vector: false}
+- id: failed
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 5
+  fields: {op_id: RKILL, lq_idx: 9, address: 24576, byte_mask: 255, executed: true, succeeded: false, replay_cause: dcache_miss, attempt: 0, fault: false}
+- id: redirect
+  type: Core.Redirect
+  occurs: true
+  cycle: 9
+  fields: {hart: 0, program_index: 2, rob_idx: 3, cause: branch_mispredict, source_op_id: OLD, target_op_id: RKILL, origin: core, flush_self: false}
+constraints: []

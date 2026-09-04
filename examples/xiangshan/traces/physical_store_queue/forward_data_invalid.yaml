@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 9, case: forward-data-invalid, expected: FEASIBLE}
+events:
+- id: si_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SI, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 4096, write_value: 51, size: 2, byte_mask: 3, sq_idx: 0, vector: false}
+- id: li_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 1
+  fields: {op_id: LI, hart: 0, program_index: 1, rob_idx: 1, mem_kind: load, vaddr: 4096, size: 2, byte_mask: 3, lq_idx: 0, vector: false}
+- id: si_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 3
+  fields: {op_id: SI, sq_idx: 0, address: 8192, byte_mask: 3}
+- id: li_query
+  type: Store.ForwardQuery
+  occurs: true
+  cycle: 7
+  fields: {op_id: LI, hart: 0, program_index: 1, lq_idx: 0, address: 8192, byte_mask: 3}
+constraints: []

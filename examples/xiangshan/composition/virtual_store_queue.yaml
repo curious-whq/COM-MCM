@@ -1,0 +1,27 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-virtual-store-queue-v0.8
+horizon: 40
+metadata:
+  version: 0.8.0
+  stage: 8
+  purpose: Executable bounded VSQ allocation, in-order retirement, and redirect recovery.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: virtual_store_queue, path: ../model/store/virtual_queue.yaml}
+connections: []
+roles:
+- name: store_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: store
+    fields.vector: false
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    sq_idx: fields.sq_idx
+constraints: []

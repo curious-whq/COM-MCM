@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.19.0
+partial: true
+metadata: {case: coverage-mshr-secondary, input_contract: two public MSHR requests only}
+events:
+- id: req0
+  type: DCache.MSHRRequest
+  occurs: true
+  cycle: 0
+  fields: {op_id: Ld0, queue_kind: ldq, queue_idx: 5, address: x, value: 0, mem_kind: load, mshr_id: 2, tag_match: false, old_line_dirty: false, needs_acquire: true, grant_has_data: true, secondary: false, requires_second_acquire: false, is_hit_again: false, is_probe: false, sdq_id: 0}
+- id: req1
+  type: DCache.MSHRRequest
+  occurs: true
+  cycle: 1
+  fields: {op_id: Ld1, queue_kind: ldq, queue_idx: 6, address: x, value: 0, mem_kind: load, mshr_id: 2, tag_match: false, old_line_dirty: false, needs_acquire: true, grant_has_data: true, secondary: true, requires_second_acquire: false, is_hit_again: false, is_probe: false, sdq_id: 0}
+constraints: []

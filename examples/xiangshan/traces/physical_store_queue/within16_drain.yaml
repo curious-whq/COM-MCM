@@ -1,0 +1,30 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 9, case: within16-drain, expected: FEASIBLE}
+events:
+- id: sw_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SW, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 4099, write_value: 4386, size: 2, byte_mask: 3, sq_idx: 0, vector: false}
+- id: sw_layout
+  type: Store.Layout
+  occurs: true
+  cycle: 1
+  fields: {op_id: SW, sq_idx: 0, kind: within16, cross_page: false, low_address: 8192, high_address: 8192, low_value: 1122816, high_value: 0, low_mask: 24, high_mask: 0}
+- id: sw_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 3
+  fields: {op_id: SW, sq_idx: 0, address: 8195, byte_mask: 3}
+- id: sw_data
+  type: Store.DataReady
+  occurs: true
+  cycle: 4
+  fields: {op_id: SW, sq_idx: 0, value: 4386, byte_mask: 3}
+- id: sw_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 12
+  fields: {op_id: SW, hart: 0, rob_idx: 0, mem_kind: store}
+constraints: []

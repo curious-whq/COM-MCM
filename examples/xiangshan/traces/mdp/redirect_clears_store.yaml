@@ -1,0 +1,10 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: redirect-clears-store, expected: FEASIBLE}
+events:
+- {id: load_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: ERL, hart: 0, pc: 3072, initial_valid: true, initial_ssid: 8, initial_strict: false}}
+- {id: store_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: ERS, hart: 0, pc: 3328, initial_valid: true, initial_ssid: 8, initial_strict: false}}
+- {id: store_lookup, type: MDP.Lookup, occurs: true, cycle: 1, fields: {op_id: SR, hart: 0, program_index: 5, rob_idx: 20, pc: 3328, mem_kind: store}}
+- {id: redirect, type: Core.Redirect, occurs: true, cycle: 5, fields: {hart: 0, program_index: 2, rob_idx: 10, cause: branch_mispredict, source_op_id: OLD, target_op_id: SR, origin: core, flush_self: false}}
+- {id: load_lookup, type: MDP.Lookup, occurs: true, cycle: 8, fields: {op_id: LR, hart: 0, program_index: 6, rob_idx: 21, pc: 3072, mem_kind: load}}
+constraints: []

@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: blocked-refill, expected: FEASIBLE}
+events:
+- id: issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: RDM, hart: 0, program_index: 2, rob_idx: 5, mem_kind: load, vaddr: 8192, size: 8, byte_mask: 255, lq_idx: 5, vector: false}
+- id: failed
+  type: Load.PipelineUpdate
+  occurs: true
+  cycle: 5
+  fields: {op_id: RDM, lq_idx: 5, address: 8192, byte_mask: 255, executed: true, succeeded: false, replay_cause: dcache_miss, attempt: 0, fault: false}
+- id: refill
+  type: Load.ReplayWakeup
+  occurs: true
+  cycle: 10
+  fields: {op_id: RDM, hart: 0, cause: dcache_miss, source: refill}
+constraints: []

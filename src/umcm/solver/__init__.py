@@ -3,6 +3,7 @@
 from umcm.solver.completion import (
     CompletionResult,
     CompletionStatus,
+    complete_problem,
     complete_trace,
 )
 
@@ -14,6 +15,7 @@ __all__ = [
     "StateCheckResult",
     "StateStep",
     "check_state_semantics",
+    "complete_problem",
     "complete_trace",
 ]
 

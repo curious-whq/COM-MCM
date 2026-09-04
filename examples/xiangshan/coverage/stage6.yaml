@@ -1,0 +1,108 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage6-load-queue
+catalog: ../events.yaml
+metadata:
+  version: 0.6.0
+  purpose: Reachability coverage for VLQ lifetime, in-order reclamation, RAR/RAW tracking, violation reporting, and redirect recovery.
+  witness_policy: Inputs contain only public issue/progress/release/address-ready/redirect events; queue allocation, watch entries, violations, and recovery events are solver-derived.
+models:
+- name: load_queue
+  composition: ../composition/load_queue.yaml
+  input_event_types: [Core.MemoryIssue, Load.PipelineUpdate, Load.OrderQuery, Store.AddressReady, L1.ReleaseNotice, Core.Redirect]
+  inputs:
+  - {name: normal-release, path: ../traces/load_queue/normal_release.yaml}
+  - {name: replay-retains, path: ../traces/load_queue/replay_retains_entry.yaml}
+  - {name: redirect-reclaims, path: ../traces/load_queue/redirect_reclaims.yaml}
+  - {name: in-order-dequeue, path: ../traces/load_queue/in_order_dequeue.yaml}
+  - {name: rar-violation, path: ../traces/load_queue/rar_violation.yaml}
+  - {name: raw-violation, path: ../traces/load_queue/raw_violation.yaml}
+  - {name: raw-no-overlap, path: ../traces/load_queue/raw_no_overlap.yaml}
+- name: scalar_load_queue
+  composition: ../composition/scalar_load_queue.yaml
+  input_event_types: [Core.MemoryIssue, MMU.TranslateResponse, Store.ForwardResponse, L1.Response]
+  inputs:
+  - {name: scalar-cache-hit, path: ../traces/load/cache_hit.yaml}
+goals:
+- id: issue_allocates_vlq
+  model: load_queue
+  category: VLQ allocation
+  inputs: [normal-release]
+  description: Every bounded scalar load issue allocates its virtual LQ identity.
+  require:
+  - {transformation: "load_issue_allocates_vlq_*"}
+  - {event: LQ.Allocate}
+- id: successful_update_releases_vlq
+  model: load_queue
+  category: VLQ completion
+  inputs: [normal-release]
+  description: A successful pipeline update marks completion and eventually reclaims the virtual entry.
+  require:
+  - {transformation: "completed_load_releases_vlq_*"}
+  - {event: LQ.Deallocate}
+- id: replay_path_reaches_live_vlq
+  model: load_queue
+  category: Replay retention
+  inputs: [replay-retains]
+  description: A replay update is reachable while the VLQ entry remains allocated; absence of deallocation is checked by the Stage 6 regression.
+  require:
+  - {transformation: "load_issue_allocates_vlq_*"}
+- id: redirect_reclaims_vlq
+  model: load_queue
+  category: Redirect recovery
+  inputs: [redirect-reclaims]
+  description: A matching older redirect cancels and reclaims a live entry.
+  require:
+  - {transformation: "redirect_cancels_live_vlq_*"}
+  - {transformation: "redirected_deallocation_reclaims_vlq_*"}
+- id: completed_entries_dequeue_in_order
+  model: load_queue
+  category: VLQ dequeue order
+  inputs: [in-order-dequeue]
+  description: A younger completed entry cannot reclaim ahead of an older allocated entry.
+  require:
+  - {transformation: "completed_dequeue_waits_for_older_*"}
+- id: rar_watch_records_release
+  model: load_queue
+  category: RAR tracking
+  inputs: [rar-violation]
+  description: A younger load behind an unfinished older load is tracked and a matching release sets its released state.
+  require:
+  - {transformation: "younger_load_tracks_unfinished_older_*"}
+  - {transformation: "release_marks_rar_watch_*"}
+- id: rar_violation_redirects_after_older
+  model: load_queue
+  category: RAR recovery
+  inputs: [rar-violation]
+  description: The later older-load query reports the released younger load and emits a flush-after redirect.
+  require:
+  - {transformation: "older_load_detects_rar_violation_*"}
+  - {transformation: "rar_violation_is_reported_*"}
+  - {transformation: "rar_report_redirects_after_older_*"}
+- id: raw_violation_redirects_load
+  model: load_queue
+  category: RAW recovery
+  inputs: [raw-violation]
+  description: An older store resolving onto an overlapping younger load emits a flush-self redirect.
+  require:
+  - {transformation: "load_tracks_unresolved_older_store_*"}
+  - {transformation: "resolved_store_detects_raw_violation_*"}
+  - {transformation: "raw_violation_is_reported_*"}
+  - {transformation: "raw_report_redirects_load_and_younger_*"}
+- id: disjoint_raw_masks_are_reachable
+  model: load_queue
+  category: RAW byte masks
+  inputs: [raw-no-overlap]
+  description: Same-address disjoint masks still reach RAW tracking without a false violation; absence is checked by regression.
+  require:
+  - {transformation: "load_tracks_unresolved_older_store_*"}
+- id: scalar_pipeline_drives_load_queue
+  model: scalar_load_queue
+  category: Stage 5 integration
+  inputs: [scalar-cache-hit]
+  description: A Stage 5 cache-hit derives the order query and pipeline update consumed by the Stage 6 queue lifecycle.
+  require:
+  - {transformation: "s2_queries_load_order_*"}
+  - {transformation: "completed_load_releases_vlq_*"}
+  - {event: Load.OrderQuery}
+  - {event: LQ.Deallocate}
+auto_goals: []

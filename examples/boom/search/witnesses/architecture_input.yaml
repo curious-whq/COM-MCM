@@ -1,0 +1,60 @@
+schema_version: umcm.trace.v0.1
+partial: false
+metadata:
+  generated_by: umcm.search.architecture
+  microarchitecture_hints: false
+events:
+- id: search_init_0_InitX
+  type: Arch.InitWrite
+  occurs: true
+  fields:
+    op_id: InitX
+    address: x
+    value: 0
+  cycle: 0
+- id: search_load_0_R0
+  type: Arch.Load
+  occurs: true
+  fields:
+    byte_mask: 255
+    op_id: R0
+    hart: 0
+    program_index: 0
+    address: x
+  cycle: 1
+- id: search_commit_0_R0
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: R0
+    value: 1
+  cycle: 4
+- id: search_load_1_R1
+  type: Arch.Load
+  occurs: true
+  fields:
+    byte_mask: 255
+    op_id: R1
+    hart: 0
+    program_index: 1
+    address: x
+  cycle: 2
+- id: search_commit_1_R1
+  type: Arch.CommitLoad
+  occurs: true
+  fields:
+    op_id: R1
+    value: 0
+  cycle: 5
+- id: search_store_2_W
+  type: Arch.Store
+  occurs: true
+  fields:
+    byte_mask: 255
+    op_id: W
+    hart: 1
+    program_index: 0
+    address: x
+    value: 1
+  cycle: 3
+constraints: []

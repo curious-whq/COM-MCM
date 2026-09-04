@@ -1,0 +1,40 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 9, case: cross-page-missing-tail, expected: INFEASIBLE}
+events:
+- id: mt_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: MT, hart: 0, program_index: 0, rob_idx: 0, mem_kind: store, vaddr: 8188, write_value: 1234605616436508552, size: 8, byte_mask: 255, sq_idx: 0, vector: false}
+- id: mt_layout
+  type: Store.Layout
+  occurs: true
+  cycle: 1
+  fields: {op_id: MT, sq_idx: 0, kind: cross_page, cross_page: true, low_address: 12272, high_address: 20480, low_value: 1432778632, high_value: 287454020, low_mask: 61440, high_mask: 15}
+- id: mt_address
+  type: Store.AddressReady
+  occurs: true
+  cycle: 3
+  fields: {op_id: MT, sq_idx: 0, address: 12284, byte_mask: 255}
+- id: mt_data
+  type: Store.DataReady
+  occurs: true
+  cycle: 4
+  fields: {op_id: MT, sq_idx: 0, value: 1234605616436508552, byte_mask: 255}
+- id: mt_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 12
+  fields: {op_id: MT, hart: 0, rob_idx: 0, mem_kind: store}
+- id: unsupported_low
+  type: Store.Drain
+  occurs: true
+  cycle: 20
+  fields: {op_id: MT, beat: 0, hart: 0, address: 12272, value: 1432778632, byte_mask: 61440, last: false, cross_page: true}
+- id: unsupported_high
+  type: Store.Drain
+  occurs: true
+  cycle: 20
+  fields: {op_id: MT, beat: 1, hart: 0, address: 20480, value: 287454020, byte_mask: 15, last: true, cross_page: true}
+constraints: []

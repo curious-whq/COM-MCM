@@ -47,3 +47,11 @@ class AbstractionError(UMCMError):
 
 class CompositionError(UMCMError):
     """Raised when module interfaces or a composition manifest are invalid."""
+
+
+class CoverageError(UMCMError):
+    """Raised when a path-coverage suite or reachability query is invalid."""
+
+
+class SearchError(UMCMError):
+    """Raised when a hierarchical search specification is invalid."""

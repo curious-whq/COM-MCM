@@ -1,0 +1,25 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 5, case: wrong-forward-value, expected: INFEASIBLE}
+events:
+- id: load_bad_value_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: LBVAL, hart: 0, program_index: 0, rob_idx: 10, mem_kind: load, vaddr: 655360, size: 8, byte_mask: 255, lq_idx: 10, vector: false, tlb_instance: ldtlb, vpn: 160, asid: 1, vmid: 0, translation_stage: s1}
+- id: load_bad_value_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 5
+  fields: {op_id: LBVAL, hart: 0, tlb_instance: ldtlb, vaddr: 655360, vpn: 160, attempt: 0, access_kind: load, asid: 1, vmid: 0, translation_stage: s1, paddr: 36864, hit_level: l1, replay: false, fault: false, cause: none}
+- id: load_bad_value_forward
+  type: Store.ForwardResponse
+  occurs: true
+  cycle: 10
+  fields: {op_id: LBVAL, source_op_id: S2, value: 99, byte_mask: 255, match: true, data_invalid: false}
+- id: load_bad_value_writeback
+  type: Core.MemoryWriteback
+  occurs: true
+  cycle: 30
+  fields: {op_id: LBVAL, hart: 0, rob_idx: 10, mem_kind: load, value: 42, success: true}
+constraints: []

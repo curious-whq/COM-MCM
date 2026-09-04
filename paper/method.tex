@@ -1,0 +1,446 @@
+% Method section for an ISCA-style two-column paper.
+% Expected packages: amsmath, amssymb, graphicx.
+% The section is self-contained and uses no algorithm/TikZ package.
+% Suggested bibliography keys to provide in the main paper:
+%   riscv-rvwmo, boom, assume-guarantee, cegar, ic3
+
+\providecommand{\sys}{\ensuremath{\mu}\textsc{MCM}}
+\providecommand{\traces}{\mathcal{T}}
+\providecommand{\proj}{\mathop{\downarrow}}
+
+\section{Methodology}
+\label{sec:method}
+
+\sys{} searches a detailed model of an out-of-order RISC-V memory hierarchy
+for violations of its architectural memory model; once model fidelity is
+established, the result lifts to the RTL implementation.  The central obstacle is scale.
+An LSU, private cache, and shared cache each contain queues, arbiters, and
+protocol state whose synchronous product is prohibitively large.  Merely
+placing an interface between these RTL blocks does not solve the problem:
+memory-ordering bugs often arise from interactions among structures within a
+block, while an unconstrained interface can hide precisely those interactions.
+
+Our key idea is to replace monolithic state exploration with a hierarchy of
+\emph{event contracts}.  We partition the memory hierarchy into fine-grained
+semantic components, summarize each component by the events visible at its
+ports, and prove that each summary conservatively covers its implementation.
+The verifier composes summaries, rather than private state machines, and
+refines them only when a candidate violation requires additional internal
+detail.  Architectural relations such as reads-from and coherence order are
+encoded symbolically; the verifier never enumerates schedules or candidate
+orders.  Under explicit contract-compatibility conditions, the dominant cost
+is the sum of local analyses plus a substantially smaller interface problem,
+rather than the product of all component state spaces.
+
+Figure~\ref{fig:overview} gives an overview.  A verification task begins with
+an architectural program skeleton and a target property.  Local module
+specifications complete the relevant microarchitectural events.  Contract
+composition connects these events across instance-scoped ports and produces a
+global interface execution.  A refinement map then constructs an RVWMO
+execution graph.  A satisfying assignment to the negated RVWMO property is a
+candidate bug; an unsatisfiable query proves the absence of that violation
+within the stated resource and time bounds.
+
+\begin{figure*}[t]
+  \centering
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{c@{\quad$\Longrightarrow$\quad}c@{\quad$\Longrightarrow$\quad}c@{\quad$\Longrightarrow$\quad}c}
+    \fbox{\parbox[c][0.58in][c]{0.18\textwidth}{\centering
+      Architectural seed\\and target property}}
+    &
+    \fbox{\parbox[c][0.58in][c]{0.18\textwidth}{\centering
+      Fine-grained\\event contracts}}
+    &
+    \fbox{\parbox[c][0.58in][c]{0.20\textwidth}{\centering
+      Hierarchical symbolic\\composition}}
+    &
+    \fbox{\parbox[c][0.58in][c]{0.18\textwidth}{\centering
+      RVWMO graph\\and violation query}}
+  \end{tabular}
+  \vspace{3pt}
+
+  \begin{tabular}{c@{\hspace{0.6in}}c@{\hspace{0.6in}}c}
+    source-anchored specification
+    & counterexample-guided refinement
+    & RTL witness concretization
+  \end{tabular}
+  \caption{\sys{} verification flow.  Solid arrows transform symbolic
+  executions; feedback refines only the components involved in a spurious
+  counterexample.  RTL is not flattened into the global query.}
+  \label{fig:overview}
+\end{figure*}
+
+\subsection{Verification Objective}
+\label{sec:objective}
+
+\paragraph{Executions and observations.}
+We model a hardware execution as a finite, partially ordered set of typed
+events.  An event $e=\langle\tau,\iota,\nu\rangle$ has an event type $\tau$, a
+stable identity $\iota$, and a valuation $\nu$ of typed fields.  For example,
+a load-request event may carry a hart, instruction identifier, queue entry,
+address, byte mask, and transaction identifier.  Event identities are
+instance scoped: two identically typed events at different ports are distinct
+unless a connection explicitly equates them.  The partial order contains only
+semantically required edges, such as pipeline succession, queue age, request
+to response, and commit order.  Independent events remain unordered, avoiding
+an enumeration of cycle-by-cycle interleavings.
+
+Let $D$ be a detailed, manually constructed microarchitectural specification
+and let $\traces(D)$ denote its event traces.  A projection $\pi_I$ retains the
+fields and events in interface $I$ while existentially quantifying private
+events and state.  Projection is therefore a semantic operation:
+\begin{equation}
+  \pi_I(\traces(M)) =
+  \{t_I \mid \exists t\in\traces(M).\;\pi_I(t)=t_I\},
+  \label{eq:semantic-projection}
+\end{equation}
+not a syntactic pass that deletes every constraint mentioning a hidden event.
+This distinction is essential: a private replay or invalidation may disappear
+from the interface trace, but the ordering constraint it induces on public
+events must survive projection.
+
+\paragraph{Two refinement obligations.}
+Our first-stage method separates local abstraction from architectural
+correctness.  For every detailed component specification $D_i$ and its
+contract summary $C_i$, we require
+\begin{equation}
+  \pi_{I_i}(\traces(D_i)) \subseteq \traces(C_i).
+  \label{eq:summary-refinement}
+\end{equation}
+Thus $C_i$ is a conservative over-approximation: it cannot omit an interface
+behavior of the detailed model.  Over-approximation is required both for bug
+completeness and for proving model-level safety, although it may introduce
+spurious counterexamples.
+At the architectural boundary, a composed microarchitectural execution is
+mapped by $\alpha$ to an execution graph containing program order ($po$),
+reads-from ($rf$), coherence order ($co$), from-read ($fr$), dependencies,
+fences, and atomic pairs.  Correctness requires
+\begin{equation}
+  \alpha\!\left(\traces(\parallel_i D_i)\right)
+  \subseteq \traces(\mathrm{RVWMO}).
+  \label{eq:arch-refinement}
+\end{equation}
+Equation~\ref{eq:summary-refinement} ensures that hierarchy itself does not
+hide a detailed-model behavior, while Equation~\ref{eq:arch-refinement} states
+the memory-model verification target.
+
+This stage deliberately treats fidelity between RTL component $R_i$ and
+$D_i$ as an explicit assumption.  Establishing
+$\pi(\traces(R_i))\subseteq\traces(D_i)$ in the presence of hand- or
+LLM-written specifications is the separate model-validation problem addressed
+by our second stage.  We therefore distinguish model-complete results from
+RTL-complete claims: a counterexample is confirmed against RTL, whereas an
+absence result applies to the detailed model until the fidelity assumption is
+discharged.  This separation prevents source annotations or regression tests
+from being mistaken for a proof of model completeness.
+
+\paragraph{Scope of completeness.}
+No finite method can establish the absence of every conceivable hardware bug.
+\sys{} instead provides a precise bounded claim.  A task fixes the number of
+harts, architectural memory operations, abstract addresses, and instances of
+bounded resources such as LDQ, STQ, and MSHR entries.  Within these bounds,
+\sys{} searches all executions admitted by the conservative specifications and
+all architectural relations admitted by RVWMO.  We say that a bug class is
+covered when its violation predicate is expressible over the architectural and
+interface events.  Our current classes include ordering, forwarding, replay,
+exception/kill, atomicity, dirty-data preservation, and coherence-permission
+violations.  Liveness requires a separately stated fairness and progress
+contract and is not inferred from a finite trace.
+
+\subsection{Fine-Grained Event Specifications}
+\label{sec:specification}
+
+\paragraph{Semantic rather than structural partitioning.}
+RTL module boundaries are too coarse for compositional memory verification.
+For example, BOOM's LSU combines load and store queues, translation, replay,
+forwarding, dependence checks, exceptions, and commit interaction.  Flattening
+the LSU into one state machine recreates the state explosion that composition
+is intended to avoid.  We instead partition at \emph{semantic cut points}:
+each component owns one resource or one phase of a memory transaction and
+communicates only through typed events.
+
+For BOOM, the LSU is decomposed into load issue, LDQ-entry lifetime, store
+address/data handling, STQ-entry lifetime, translation/retry, forwarding,
+load--load ordering checks, store--load ordering checks, exception/kill, and
+commit adapters.  The L1 is decomposed into request arbitration, tag/meta
+lookup, hit handling, refill, writeback, probe handling, replacement, and an
+MSHR-entry template.  The shared cache is decomposed into directory-entry,
+Acquire, Probe, Release, Grant, and transaction-entry components.  This
+decomposition is not hard-coded to BOOM: components implement protocol roles,
+allowing the same contract vocabulary to be instantiated for a differently
+organized design such as XiangShan.
+
+\paragraph{Module semantics.}
+A detailed specification module is a tuple
+\begin{equation}
+  D_i=\langle X_i,E_i^{\mathrm{in}},E_i^{\mathrm{out}},
+  E_i^{\mathrm{priv}},Init_i,T_i,F_i\rangle,
+\end{equation}
+where $X_i$ is private symbolic state, $E_i^{\mathrm{in}}$ and
+$E_i^{\mathrm{out}}$ are typed port events, $E_i^{\mathrm{priv}}$ are internal
+events, $Init_i$ is the initial-state predicate, $T_i$ is the event/state
+transition relation, and $F_i$ is a set of fairness clauses used only for
+progress properties.  $T_i$ is relational rather than functional, permitting
+the specification to conservatively represent arbitration, cache replacement,
+and variable response latency.
+
+Inputs may be constrained only by the module's assumption; outputs and private
+state are owned by the module.  A top-level task can provide architectural
+instructions, initial memory, page-table configuration, and external protocol
+responses, but it cannot inject a child-private event such as an LSU replay or
+a cache hit.  Those events must be derived by $T_i$.  This rule is important
+for bug discovery: otherwise a trace merely describes the internal path of a
+known bug instead of asking whether the implementation can produce it.
+
+\paragraph{Parameterized resource templates.}
+Queue entries, cache lines, and MSHRs are modeled by parameterized templates,
+not by copying a monolithic specification for every physical entry.  A template
+is instantiated only for an identity that lies in the cone of influence of the
+target property.  Identities are symbolic and obey allocation, age, ownership,
+and uniqueness constraints.  Symmetric identities are interchangeable until
+an observable event distinguishes them; the solver therefore chooses a
+canonical representative.  Entries outside the cone are not simply removed:
+an aggregate interference summary conservatively represents their occupancy,
+backpressure, eviction, and arbitration effects.  This combines symmetry
+reduction with data independence without assuming that inactive entries cannot
+delay or perturb an active transaction, and avoids multiplying the execution
+by every physical entry in a large configuration.
+
+\paragraph{Transaction-centric interfaces.}
+Interfaces carry the minimum information required to preserve memory-model
+behavior: operation and transaction identities, hart, program position,
+aligned block address, byte mask, value or value version, queue age,
+permission, and kill/commit status.  An interface does not export pipeline
+registers merely because they exist in RTL.  Conversely, it must export any
+fact that can alter architectural order or value.  For example, an L1-to-LSU
+response exports the responding transaction and data version, while an
+invalidation exports the block and version it supersedes.  These fields allow
+the verifier to determine whether a completed load became stale without
+exposing the entire cache state.
+
+\subsection{Contracts and Hierarchical Composition}
+\label{sec:contracts}
+
+\paragraph{Event contracts.}
+Each module exports a contract $C_i=\langle A_i,G_i,H_i\rangle$.  The
+assumption $A_i$ constrains legal input histories, the guarantee $G_i$ relates
+input and output histories, and the summary relation $H_i$ captures persistent
+interface state, such as the current owner and version of a cache block.  A
+module discharges the local proof obligation
+\begin{equation}
+  D_i \models A_i \Rightarrow (G_i \land H_i).
+  \label{eq:local-contract}
+\end{equation}
+Unlike a collection of point-to-point event maps, $G_i$ can relate multiple
+events across time.  It can state, for example, that a granted transaction was
+previously acquired, that a killed request never produces an architectural
+completion, or that a dirty owner supplies the value version returned to a
+new reader.
+
+Ports are connected by explicit, instance-scoped channels.  A connection
+unifies the producer's output with the consumer's input and checks type,
+direction, identity, and multiplicity.  Thus two MSHR instances may emit the
+same event type without becoming implicitly connected.  One-to-one,
+one-to-many, arbitration, and lossy observation channels have distinct
+semantics; an ``exact'' connection denotes cardinality, rather than merely the
+existence of some matching event.
+
+\paragraph{Compatibility and composition.}
+For a set of connected children, let $Env_i$ denote guarantees of the other
+children and the legal top-level environment projected onto $i$'s inputs.
+The children are compatible when
+\begin{equation}
+  Env_i \land \bigwedge_{j\neq i}G_j \Rightarrow A_i
+  \quad\text{for every }i.
+  \label{eq:compatibility}
+\end{equation}
+The parent summary is obtained by conjoining child guarantees, equating
+connected channels, and existentially eliminating child-private interface
+variables:
+\begin{equation}
+ H_P = \exists V_{\mathrm{hidden}}.\;
+       Env_P \land \bigwedge_i(G_i\land H_i) \land Connect.
+ \label{eq:summary}
+\end{equation}
+Equation~\ref{eq:summary} preserves constraints induced by hidden behavior; it
+does not first choose a concrete child trace and then erase private events.
+The resulting $H_P$ is itself an event contract and can be composed at the next
+level, yielding an arbitrary-depth hierarchy.
+
+Memory protocols contain cyclic dependencies---for example, an L1 waits for a
+Grant while the L2 may wait for a ProbeAck.  We handle these cycles by placing
+the communicating components in a strongly connected contract group.  The
+group's mutually recursive guarantees are solved simultaneously and then
+summarized at the group boundary.  A well-founded causality condition requires
+every response chain to originate in an environment request or in retained
+initial state; request/response identities prevent an unrelated transaction
+from satisfying the cycle.  In practice, the solver initially exposes only
+the boundary clauses and adds an internal protocol clause when a candidate
+trace uses the corresponding behavior.
+
+\paragraph{Why composition scales.}
+Let $Q_i$ be the cost of checking component $i$ and $Q_I$ the cost of solving
+the retained interface variables.  Flattening constructs a problem over the
+synchronous product $\prod_i|X_i|$.  Contract composition instead costs
+approximately
+\begin{equation}
+  Q_{\mathrm{hier}} \approx \sum_i Q_i + Q_I.
+  \label{eq:additive-cost}
+\end{equation}
+This is not a complexity claim for arbitrary circuits.  Equation
+~\ref{eq:additive-cost} holds when local proofs are reusable, interface width
+is bounded by the active transactions, and the target property does not force
+all private state into one contract group.  \sys{} actively enforces these
+conditions through semantic partitioning, cone-of-influence slicing, and
+counterexample-guided disclosure of private facts.  If an interface grows with
+the full private state, the tool reports the lost abstraction boundary rather
+than silently constructing the global product.
+
+\subsection{Symbolic Architectural Refinement}
+\label{sec:symbolic}
+
+\paragraph{Architectural projection.}
+Commit events define architectural memory operations.  A committed load emits
+an architectural read only if it survives branch, exception, and memory-order
+recovery; a committed store becomes a write independently of when it drains;
+an AMO emits a paired read/write; and successful LR/SC emits an atomic pair.
+The projection retains byte ranges, dependencies, fence modes, and
+acquire/release annotations required by RVWMO.  Microarchitectural provenance,
+such as a cache response version or forwarded STQ entry, constrains the
+architectural $rf$ edge but does not replace the architectural operation.
+
+The bug query is constructed directly, rather than completing an arbitrary
+microarchitectural trace before checking it:
+\begin{equation}
+ \exists t_\mu,g.\;
+   Compose(t_\mu) \land g=\alpha(t_\mu)
+   \land \neg RVWMO(g).
+ \label{eq:bug-query}
+\end{equation}
+Consequently, if both a legal and an illegal internal completion exist, the
+solver searches for the illegal one.  Unsatisfiability of
+Equation~\ref{eq:bug-query} establishes bounded safety of the detailed model
+because its contract summaries conservatively include the detailed behaviors.
+
+\paragraph{Relations without enumeration.}
+\sys{} represents architectural choices by symbolic variables.  Each read
+$r$ has a selector $src(r)$ ranging over overlapping writes and an initial
+write; $rf(w,r)$ holds exactly when $src(r)=w$.  Each write $w$ has a symbolic
+coherence rank $rank(w)$, with distinct ranks for writes in the same coherence
+domain.  The relation $co(w_1,w_2)$ is encoded as
+$rank(w_1)<rank(w_2)$.  Program order and dependency edges are obtained from
+operation identities, and $fr=rf^{-1};co$ is constrained relationally.  The
+encoding size is polynomial in the number of retained operations and avoids
+enumerating the factorial set of coherence orders or the Cartesian product of
+read-from candidates.
+
+The same principle applies below the architectural boundary.  Event existence
+is Boolean, latency is constrained by symbolic order or bounded timestamp
+variables, queue allocation is represented by symbolic identities, and
+arbitration selects one enabled request.  Independent events are represented
+by one partial-order execution rather than all total schedules.  The solver
+adds a total order only where an axiom, a shared resource, or an observed value
+requires one.
+
+\paragraph{Property-directed refinement.}
+A coarse contract may admit an architectural violation that no implementation
+trace realizes.  \sys{} handles this expected consequence of conservative
+abstraction with counterexample-guided refinement.  Given an abstract witness,
+the tool checks each participating component against its detailed event
+specification, while fixing only the witness's interface events.  A feasible
+check yields a concrete microarchitectural witness.  An infeasible check
+returns an interface reason---for example, a missing queue-age condition or an
+impossible permission transition---which is generalized into a blocking
+clause and added to the parent summary.  Components outside the witness cone
+are not reopened.
+
+The process is summarized below.  Importantly, refinement adds semantic
+constraints; it never resolves a spurious witness by manually choosing hit,
+miss, replay, or protocol outcomes in the input trace.
+
+\begin{figure}[t]
+  \small
+  \hrule
+  \vspace{3pt}
+  \textbf{Hierarchical violation search}
+  \begin{enumerate}
+    \setlength{\itemsep}{0pt}
+    \setlength{\parsep}{0pt}
+    \item Slice contracts using the target property and architectural seed.
+    \item Solve Equation~\ref{eq:bug-query} over the current summaries.
+    \item If UNSAT, report bounded safety and the active assumptions.
+    \item Otherwise, concretize the candidate in participating children.
+    \item If feasible, emit a microarchitectural and architectural witness.
+    \item If infeasible, learn an interface clause and return to Step~2.
+  \end{enumerate}
+  \vspace{-2pt}
+  \hrule
+  \caption{Counterexample-guided hierarchical verification.}
+  \label{fig:search}
+\end{figure}
+
+\subsection{Instantiation for BOOM}
+\label{sec:boom-instantiation}
+
+\paragraph{End-to-end event path.}
+We instantiate the method across BOOM's LSU and L1 data cache and the shared
+inclusive L2.  The top-level task contains decoded memory instructions,
+initial memory, architectural dependencies, and bounded environment events.
+It contains no cache hit/miss, queue index, MSHR identity, replay decision, or
+coherence outcome.  The relevant leaf contracts derive the following path:
+instruction allocation and translation; load/store issue, forwarding, and
+replay; L1 lookup and miss handling; TileLink Acquire/Probe/Release/Grant;
+dirty-data and permission transfer; response, exception recovery, and ROB
+commit; and finally architectural load/store/AMO events.
+
+A small set of cross-cutting identities links this path.  The operation
+identifier remains stable from decode to commit.  A transaction identifier
+tracks each cache request and response.  The aligned block address and byte
+mask define overlap.  A monotonically constrained data version tracks which
+write a response observes, avoiding an enumeration of concrete data values.
+Queue age and commit status are exposed only at contracts that can change
+ordering or recovery.  These identities are sufficient to connect LSU, L1,
+and L2 behavior without exposing their complete private state.
+
+\paragraph{Running example.}
+Consider a known class of load--load violation.  An older load is delayed while
+a younger same-address load completes.  A coherence action replaces the line,
+after which the older load observes a newer value.  Correct recovery must
+invalidate or replay the younger load before it commits.  In \sys{}, separate
+contracts describe LDQ age, successful completion, coherence-version change,
+ordering-failure detection, replay, and commit.  The global violation asks
+whether both loads can commit with values that induce an $fr\rightarrow
+rfe\rightarrow ppo$ cycle.  The query does not prescribe a TLB miss, retry, or
+conflict.  If such internal events are necessary, the LSU specification must
+derive them; if the coarse LSU summary admits an impossible sequence, only the
+LSU contracts are refined.  This example exercises a cross-cutting property
+without flattening the complete LSU and cache state.
+
+\paragraph{Bug classes and output.}
+The same workflow targets store-to-load forwarding errors, lost ordering
+replays, committed stores removed by exception recovery, fence/AMO ordering,
+LR/SC atomicity, stale refill data, lost dirty writeback, and incorrect
+coherence ownership.  Every reported violation contains two linked
+certificates: a microarchitectural event witness explaining the internal path,
+and an architectural graph explaining the violated RVWMO axiom.  Source
+anchors associate each leaf rule with the RTL expressions and revision from
+which it was constructed.  These artifacts make a result auditable and form
+the interface to later RTL-conformance validation and automated specification
+generation; neither is placed in the trusted core of the first-stage method.
+
+\paragraph{Soundness argument.}
+For completeness, suppose every leaf satisfies
+Equation~\ref{eq:summary-refinement}, every composition discharges
+Equation~\ref{eq:compatibility}, and summaries are constructed by
+Equation~\ref{eq:summary}.  Contract composition preserves trace inclusion by
+existential elimination, so the composition of detailed models is included in
+the root summary.  If Equation~\ref{eq:bug-query} is unsatisfiable at the root,
+no bounded trace of the detailed model can project to an RVWMO violation.
+Conversely, a feasible candidate that passes leaf concretization denotes an
+execution of the detailed microarchitectural specifications and an explicit
+architectural violation.  Extending the safety result to RTL additionally
+requires $\pi(\traces(R_i))\subseteq\traces(D_i)$ for every leaf.  This
+argument separates four outcomes that are often conflated: model-level bounded
+safety, conditional RTL safety, a concretized bug, and a spurious abstract
+witness that requires refinement.

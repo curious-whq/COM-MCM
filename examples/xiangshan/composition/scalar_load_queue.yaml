@@ -1,0 +1,60 @@
+schema_version: umcm.composition.v0.15.0
+name: xiangshan-scalar-load-queue-v0.6
+horizon: 48
+metadata:
+  version: 0.6.0
+  stage: 6
+  purpose: Integrated aligned scalar-load S0-S3 pipeline and virtual/RAR/RAW load queues.
+  encapsulation: strict
+  hierarchy: ports-only-public-surface
+modules:
+- {name: scalar_load_pipeline, path: ../model/load/scalar_pipeline.yaml}
+- {name: load_queue_lifecycle, path: ../model/load/queue_lifecycle.yaml}
+connections:
+- name: scalar_order_query_to_load_queue
+  source: {module: scalar_load_pipeline, port: order_query}
+  target: {module: load_queue_lifecycle, port: order_query}
+  mode: shared_event
+- name: scalar_update_to_load_queue
+  source: {module: scalar_load_pipeline, port: queue_update}
+  target: {module: load_queue_lifecycle, port: pipeline_update}
+  mode: shared_event
+roles:
+- name: load_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: load
+    fields.vector: false
+  cardinality: many
+  min_matches: 1
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    mem_kind: fields.mem_kind
+    vaddr: fields.vaddr
+    size: fields.size
+    byte_mask: fields.byte_mask
+    lq_idx: fields.lq_idx
+    tlb_instance: fields.tlb_instance
+    vpn: fields.vpn
+    asid: fields.asid
+    vmid: fields.vmid
+    translation_stage: fields.translation_stage
+- name: store_ops
+  event_type: Core.MemoryIssue
+  where:
+    fields.mem_kind: store
+    fields.vector: false
+  cardinality: many
+  min_matches: 0
+  exports:
+    op_id: fields.op_id
+    hart: fields.hart
+    program_index: fields.program_index
+    rob_idx: fields.rob_idx
+    sq_idx: fields.sq_idx
+    address: fields.address
+    byte_mask: fields.byte_mask
+constraints: []

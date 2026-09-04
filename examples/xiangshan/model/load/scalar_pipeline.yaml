@@ -1,0 +1,901 @@
+schema_version: umcm.module.v0.15.0
+name: scalar_load_pipeline
+metadata:
+  version: 0.5.0
+  stage: 5
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/mem/pipeline/NewLoadUnit.scala:43-490,492-793,794-1234,1236-1769,1770-1895,1954-2110
+  - src/main/scala/xiangshan/mem/pipeline/Bundles.scala:29-237
+  - src/main/scala/xiangshan/mem/pipeline/package.scala:24-55
+  - src/main/scala/xiangshan/mem/lsqueue/LoadQueueReplay.scala:31-59
+  - src/main/scala/xiangshan/mem/MemBlock.scala:885-938
+  scope: bounded first-attempt aligned scalar cached-load path from issue through S0-S3, translation, forwarding/cache selection, replay/fault classification, LQ update, and ROB writeback
+  hierarchy: stage registers, data-source selection, replay decisions, and fault decisions are private; core, DTLB, StoreQueue, L1D, and LoadQueue communication uses public ports
+  abstractions:
+  - scalar issue is the only active S0 entrance; replay arbitration, vector requests, prefetches, and uncache/MMIO entrances are deferred to later stages
+  - ordinary aligned scalar loads exit at S3; hardware S4 only loops an unaligned head back for tail concatenation and is deliberately unreachable until the unified unaligned/vector work in Stage 12
+  - DCache request and store-forward query are emitted beside the S0 TLB request; physical response use is serialized after translation in the abstract causal graph
+  - Store.ForwardResponse models either no matching bytes or a full-byte-mask match; partial-byte merge and youngest-store selection belong to Stage 9
+  - L1.Response and L1.Nack summarize the not-yet-executable L1D pipeline; bank/MSHR detail begins in Stages 13 and 14
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue, required_connection: false}
+- {name: redirect, direction: input, event_type: Core.Redirect, required_connection: false}
+- {name: translate_request, direction: output, event_type: MMU.TranslateRequest}
+- {name: translate_response, direction: input, event_type: MMU.TranslateResponse, required_connection: false}
+- {name: l1_request, direction: output, event_type: L1.Request}
+- {name: l1_response, direction: input, event_type: L1.Response, required_connection: false}
+- {name: l1_nack, direction: input, event_type: L1.Nack, required_connection: false}
+- {name: forward_query, direction: output, event_type: Store.ForwardQuery}
+- {name: forward_response, direction: input, event_type: Store.ForwardResponse, required_connection: false}
+- {name: order_query, direction: output, event_type: Load.OrderQuery}
+- {name: queue_update, direction: output, event_type: Load.PipelineUpdate}
+- {name: writeback, direction: output, event_type: Core.MemoryWriteback}
+- {name: memory_fault, direction: output, event_type: Core.MemoryFault}
+internal_events:
+- Load.StageAdvance
+- Load.ForwardSelect
+- Load.ReplayDecision
+- Load.FaultDecision
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: load_ops
+  as: op
+  include:
+    state_variables:
+    - name: LoadPipeline[${op.op_id}].live
+      sort: {name: bool}
+      initial: false
+      description: The current scalar issue is resident in S0-S3 and has not replayed, faulted, or written back.
+    slots:
+    - id: load_s0_${op.repeat_index}
+      type: Load.StageAdvance
+      required: false
+      fields: &stage_s0_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        lq_idx: ${op.lq_idx}
+        mem_kind: load
+        vaddr: ${op.vaddr}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        paddr: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        value: {$expr: {node: symbol, name: "load::${op.op_id}::pending_value", sort: {name: value, width: 64}}}
+        size: ${op.size}
+        byte_mask: ${op.byte_mask}
+        attempt: 0
+        stage: s0
+        path: scalar_issue
+        data_source: pending
+    - id: load_s1_${op.repeat_index}
+      type: Load.StageAdvance
+      required: false
+      fields:
+        <<: *stage_s0_fields
+        stage: s1
+        path: translated
+    - id: load_s2_cache_${op.repeat_index}
+      type: Load.StageAdvance
+      required: false
+      fields: &stage_s2_cache_fields
+        <<: *stage_s0_fields
+        stage: s2
+        path: selected
+        data_source: l1
+        value: {$expr: {node: symbol, name: "load::${op.op_id}::cache_value", sort: {name: value, width: 64}}}
+    - id: load_s2_forward_${op.repeat_index}
+      type: Load.StageAdvance
+      required: false
+      fields: &stage_s2_forward_fields
+        <<: *stage_s0_fields
+        stage: s2
+        path: selected
+        data_source: store_forward
+        value: {$expr: {node: symbol, name: "load::${op.op_id}::forward_value", sort: {name: value, width: 64}}}
+    - id: load_s3_cache_${op.repeat_index}
+      type: Load.StageAdvance
+      required: false
+      fields:
+        <<: *stage_s2_cache_fields
+        stage: s3
+        path: writeback
+    - id: load_s3_forward_${op.repeat_index}
+      type: Load.StageAdvance
+      required: false
+      fields:
+        <<: *stage_s2_forward_fields
+        stage: s3
+        path: writeback
+    - id: load_s4_unaligned_${op.repeat_index}
+      type: Load.StageAdvance
+      required: false
+      fields:
+        <<: *stage_s0_fields
+        stage: s4
+        path: unaligned_deferred
+        data_source: pending
+    - id: load_translate_request_${op.repeat_index}
+      type: MMU.TranslateRequest
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        attempt: 0
+        access_kind: load
+        size: ${op.size}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+    - id: load_l1_request_${op.repeat_index}
+      type: L1.Request
+      required: false
+      fields:
+        txn_id: "${op.op_id}.load.a0"
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        request_kind: load
+        address: ${op.vaddr}
+        byte_mask: ${op.byte_mask}
+        size: ${op.size}
+    - id: load_forward_query_${op.repeat_index}
+      type: Store.ForwardQuery
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        lq_idx: ${op.lq_idx}
+        address: ${op.vaddr}
+        byte_mask: ${op.byte_mask}
+    - id: load_order_query_${op.repeat_index}
+      type: Load.OrderQuery
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        program_index: ${op.program_index}
+        rob_idx: ${op.rob_idx}
+        lq_idx: ${op.lq_idx}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        byte_mask: ${op.byte_mask}
+        data_valid: true
+        nc: false
+    - id: load_select_cache_${op.repeat_index}
+      type: Load.ForwardSelect
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        lq_idx: ${op.lq_idx}
+        vaddr: ${op.vaddr}
+        paddr: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        value: {$expr: {node: symbol, name: "load::${op.op_id}::cache_value", sort: {name: value, width: 64}}}
+        byte_mask: ${op.byte_mask}
+        data_source: l1
+        path: selected
+    - id: load_select_forward_${op.repeat_index}
+      type: Load.ForwardSelect
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        lq_idx: ${op.lq_idx}
+        vaddr: ${op.vaddr}
+        paddr: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        value: {$expr: {node: symbol, name: "load::${op.op_id}::forward_value", sort: {name: value, width: 64}}}
+        byte_mask: ${op.byte_mask}
+        data_source: store_forward
+        path: selected
+    - id: load_replay_tlb_${op.repeat_index}
+      type: Load.ReplayDecision
+      required: false
+      fields: &replay_tlb_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        rob_idx: ${op.rob_idx}
+        lq_idx: ${op.lq_idx}
+        vaddr: ${op.vaddr}
+        paddr: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        attempt: 0
+        replay_source: tlb
+        cause: tlb_miss
+    - id: load_replay_nack_${op.repeat_index}
+      type: Load.ReplayDecision
+      required: false
+      fields:
+        <<: *replay_tlb_fields
+        replay_source: l1_nack
+        cause: {$expr: {node: symbol, name: "load::${op.op_id}::nack_cause", sort: {name: string}}}
+    - id: load_replay_forward_invalid_${op.repeat_index}
+      type: Load.ReplayDecision
+      required: false
+      fields:
+        <<: *replay_tlb_fields
+        replay_source: forward_invalid
+        cause: forward_data_invalid
+    - id: load_replay_cache_miss_${op.repeat_index}
+      type: Load.ReplayDecision
+      required: false
+      fields:
+        <<: *replay_tlb_fields
+        replay_source: l1_miss
+        cause: dcache_miss
+    - id: load_fault_translation_${op.repeat_index}
+      type: Load.FaultDecision
+      required: false
+      fields: &fault_translation_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        rob_idx: ${op.rob_idx}
+        lq_idx: ${op.lq_idx}
+        vaddr: ${op.vaddr}
+        paddr: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        fault: true
+        fault_source: translation
+        cause: {$expr: {node: symbol, name: "load::${op.op_id}::translation_fault", sort: {name: string}}}
+    - id: load_fault_l1_denied_${op.repeat_index}
+      type: Load.FaultDecision
+      required: false
+      fields:
+        <<: *fault_translation_fields
+        fault_source: l1_denied
+        cause: load_access_fault
+    - id: load_fault_l1_corrupt_${op.repeat_index}
+      type: Load.FaultDecision
+      required: false
+      fields:
+        <<: *fault_translation_fields
+        fault_source: l1_corrupt
+        cause: hardware_error
+    - id: load_pipeline_success_${op.repeat_index}
+      type: Load.PipelineUpdate
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        lq_idx: ${op.lq_idx}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        byte_mask: ${op.byte_mask}
+        executed: true
+        succeeded: true
+        replay_cause: none
+        attempt: 0
+        fault: false
+    - id: load_pipeline_replay_${op.repeat_index}
+      type: Load.PipelineUpdate
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        lq_idx: ${op.lq_idx}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        byte_mask: ${op.byte_mask}
+        executed: true
+        succeeded: false
+        replay_cause: {$expr: {node: symbol, name: "load::${op.op_id}::replay_cause", sort: {name: string}}}
+        attempt: 0
+        fault: false
+    - id: load_pipeline_fault_${op.repeat_index}
+      type: Load.PipelineUpdate
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        lq_idx: ${op.lq_idx}
+        address: {$expr: {node: symbol, name: "load::${op.op_id}::paddr", sort: {name: address, width: 64}}}
+        byte_mask: ${op.byte_mask}
+        executed: true
+        succeeded: false
+        replay_cause: none
+        attempt: 0
+        fault: true
+    - id: load_writeback_${op.repeat_index}
+      type: Core.MemoryWriteback
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        rob_idx: ${op.rob_idx}
+        mem_kind: load
+        value: {$expr: {node: symbol, name: "load::${op.op_id}::writeback_value", sort: {name: value, width: 64}}}
+        success: true
+    - id: load_memory_fault_${op.repeat_index}
+      type: Core.MemoryFault
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        rob_idx: ${op.rob_idx}
+        vaddr: ${op.vaddr}
+        cause: {$expr: {node: symbol, name: "load::${op.op_id}::reported_fault", sort: {name: string}}}
+    transformations:
+    - name: issue_enters_load_s0_${op.repeat_index}
+      inputs: [{role: issue, type: Core.MemoryIssue}]
+      outputs: [{role: stage, type: Load.StageAdvance}]
+      when: &load_issue_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: issue, field: mem_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      output_when: &s0_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s0}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: issue, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "LoadPipeline[${op.op_id}].live", at: stage, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "LoadPipeline[${op.op_id}].live", at: stage, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [load, s0, scalar-issue, source:NewLoadUnit.scala:174-238,369-398]
+    - name: s0_requests_translation_${op.repeat_index}
+      inputs: [{role: stage, type: Load.StageAdvance}]
+      outputs: [{role: request, type: MMU.TranslateRequest}]
+      when: *s0_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s0, tlb-request, source:NewLoadUnit.scala:240-256,402-419]
+    - name: s0_requests_dcache_${op.repeat_index}
+      inputs: [{role: stage, type: Load.StageAdvance}]
+      outputs: [{role: request, type: L1.Request}]
+      when: *s0_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: request_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: load}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s0, dcache-request, source:NewLoadUnit.scala:313-334,421-435]
+    - name: s0_queries_store_forwarding_${op.repeat_index}
+      inputs: [{role: stage, type: Load.StageAdvance}]
+      outputs: [{role: query, type: Store.ForwardQuery}]
+      when: *s0_scope
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: query, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s0, store-forward, source:NewLoadUnit.scala:336-367,437-458]
+    - name: translation_success_enters_s1_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: request, type: MMU.TranslateRequest}
+      - {role: l1_request, type: L1.Request}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: response, type: MMU.TranslateResponse}
+      outputs: [{role: next, type: Load.StageAdvance}]
+      when: &translation_success
+        node: nary
+        op: and
+        operands:
+        - *s0_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: l1_request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: replay, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: next, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: next, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: next, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: l1_request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: next, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: paddr, sort: {name: address, width: 64}}, right: {node: event_field, event_id: next, field: paddr, sort: {name: address, width: 64}}}
+      exact: true
+      tags: [load, s1, tlb-hit, source:NewLoadUnit.scala:596-615,689-735]
+    - name: tlb_replay_is_classified_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: request, type: MMU.TranslateRequest}
+      - {role: l1_request, type: L1.Request}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: response, type: MMU.TranslateResponse}
+      outputs: [{role: decision, type: Load.ReplayDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s0_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: l1_request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: response, field: replay, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      output_when: &tlb_replay_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: replay_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: tlb}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: l1_request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cause, sort: {name: string}}, right: {node: event_field, event_id: decision, field: cause, sort: {name: string}}}
+      exact: true
+      tags: [load, s1, tlb-miss, replay, source:NewLoadUnit.scala:598-615,700-722]
+    - name: translation_fault_is_classified_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: request, type: MMU.TranslateRequest}
+      - {role: l1_request, type: L1.Request}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: response, type: MMU.TranslateResponse}
+      outputs: [{role: decision, type: Load.FaultDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s0_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: l1_request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: 0}}
+        - {node: event_field, event_id: response, field: fault, sort: {name: bool}}
+      output_when: &translation_fault_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: translation}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: l1_request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: cause, sort: {name: string}}, right: {node: event_field, event_id: decision, field: cause, sort: {name: string}}}
+      exact: true
+      tags: [load, s1, exception, source:NewLoadUnit.scala:608-615,689-710]
+    - name: valid_full_forward_is_selected_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: forward, type: Store.ForwardResponse}
+      outputs: [{role: select, type: Load.ForwardSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - &s1_scope
+          node: nary
+          op: and
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+          - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s1}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: forward, field: match, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: data_invalid, sort: {name: bool}}}
+        - node: call
+          function: mask_covers
+          arguments:
+          - {node: event_field, event_id: forward, field: byte_mask, sort: {name: bv, width: 64}}
+          - {node: literal, sort: {name: bv, width: 64}, value: "${op.byte_mask}"}
+          sort: {name: bool}
+      output_when: &forward_select_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: data_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: store_forward}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: select, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [load, s2, full-forward, source:NewLoadUnit.scala:942-974,1827-1851]
+    - name: cache_data_is_selected_without_forward_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: forward, type: Store.ForwardResponse}
+      - {role: request, type: L1.Request}
+      - {role: response, type: L1.Response}
+      outputs: [{role: select, type: Load.ForwardSelect}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: match, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: data_invalid, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: event_field, event_id: response, field: success, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: denied, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}}
+      output_when: &cache_select_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: data_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l1}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: select, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: response, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: select, field: value, sort: {name: value, width: 64}}}
+      exact: true
+      tags: [load, s2, cache-data, source:NewLoadUnit.scala:942-974,1822-1851]
+    - name: invalid_forward_requests_replay_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: forward, type: Store.ForwardResponse}
+      outputs: [{role: decision, type: Load.ReplayDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: forward, field: data_invalid, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: replay_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: forward_invalid}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s2, forward-invalid, replay, source:NewLoadUnit.scala:950-958,1068-1084]
+    - name: l1_nack_requests_replay_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: forward, type: Store.ForwardResponse}
+      - {role: request, type: L1.Request}
+      - {role: nack, type: L1.Nack}
+      outputs: [{role: decision, type: Load.ReplayDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: data_invalid, sort: {name: bool}}}
+        - node: unary
+          op: not
+          operand:
+            node: nary
+            op: and
+            operands:
+            - {node: event_field, event_id: forward, field: match, sort: {name: bool}}
+            - node: call
+              function: mask_covers
+              arguments:
+              - {node: event_field, event_id: forward, field: byte_mask, sort: {name: bv, width: 64}}
+              - {node: literal, sort: {name: bv, width: 64}, value: "${op.byte_mask}"}
+              sort: {name: bool}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: nack, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: replay_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l1_nack}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: nack, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: nack, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: nack, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: nack, field: cause, sort: {name: string}}, right: {node: event_field, event_id: decision, field: cause, sort: {name: string}}}
+      exact: true
+      tags: [load, s2, dcache-nack, replay, source:NewLoadUnit.scala:980-988,1028-1084]
+    - name: l1_miss_requests_replay_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: forward, type: Store.ForwardResponse}
+      - {role: request, type: L1.Request}
+      - {role: response, type: L1.Response}
+      outputs: [{role: decision, type: Load.ReplayDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: data_invalid, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: match, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: success, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: denied, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: replay_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l1_miss}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s2, dcache-miss, replay, source:NewLoadUnit.scala:980-988,1028-1084]
+    - name: l1_denied_is_access_fault_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: forward, type: Store.ForwardResponse}
+      - {role: request, type: L1.Request}
+      - {role: response, type: L1.Response}
+      outputs: [{role: decision, type: Load.FaultDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: data_invalid, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: match, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: event_field, event_id: response, field: denied, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l1_denied}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s2, access-fault, source:NewLoadUnit.scala:956-966,924-938]
+    - name: l1_corrupt_is_hardware_error_${op.repeat_index}
+      inputs:
+      - {role: stage, type: Load.StageAdvance}
+      - {role: query, type: Store.ForwardQuery}
+      - {role: forward, type: Store.ForwardResponse}
+      - {role: request, type: L1.Request}
+      - {role: response, type: L1.Response}
+      outputs: [{role: decision, type: Load.FaultDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *s1_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: forward, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: data_invalid, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: forward, field: match, sort: {name: bool}}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.load.a0"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: denied, sort: {name: bool}}}
+        - {node: event_field, event_id: response, field: corrupt, sort: {name: bool}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: fault_source, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: l1_corrupt}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: query, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: forward, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s2, hardware-error, source:NewLoadUnit.scala:956-966,924-938]
+    - name: selected_data_enters_s2_${op.repeat_index}
+      inputs: [{role: select, type: Load.ForwardSelect}]
+      outputs: [{role: stage, type: Load.StageAdvance}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: select, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - node: nary
+          op: or
+          operands:
+          - *cache_select_scope
+          - *forward_select_scope
+      output_when: &s2_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s2}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: select, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: select, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: stage, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: select, field: data_source, sort: {name: string}}, right: {node: event_field, event_id: stage, field: data_source, sort: {name: string}}}
+      state_requirements:
+      - {state: "LoadPipeline[${op.op_id}].live", at: select, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [load, s2, data-select]
+    - name: s2_selected_data_enters_s3_${op.repeat_index}
+      inputs: [{role: stage, type: Load.StageAdvance}]
+      outputs: [{role: next, type: Load.StageAdvance}]
+      when: *s2_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: next, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: next, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s3}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: next, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: next, field: value, sort: {name: value, width: 64}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: data_source, sort: {name: string}}, right: {node: event_field, event_id: next, field: data_source, sort: {name: string}}}
+      state_requirements:
+      - {state: "LoadPipeline[${op.op_id}].live", at: stage, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_mode: guard
+      exact: true
+      tags: [load, s3, source:NewLoadUnit.scala:1307-1479]
+    - name: s2_queries_load_order_${op.repeat_index}
+      inputs: [{role: stage, type: Load.StageAdvance}]
+      outputs: [{role: query, type: Load.OrderQuery}]
+      when: *s2_scope
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: query, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: query, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: paddr, sort: {name: address, width: 64}}, right: {node: event_field, event_id: query, field: address, sort: {name: address, width: 64}}}
+      exact: true
+      tags: [load, s2, load-order-query, source:NewLoadUnit.scala:1126-1169,1967-1974]
+    - name: s3_updates_load_queue_success_${op.repeat_index}
+      inputs: [{role: stage, type: Load.StageAdvance}]
+      outputs: [{role: update, type: Load.PipelineUpdate}]
+      when: &s3_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s3}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: update, field: succeeded, sort: {name: bool}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: update, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, s3, lq-update, source:NewLoadUnit.scala:1490-1552]
+    - name: s3_writes_back_selected_value_${op.repeat_index}
+      inputs: [{role: stage, type: Load.StageAdvance}]
+      outputs: [{role: writeback, type: Core.MemoryWriteback}]
+      when: *s3_scope
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: writeback, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: stage, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: writeback, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: value, sort: {name: value, width: 64}}, right: {node: event_field, event_id: writeback, field: value, sort: {name: value, width: 64}}}
+      state_requirements:
+      - {state: "LoadPipeline[${op.op_id}].live", at: writeback, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "LoadPipeline[${op.op_id}].live", at: writeback, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [load, s3, writeback, source:NewLoadUnit.scala:1464-1490,1647-1694]
+    - name: replay_decision_updates_load_queue_${op.repeat_index}
+      inputs: [{role: decision, type: Load.ReplayDecision}]
+      outputs: [{role: update, type: Load.PipelineUpdate}]
+      when: &any_replay_scope
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: update, field: succeeded, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: update, field: fault, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: update, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: cause, sort: {name: string}}, right: {node: event_field, event_id: update, field: replay_cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "LoadPipeline[${op.op_id}].live", at: update, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "LoadPipeline[${op.op_id}].live", at: update, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [load, replay, lq-update, source:NewLoadUnit.scala:1024-1084,1490-1552]
+    - name: fault_decision_updates_load_queue_${op.repeat_index}
+      inputs: [{role: decision, type: Load.FaultDecision}]
+      outputs: [{role: update, type: Load.PipelineUpdate}]
+      when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: update, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: event_field, event_id: update, field: fault, sort: {name: bool}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: update, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [load, exception, lq-update, source:NewLoadUnit.scala:1490-1552]
+    - name: fault_decision_reports_core_fault_${op.repeat_index}
+      inputs: [{role: decision, type: Load.FaultDecision}]
+      outputs: [{role: fault, type: Core.MemoryFault}]
+      when:
+        node: binary
+        op: eq
+        left: {node: event_field, event_id: decision, field: op_id, sort: {name: op_id}}
+        right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}
+      output_when: {node: binary, op: eq, left: {node: event_field, event_id: fault, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: fault, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: cause, sort: {name: string}}, right: {node: event_field, event_id: fault, field: cause, sort: {name: string}}}
+      state_requirements:
+      - {state: "LoadPipeline[${op.op_id}].live", at: fault, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "LoadPipeline[${op.op_id}].live", at: fault, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [load, exception, core-fault, source:NewLoadUnit.scala:1609-1642]
+    - name: aligned_scalar_does_not_enter_s4_${op.repeat_index}
+      inputs: [{role: issue, type: Core.MemoryIssue}]
+      outputs: [{role: stage, type: Load.StageAdvance}]
+      when: {node: literal, sort: {name: bool}, value: false}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: stage, field: stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: s4}}
+      exact: true
+      tags: [load, s4, aligned-scalar-bypass, source:NewLoadUnit.scala:1320-1324,1770-1780]

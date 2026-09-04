@@ -1,0 +1,11 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 7, case: wrong-issue-order, expected: INFEASIBLE}
+events:
+- {id: load_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: EL, hart: 0, pc: 256, initial_valid: true, initial_ssid: 3, initial_strict: false}}
+- {id: store_entry, type: MDP.EntryConfig, occurs: true, cycle: 0, fields: {entry_id: ES, hart: 0, pc: 512, initial_valid: true, initial_ssid: 3, initial_strict: false}}
+- {id: store_lookup, type: MDP.Lookup, occurs: true, cycle: 1, fields: {op_id: S1, hart: 0, program_index: 1, rob_idx: 10, pc: 512, mem_kind: store}}
+- {id: load_lookup, type: MDP.Lookup, occurs: true, cycle: 4, fields: {op_id: L1, hart: 0, program_index: 2, rob_idx: 11, pc: 256, mem_kind: load}}
+- {id: load_issue, type: Core.MemoryIssue, occurs: true, cycle: 8, fields: {op_id: L1, hart: 0, program_index: 2, rob_idx: 11, mem_kind: load, vaddr: 4096, size: 8, byte_mask: 255, lq_idx: 1, vector: false}}
+- {id: store_issue, type: Core.MemoryIssue, occurs: true, cycle: 10, fields: {op_id: S1, hart: 0, program_index: 1, rob_idx: 10, mem_kind: store, vaddr: 4096, size: 8, byte_mask: 255, sq_idx: 1, vector: false}}
+constraints: []

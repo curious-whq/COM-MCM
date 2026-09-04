@@ -1,0 +1,78 @@
+schema_version: umcm.interfaces.v0.15.0
+composition: xiangshan-scalar-store-v0.8
+policy: ports-only-public-surface
+modules:
+- module: scalar_store_pipeline
+  ports:
+  - name: memory_issue
+    direction: input
+    event_type: Core.MemoryIssue
+    required_connection: false
+  - name: redirect
+    direction: input
+    event_type: Core.Redirect
+    required_connection: false
+  - name: translate_request
+    direction: output
+    event_type: MMU.TranslateRequest
+    required_connection: false
+  - name: translate_response
+    direction: input
+    event_type: MMU.TranslateResponse
+    required_connection: false
+  - name: address_ready
+    direction: output
+    event_type: Store.AddressReady
+    required_connection: false
+  - name: data_ready
+    direction: output
+    event_type: Store.DataReady
+    required_connection: false
+  - name: writeback
+    direction: output
+    event_type: Core.MemoryWriteback
+    required_connection: false
+  - name: memory_fault
+    direction: output
+    event_type: Core.MemoryFault
+    required_connection: false
+  public_event_types:
+  - Core.MemoryFault
+  - Core.MemoryIssue
+  - Core.MemoryWriteback
+  - Core.Redirect
+  - MMU.TranslateRequest
+  - MMU.TranslateResponse
+  - Store.AddressReady
+  - Store.DataReady
+  private_slot_ids:
+  - store_fault_decision_0
+  - store_redirect_kill_0
+  - store_s0_0
+  - store_s1_0
+  - store_s2_0
+  - store_s3_0
+  - store_std_0
+  - store_tlb_replay_0
+  private_event_types:
+  - Store.FaultDecision
+  - Store.ReplayDecision
+  - Store.StageAdvance
+  private_state_names:
+  - StorePipeline[SWA].live
+  private_transformation_names:
+  - address_data_pair_completes_store_0
+  - checked_store_advances_to_s3_0
+  - issue_enters_independent_std_0
+  - issue_enters_store_sta_s0_0
+  - observed_store_address_matches_translation_0
+  - redirect_kills_live_store_pipeline_0
+  - redirected_store_pipeline_becomes_dead_0
+  - sta_s0_requests_translation_0
+  - std_writes_store_data_0
+  - store_fault_reaches_core_0
+  - store_s1_advances_to_s2_0
+  - store_s1_publishes_address_0
+  - store_tlb_miss_requests_replay_0
+  - store_translation_fault_is_classified_0
+  - translation_success_enters_store_s1_0

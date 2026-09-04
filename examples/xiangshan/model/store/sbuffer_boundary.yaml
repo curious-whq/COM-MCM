@@ -1,0 +1,21 @@
+schema_version: umcm.module.v0.15.0
+name: sbuffer
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: mem/sbuffer/Sbuffer.scala
+ports:
+- {name: store_drain, direction: input, event_type: Store.Drain}
+- {name: fence_request, direction: input, event_type: Core.FenceRequest}
+- {name: l1_request, direction: output, event_type: L1.Request}
+- {name: l1_response, direction: input, event_type: L1.Response}
+- {name: memory_ordered, direction: output, event_type: Core.MemoryOrdered}
+- {name: prefetch_train, direction: output, event_type: Prefetch.Train}
+internal_events:
+- SBuffer.Merge
+- SBuffer.DrainSelect
+slots: []
+state_variables: []
+transformations: []
+constraints: []

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.20.0
+
+- Added `umcm search` and a serializable two-level hierarchical-search specification/report IR.
+- Added bounded architecture-only operation-domain enumeration followed by the complete v0.16 RVWMO checker.
+- Added explicit architectural obligations for values, `rf`, `co`, `fr`, `po`, and `ppo` rather than passing a microarchitectural path to layer two.
+- Added a coherence realization adapter that enumerates out-of-order public access schedules and constrains only public request/result events.
+- Enforced adapter input allowlists, rejected catalog-private event vocabulary, and verified that obligation outputs are child-module output ports.
+- Added the BOOM v0.20 query: layer one discovers `R0=1, R1=0`; the v0.18 coherence slice realizes it as `R1 -> W -> R0` with source/version evidence.
+- Added first-class `interface_gap` results. The detailed LSQ/L1/MSHR join remains explicitly blocked because its finite allocation/routing parameters are still supplied through trace annotations and it is not connected to v0.18 TileLink.
+- Kept `end_to_end: false` for the BOOM result; blind detailed-path rediscovery remains the v0.21 milestone.
+- Added four focused v0.20 tests. Test suite: 177 passing tests.
+
+## 0.19.0
+
+- Added `umcm cover`, a serializable coverage suite, compound coverage goals, machine-readable reports, and per-goal witness traces.
+- Added exact fully-bound Transformation activation evidence; coverage does not infer rule firing from same-typed events.
+- Added event, Transformation, state-transition, and public-interface reachability probes.
+- Added automatic goal generation over model inventories plus structural no-producer and no-bounded-binding diagnostics.
+- Enforced per-model coverage input allowlists so private outcome events cannot be supplied as answers.
+- Added cached bounded-problem reuse and streamed per-input/per-goal CLI progress.
+- Added 28 BOOM goals across LSQ, MSHR, core-side, coherence, and generated TileLink interfaces; 27/27 required goals are covered.
+- Retained one optional uncovered same-hart refill→L1-hit goal, exposing a concrete v0.18 coherence model hole.
+- Declared `z3-solver` as a runtime dependency and added wheel-library discovery to the ctypes backend.
+- Test suite: 173 passing tests.
+
 ## 0.18.0
 
 - Followed BOOM's pinned Chipyard configuration and modeled the selected SiFive InclusiveCache instead of inventing a generic L2.

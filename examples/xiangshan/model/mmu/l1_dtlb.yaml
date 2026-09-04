@@ -1,0 +1,603 @@
+schema_version: umcm.module.v0.15.0
+name: dtlb
+metadata:
+  version: 0.3.0
+  stage: 3
+  source_commit: 50cdcfc2c45d0631591310435835c0180c105489
+  source_files:
+  - src/main/scala/xiangshan/cache/mmu/TLB.scala:39-83,251-300,303-411,556-601,701-733,821
+  - src/main/scala/xiangshan/cache/mmu/TLBStorage.scala:86-200,203-230
+  - src/main/scala/xiangshan/cache/mmu/Repeater.scala:163-390
+  - src/main/scala/xiangshan/mem/MemBlock.scala:582-590,602-652,681-724
+  - src/main/scala/xiangshan/cache/mmu/MMUConst.scala:27-42
+  - src/main/scala/top/Configs.scala:199-240
+  scope: bounded XiangShan nonblocking L1 DTLB lookup, replay, PTW request, refill, retry, and SFENCE cancellation
+  hierarchy: lookup, hit, miss, refill, invalidate, and PTW-filter decisions are private; LSU, PTW, and SFENCE traffic uses public ports
+  abstractions:
+  - finite PageMap events instantiate the relevant subset of the four-way fully-associative load/store DTLBs
+  - each TranslateRequest is one LSU attempt; retries are explicit public requests with a larger attempt number
+  - one SFENCE per instantiated entry is supported in this bounded slice
+  - an SFENCE between an emitted PTW request and its response cancels that response instead of refilling the DTLB
+  - page-walk permission, PMP/PMA, canonical-address, and two-stage translation checks are deferred to stage 4
+ports:
+- {name: load_request, direction: input, event_type: MMU.TranslateRequest, required_connection: false}
+- {name: store_request, direction: input, event_type: MMU.TranslateRequest, required_connection: false}
+- {name: atomic_request, direction: input, event_type: MMU.TranslateRequest, required_connection: false}
+- {name: response, direction: output, event_type: MMU.TranslateResponse}
+- {name: ptw_request, direction: output, event_type: MMU.PTWRequest}
+- {name: ptw_response, direction: input, event_type: MMU.PTWResponse, required_connection: false}
+- {name: sfence, direction: input, event_type: Core.SFence, required_connection: false}
+internal_events:
+- MMU.L1TLBLookup
+- MMU.L1TLBHit
+- MMU.L1TLBMiss
+- MMU.L1TLBInvalidate
+- MMU.L1TLBPTWDecision
+- MMU.L1TLBPTWDrop
+- MMU.L1TLBPendingFlush
+- MMU.L1TLBRefill
+slots: []
+state_variables: []
+transformations: []
+constraints: []
+
+repeat:
+- over: pages
+  as: page
+  include:
+    state_variables:
+    - name: DTLB.${page.tlb_instance}.entry[${page.entry_id}].valid
+      sort: {name: bool}
+      initial: ${page.initial_valid}
+      description: Valid bit for one finitely instantiated L1 DTLB entry.
+    slots:
+    - id: dtlb_invalidate_${page.repeat_index}
+      type: MMU.L1TLBInvalidate
+      required: false
+      fields:
+        fence_id: {$expr: {node: symbol, name: "dtlb::${page.entry_id}::fence_id", sort: {name: op_id}}}
+        hart: ${page.hart}
+        tlb_instance: ${page.tlb_instance}
+        entry_id: ${page.entry_id}
+        vpn: ${page.vpn}
+        asid: ${page.asid}
+        vmid: ${page.vmid}
+        translation_stage: ${page.translation_stage}
+    transformations:
+    - name: sfence_invalidates_entry_${page.repeat_index}
+      inputs: [{role: sfence, type: Core.SFence}]
+      outputs: [{role: invalidate, type: MMU.L1TLBInvalidate}]
+      when: &sfence_matches_page
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vmid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vmid}"}}
+        - node: nary
+          op: or
+          operands:
+          - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: all}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: vpn}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: asid}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: asid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.asid}"}}
+          - node: nary
+            op: and
+            operands:
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: flush_kind, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: vpn_asid}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+            - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: asid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.asid}"}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: eq, left: {node: event_field, event_id: sfence, field: op_id, sort: {name: op_id}}, right: {node: event_field, event_id: invalidate, field: fence_id, sort: {name: op_id}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "DTLB.${page.tlb_instance}.entry[${page.entry_id}].valid", at: invalidate, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [dtlb, sfence, invalidate, source:TLBStorage.scala:203-230]
+
+repeat_product:
+- axes:
+  - {over: translation_requests, as: op}
+  - {over: pages, as: page}
+  include:
+    state_variables:
+    - name: DTLB.${page.tlb_instance}.walk[${op.op_id}.a${op.attempt}.${page.entry_id}].live
+      sort: {name: bool}
+      initial: false
+      description: Whether the bounded PTW filter still accepts this attempt's response.
+    slots:
+    - id: dtlb_lookup_${product.repeat_index}
+      type: MMU.L1TLBLookup
+      required: false
+      fields: &lookup_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        entry_id: ${page.entry_id}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        hit: {$expr: {node: symbol, name: "dtlb::${op.op_id}::a${op.attempt}::hit", sort: {name: bool}}}
+    - id: dtlb_hit_${product.repeat_index}
+      type: MMU.L1TLBHit
+      required: false
+      fields: *lookup_fields
+    - id: dtlb_miss_${product.repeat_index}
+      type: MMU.L1TLBMiss
+      required: false
+      fields:
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        entry_id: ${page.entry_id}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+    - id: dtlb_hit_response_${product.repeat_index}
+      type: MMU.TranslateResponse
+      required: false
+      fields: &hit_response_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        access_kind: ${op.access_kind}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+        paddr: ${page.paddr}
+        hit_level: l1
+        replay: false
+        fault: false
+        cause: none
+    - id: dtlb_miss_response_${product.repeat_index}
+      type: MMU.TranslateResponse
+      required: false
+      fields: &miss_response_fields
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        access_kind: ${op.access_kind}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+        paddr: 0
+        hit_level: miss
+        replay: true
+        fault: false
+        cause: tlb_miss
+    - id: dtlb_ptw_request_${product.repeat_index}
+      type: MMU.PTWRequest
+      required: false
+      fields: &ptw_request_fields
+        txn_id: "${op.op_id}.a${op.attempt}"
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vaddr: ${op.vaddr}
+        vpn: ${op.vpn}
+        access_kind: ${op.access_kind}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        translation_stage: ${op.translation_stage}
+    - id: dtlb_ptw_decision_${product.repeat_index}
+      type: MMU.L1TLBPTWDecision
+      required: false
+      fields: &ptw_decision_fields
+        txn_id: "${op.op_id}.a${op.attempt}"
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        entry_id: ${page.entry_id}
+        paddr: ${page.paddr}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        accepted: {$expr: {node: symbol, name: "dtlb::${op.op_id}::a${op.attempt}::accepted", sort: {name: bool}}}
+    - id: dtlb_refill_${product.repeat_index}
+      type: MMU.L1TLBRefill
+      required: false
+      fields:
+        txn_id: "${op.op_id}.a${op.attempt}"
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        entry_id: ${page.entry_id}
+        paddr: ${page.paddr}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+    - id: dtlb_ptw_drop_${product.repeat_index}
+      type: MMU.L1TLBPTWDrop
+      required: false
+      fields:
+        txn_id: "${op.op_id}.a${op.attempt}"
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        entry_id: ${page.entry_id}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        cause: sfence
+    - id: dtlb_pending_flush_${product.repeat_index}
+      type: MMU.L1TLBPendingFlush
+      required: false
+      fields:
+        txn_id: "${op.op_id}.a${op.attempt}"
+        op_id: ${op.op_id}
+        hart: ${op.hart}
+        tlb_instance: ${op.tlb_instance}
+        vpn: ${op.vpn}
+        attempt: ${op.attempt}
+        entry_id: ${page.entry_id}
+        asid: ${op.asid}
+        vmid: ${op.vmid}
+        access_kind: ${op.access_kind}
+        translation_stage: ${op.translation_stage}
+        cause: sfence
+    transformations:
+    - name: request_looks_up_entry_${product.repeat_index}
+      inputs: [{role: request, type: MMU.TranslateRequest}]
+      outputs: [{role: lookup, type: MMU.L1TLBLookup}]
+      when: &request_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: hart, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.hart}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vpn, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vpn}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: asid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.asid}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: vmid, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${page.vmid}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: translation_stage, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.translation_stage}"}}
+      output_when: &lookup_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "DTLB.${page.tlb_instance}.entry[${page.entry_id}].valid", at: lookup, op: eq, value: {node: event_field, event_id: lookup, field: hit, sort: {name: bool}}}
+      exact: true
+      tags: [dtlb, lookup, source:TLB.scala:267-300]
+    - name: lookup_hit_${product.repeat_index}
+      inputs: [{role: lookup, type: MMU.L1TLBLookup}]
+      outputs: [{role: hit, type: MMU.L1TLBHit}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *lookup_scope
+        - {node: event_field, event_id: lookup, field: hit, sort: {name: bool}}
+      output_when: &hit_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: hit, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: hit, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: hit, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: hit, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [dtlb, hit, source:TLB.scala:303-411]
+    - name: lookup_miss_${product.repeat_index}
+      inputs: [{role: lookup, type: MMU.L1TLBLookup}]
+      outputs: [{role: miss, type: MMU.L1TLBMiss}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *lookup_scope
+        - {node: unary, op: not, operand: {node: event_field, event_id: lookup, field: hit, sort: {name: bool}}}
+      output_when: &miss_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [dtlb, miss, replay, source:TLB.scala:556-601]
+    - name: hit_returns_translation_${product.repeat_index}
+      inputs: [{role: hit, type: MMU.L1TLBHit}]
+      outputs: [{role: response, type: MMU.TranslateResponse}]
+      when: *hit_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: replay, sort: {name: bool}}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: hit, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [dtlb, response, hit, source:TLB.scala:303-411]
+    - name: miss_returns_replay_${product.repeat_index}
+      inputs: [{role: miss, type: MMU.L1TLBMiss}]
+      outputs: [{role: response, type: MMU.TranslateResponse}]
+      when: *miss_scope
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: event_field, event_id: response, field: replay, sort: {name: bool}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: response, field: fault, sort: {name: bool}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: response, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [dtlb, response, replay, source:TLB.scala:556-601]
+    - name: miss_issues_ptw_request_${product.repeat_index}
+      inputs: [{role: miss, type: MMU.L1TLBMiss}]
+      outputs: [{role: request, type: MMU.PTWRequest}]
+      when: *miss_scope
+      output_when: &ptw_request_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: request, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: miss, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "DTLB.${page.tlb_instance}.walk[${op.op_id}.a${op.attempt}.${page.entry_id}].live", at: request, op: eq, value: {node: literal, sort: {name: bool}, value: false}}
+      state_updates:
+      - {state: "DTLB.${page.tlb_instance}.walk[${op.op_id}.a${op.attempt}.${page.entry_id}].live", at: request, value: {node: literal, sort: {name: bool}, value: true}}
+      exact: true
+      tags: [dtlb, ptw-request, source:TLB.scala:556-601]
+    - name: miss_replay_precedes_ptw_request_${product.repeat_index}
+      inputs:
+      - {role: miss, type: MMU.L1TLBMiss}
+      - {role: response, type: MMU.TranslateResponse}
+      outputs: [{role: request, type: MMU.PTWRequest}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *miss_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: response, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: event_field, event_id: response, field: replay, sort: {name: bool}}
+      output_when: *ptw_request_scope
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: response, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      tags: [dtlb, replay, ptw-request, source:TLB.scala:556-601]
+    - name: ptw_response_is_filtered_${product.repeat_index}
+      inputs:
+      - {role: request, type: MMU.PTWRequest}
+      - {role: result, type: MMU.PTWResponse}
+      outputs: [{role: decision, type: MMU.L1TLBPTWDecision}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *ptw_request_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: unary, op: not, operand: {node: event_field, event_id: result, field: fault, sort: {name: bool}}}
+      output_when: &ptw_decision_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: decision, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}}
+      - {node: binary, op: eq, left: {node: event_field, event_id: result, field: paddr, sort: {name: address, width: 64}}, right: {node: literal, sort: {name: address, width: 64}, value: "${page.paddr}"}}
+      state_requirements:
+      - {state: "DTLB.${page.tlb_instance}.walk[${op.op_id}.a${op.attempt}.${page.entry_id}].live", at: decision, op: eq, value: {node: event_field, event_id: decision, field: accepted, sort: {name: bool}}}
+      exact: true
+      tags: [dtlb, ptw-filter, source:Repeater.scala:163-390]
+    - name: accepted_ptw_response_refills_${product.repeat_index}
+      inputs: [{role: decision, type: MMU.L1TLBPTWDecision}]
+      outputs: [{role: refill, type: MMU.L1TLBRefill}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *ptw_decision_scope
+        - {node: event_field, event_id: decision, field: accepted, sort: {name: bool}}
+      output_when: &refill_scope
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}}
+      state_updates:
+      - {state: "DTLB.${page.tlb_instance}.entry[${page.entry_id}].valid", at: refill, value: {node: literal, sort: {name: bool}, value: true}}
+      - {state: "DTLB.${page.tlb_instance}.walk[${op.op_id}.a${op.attempt}.${page.entry_id}].live", at: refill, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [dtlb, refill, source:TLB.scala:251-261,701-733]
+    - name: cancelled_ptw_response_drops_${product.repeat_index}
+      inputs: [{role: decision, type: MMU.L1TLBPTWDecision}]
+      outputs: [{role: drop, type: MMU.L1TLBPTWDrop}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *ptw_decision_scope
+        - {node: unary, op: not, operand: {node: event_field, event_id: decision, field: accepted, sort: {name: bool}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: drop, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drop, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: drop, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: decision, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: drop, field: cycle, sort: {name: int}}}
+      exact: true
+      tags: [dtlb, ptw-drop, sfence, source:Repeater.scala:163-390]
+    - name: sfence_cancels_inflight_ptw_${product.repeat_index}
+      inputs:
+      - {role: request, type: MMU.PTWRequest}
+      - {role: sfence, type: Core.SFence}
+      - {role: result, type: MMU.PTWResponse}
+      outputs: [{role: flush, type: MMU.L1TLBPendingFlush}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *ptw_request_scope
+        - *sfence_matches_page
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: flush, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: flush, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: flush, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: flush, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: flush, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: result, field: cycle, sort: {name: int}}}
+      state_requirements:
+      - {state: "DTLB.${page.tlb_instance}.walk[${op.op_id}.a${op.attempt}.${page.entry_id}].live", at: flush, op: eq, value: {node: literal, sort: {name: bool}, value: true}}
+      state_updates:
+      - {state: "DTLB.${page.tlb_instance}.walk[${op.op_id}.a${op.attempt}.${page.entry_id}].live", at: flush, value: {node: literal, sort: {name: bool}, value: false}}
+      exact: true
+      tags: [dtlb, sfence, ptw-filter, source:TLB.scala:251-261,Repeater.scala:163-390]
+    - name: pre_sfence_miss_emits_ptw_before_flush_${product.repeat_index}
+      inputs:
+      - {role: translate, type: MMU.TranslateRequest}
+      - {role: miss, type: MMU.L1TLBMiss}
+      - {role: sfence, type: Core.SFence}
+      outputs: [{role: request, type: MMU.PTWRequest}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: translate, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translate, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: translate, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: miss, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - *sfence_matches_page
+        - {node: binary, op: lt, left: {node: event_field, event_id: translate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}}
+      output_when: *ptw_request_scope
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: request, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}}
+      tags: [dtlb, miss, sfence, bounded-pipeline-order]
+    - name: sfence_precedes_subsequent_lookup_${product.repeat_index}
+      inputs:
+      - {role: sfence, type: Core.SFence}
+      - {role: invalidate, type: MMU.L1TLBInvalidate}
+      - {role: request, type: MMU.TranslateRequest}
+      - {role: lookup, type: MMU.L1TLBLookup}
+      when:
+        node: nary
+        op: and
+        operands:
+        - *sfence_matches_page
+        - *request_scope
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: attempt, sort: {name: int}}, right: {node: literal, sort: {name: int}, value: "${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: lookup, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: lookup, field: cycle, sort: {name: int}}}
+      tags: [dtlb, sfence, lookup-order]
+    - name: completed_refill_precedes_later_sfence_${product.repeat_index}
+      inputs:
+      - {role: result, type: MMU.PTWResponse}
+      - {role: refill, type: MMU.L1TLBRefill}
+      - {role: sfence, type: Core.SFence}
+      - {role: invalidate, type: MMU.L1TLBInvalidate}
+      when:
+        node: nary
+        op: and
+        operands:
+        - *sfence_matches_page
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: result, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: txn_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}.a${op.attempt}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: invalidate, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: lt, left: {node: event_field, event_id: result, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: sfence, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: invalidate, field: cycle, sort: {name: int}}}
+      tags: [dtlb, refill, sfence, race-order]
+    - name: retry_requires_earlier_refill_${product.repeat_index}
+      inputs: [{role: request, type: MMU.TranslateRequest}]
+      outputs: [{role: refill, type: MMU.L1TLBRefill}]
+      when:
+        node: nary
+        op: and
+        operands:
+        - *request_scope
+        - {node: binary, op: gt, left: {node: literal, sort: {name: int}, value: "${op.attempt}"}, right: {node: literal, sort: {name: int}, value: 0}}
+      output_when:
+        node: nary
+        op: and
+        operands:
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: op_id, sort: {name: op_id}}, right: {node: literal, sort: {name: op_id}, value: "${op.op_id}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: tlb_instance, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.tlb_instance}"}}
+        - {node: binary, op: eq, left: {node: event_field, event_id: refill, field: entry_id, sort: {name: string}}, right: {node: literal, sort: {name: string}, value: "${page.entry_id}"}}
+      ensure:
+      - {node: binary, op: lt, left: {node: event_field, event_id: refill, field: attempt, sort: {name: int}}, right: {node: event_field, event_id: request, field: attempt, sort: {name: int}}}
+      - {node: binary, op: lt, left: {node: event_field, event_id: refill, field: cycle, sort: {name: int}}, right: {node: event_field, event_id: request, field: cycle, sort: {name: int}}}
+      tags: [dtlb, retry, refill-order, source:TLB.scala:556-601]

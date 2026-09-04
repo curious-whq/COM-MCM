@@ -1,0 +1,36 @@
+schema_version: umcm.module.v0.15.0
+name: core_control
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: Dispatch/ROB/ExceptionGen/MemCtrl and MemBlock core-facing IO
+ports:
+- {name: arch_load, direction: input, event_type: Arch.Load, required_connection: false}
+- {name: arch_store, direction: input, event_type: Arch.Store, required_connection: false}
+- {name: arch_lr, direction: input, event_type: Arch.LR, required_connection: false}
+- {name: arch_sc, direction: input, event_type: Arch.SC, required_connection: false}
+- {name: arch_amo, direction: input, event_type: Arch.AMO, required_connection: false}
+- {name: arch_fence, direction: input, event_type: Arch.Fence, required_connection: false}
+- {name: memory_issue, direction: output, event_type: Core.MemoryIssue}
+- {name: memory_commit, direction: output, event_type: Core.MemoryCommit}
+- {name: redirect, direction: output, event_type: Core.Redirect}
+- {name: sfence, direction: output, event_type: Core.SFence}
+- {name: fence_request, direction: output, event_type: Core.FenceRequest}
+- {name: load_writeback, direction: input, event_type: Core.MemoryWriteback}
+- {name: store_writeback, direction: input, event_type: Core.MemoryWriteback}
+- {name: atomic_writeback, direction: input, event_type: Core.MemoryWriteback}
+- {name: load_fault, direction: input, event_type: Core.MemoryFault}
+- {name: store_fault, direction: input, event_type: Core.MemoryFault}
+- {name: atomic_fault, direction: input, event_type: Core.MemoryFault}
+- {name: memory_violation, direction: input, event_type: Core.MemoryViolation}
+- {name: memory_ordered, direction: input, event_type: Core.MemoryOrdered}
+- {name: commit_read, direction: output, event_type: Arch.CommitRead, required_connection: false}
+internal_events:
+- Core.DispatchAllocate
+- Core.ROBCommitSelect
+- Core.RedirectApply
+slots: []
+state_variables: []
+transformations: []
+constraints: []

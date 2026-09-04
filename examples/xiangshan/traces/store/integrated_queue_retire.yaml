@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: integrated-queue-retire, expected: FEASIBLE}
+events:
+- id: integrated_queue_store_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SQINT, hart: 0, program_index: 11, rob_idx: 11, mem_kind: store, vaddr: 65536, write_value: 77, size: 8, byte_mask: 255, sq_idx: 11, vector: false, tlb_instance: sttlb, vpn: 16, asid: 1, vmid: 0, translation_stage: s1}
+- id: integrated_queue_store_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: SQINT, hart: 0, tlb_instance: sttlb, vaddr: 65536, vpn: 16, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 8192, hit_level: l1, replay: false, fault: false, cause: none}
+- id: integrated_queue_store_commit
+  type: Core.MemoryCommit
+  occurs: true
+  cycle: 40
+  fields: {op_id: SQINT, hart: 0, rob_idx: 11, mem_kind: store}
+constraints: []

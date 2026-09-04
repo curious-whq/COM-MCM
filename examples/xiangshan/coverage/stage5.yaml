@@ -1,0 +1,121 @@
+schema_version: umcm.coverage.v0.19.0
+name: xiangshan-stage5-scalar-load
+catalog: ../events.yaml
+metadata:
+  version: 0.5.0
+  purpose: Reachability coverage for aligned scalar load S0-S3 fanout, data selection, replay, fault, writeback, and L1 DTLB integration.
+  witness_policy: Inputs contain only public issue, translation/cache/forward responses, mappings, and the parameterizing shared translation request; all pipeline decisions are solver-derived.
+models:
+- name: scalar_load
+  composition: ../composition/scalar_load.yaml
+  input_event_types: [Core.MemoryIssue, MMU.TranslateResponse, Store.ForwardResponse, L1.Response, L1.Nack]
+  inputs:
+  - {name: cache-hit, path: ../traces/load/cache_hit.yaml}
+  - {name: full-forward, path: ../traces/load/full_forward.yaml}
+  - {name: tlb-replay, path: ../traces/load/tlb_replay.yaml}
+  - {name: l1-nack, path: ../traces/load/l1_nack.yaml}
+  - {name: dcache-miss, path: ../traces/load/dcache_miss.yaml}
+  - {name: forward-invalid, path: ../traces/load/forward_invalid.yaml}
+  - {name: translation-fault, path: ../traces/load/translation_fault.yaml}
+  - {name: l1-denied, path: ../traces/load/l1_denied.yaml}
+  - {name: l1-corrupt, path: ../traces/load/l1_corrupt.yaml}
+- name: load_translation
+  composition: ../composition/load_translation.yaml
+  input_event_types: [MMU.PageMap, Core.MemoryIssue, MMU.TranslateRequest, Store.ForwardResponse, L1.Response]
+  inputs:
+  - {name: integrated-dtlb-hit, path: ../traces/load/integrated_dtlb_hit.yaml}
+goals:
+- id: s0_fans_out_requests
+  model: scalar_load
+  category: S0 request fanout
+  inputs: [cache-hit]
+  description: Scalar issue emits TLB, L1D, and store-forward requests.
+  require:
+  - {transformation: "issue_enters_load_s0_*"}
+  - {transformation: "s0_requests_translation_*"}
+  - {transformation: "s0_requests_dcache_*"}
+  - {transformation: "s0_queries_store_forwarding_*"}
+- id: cache_hit_writes_back
+  model: scalar_load
+  category: L1 hit
+  inputs: [cache-hit]
+  description: A translated non-forwarded cache hit reaches S2, S3, the LQ update, and ROB writeback.
+  require:
+  - {transformation: "cache_data_is_selected_without_forward_*"}
+  - {transformation: "s2_selected_data_enters_s3_*"}
+  - {transformation: "s3_writes_back_selected_value_*"}
+  - {event: Core.MemoryWriteback}
+- id: full_forward_writes_forwarded_value
+  model: scalar_load
+  category: Store forwarding
+  inputs: [full-forward]
+  description: A valid full-mask store forward bypasses the cache response and supplies writeback data.
+  require:
+  - {transformation: "valid_full_forward_is_selected_*"}
+  - {transformation: "s3_writes_back_selected_value_*"}
+- id: tlb_miss_replays
+  model: scalar_load
+  category: Translation replay
+  inputs: [tlb-replay]
+  description: A TLB miss produces a failed LQ pipeline update without writeback.
+  require:
+  - {transformation: "tlb_replay_is_classified_*"}
+  - {transformation: "replay_decision_updates_load_queue_*"}
+- id: l1_nack_replays
+  model: scalar_load
+  category: L1 nack replay
+  inputs: [l1-nack]
+  description: An L1 nack is preserved as the replay cause.
+  require:
+  - {transformation: "l1_nack_requests_replay_*"}
+  - {transformation: "replay_decision_updates_load_queue_*"}
+- id: cache_miss_replays
+  model: scalar_load
+  category: L1 miss replay
+  inputs: [dcache-miss]
+  description: A non-forwarded cache miss requests replay.
+  require:
+  - {transformation: "l1_miss_requests_replay_*"}
+- id: invalid_forward_replays
+  model: scalar_load
+  category: Forwarding replay
+  inputs: [forward-invalid]
+  description: Store-forward data-invalid has priority over data selection and requests replay.
+  require:
+  - {transformation: "invalid_forward_requests_replay_*"}
+- id: translation_fault_reports_core
+  model: scalar_load
+  category: Translation fault
+  inputs: [translation-fault]
+  description: A translation fault reaches the public core fault boundary.
+  require:
+  - {transformation: "translation_fault_is_classified_*"}
+  - {transformation: "fault_decision_updates_load_queue_*"}
+  - {transformation: "fault_decision_reports_core_fault_*"}
+  - {event: Core.MemoryFault}
+- id: denied_response_reports_access_fault
+  model: scalar_load
+  category: L1 access fault
+  inputs: [l1-denied]
+  description: A denied L1 response becomes a load access fault.
+  require:
+  - {transformation: "l1_denied_is_access_fault_*"}
+  - {transformation: "fault_decision_reports_core_fault_*"}
+- id: corrupt_response_reports_hardware_error
+  model: scalar_load
+  category: L1 hardware error
+  inputs: [l1-corrupt]
+  description: A corrupt L1 response becomes a hardware error.
+  require:
+  - {transformation: "l1_corrupt_is_hardware_error_*"}
+  - {transformation: "fault_decision_reports_core_fault_*"}
+- id: generated_load_request_hits_l1_dtlb
+  model: load_translation
+  category: DTLB integration
+  inputs: [integrated-dtlb-hit]
+  description: The scalar load's shared translation request is consumed by the L1 DTLB and its generated hit response drives load writeback.
+  require:
+  - {transformation: "lookup_hit_*"}
+  - {transformation: "translation_success_enters_s1_*"}
+  - {event: Core.MemoryWriteback}
+auto_goals: []

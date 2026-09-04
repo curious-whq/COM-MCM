@@ -83,6 +83,23 @@ class GuardedSupportInstance:
     origin: str
 
 
+@dataclass(frozen=True, slots=True)
+class TransformationActivationInstance:
+    """One fully-bound operational rule firing candidate.
+
+    ``expression`` contains the event occurrences, guards, output scope and
+    ensure relation.  ``state_predicates`` is non-empty only for
+    ``state_mode: guard`` transformations, whose pre-state guards are checked
+    outside the ordinary expression language.
+    """
+
+    name: str
+    transformation: str
+    binding: Mapping[str, str]
+    expression: Expr
+    state_predicates: tuple[GuardPredicateInstance, ...] = ()
+
+
 @dataclass(slots=True)
 class BoundedProblem:
     catalog: EventCatalog
@@ -94,6 +111,7 @@ class BoundedProblem:
     state_updates: list[StateUpdateInstance]
     guarded_forwards: list[GuardedForwardInstance]
     guarded_supports: list[GuardedSupportInstance]
+    transformation_activations: list[TransformationActivationInstance]
     slot_ids: tuple[str, ...]
 
     @property
@@ -108,6 +126,7 @@ class _TransformationInstantiation:
     updates: tuple[StateUpdateInstance, ...]
     guarded_forwards: tuple[GuardedForwardInstance, ...] = ()
     guarded_supports: tuple[GuardedSupportInstance, ...] = ()
+    activations: tuple[TransformationActivationInstance, ...] = ()
 
 
 def build_problem(
@@ -128,6 +147,7 @@ def build_problem(
     state_updates: list[StateUpdateInstance] = []
     guarded_forwards: list[GuardedForwardInstance] = []
     guarded_supports: list[GuardedSupportInstance] = []
+    transformation_activations: list[TransformationActivationInstance] = []
     constraints.extend(
         NamedConstraint(
             name=f"trace.constraint.{index}",
@@ -171,6 +191,7 @@ def build_problem(
         state_updates.extend(instantiated.updates)
         guarded_forwards.extend(instantiated.guarded_forwards)
         guarded_supports.extend(instantiated.guarded_supports)
+        transformation_activations.extend(instantiated.activations)
 
     return BoundedProblem(
         catalog=catalog,
@@ -182,6 +203,7 @@ def build_problem(
         state_updates=state_updates,
         guarded_forwards=guarded_forwards,
         guarded_supports=guarded_supports,
+        transformation_activations=transformation_activations,
         slot_ids=tuple(slot.id for slot in spec.slots),
     )
 
@@ -213,6 +235,7 @@ def _instantiate_transformation(
     updates: list[StateUpdateInstance] = []
     guarded_forwards: list[GuardedForwardInstance] = []
     guarded_supports: list[GuardedSupportInstance] = []
+    activations: list[TransformationActivationInstance] = []
 
     for input_index, input_binding in enumerate(input_bindings):
         input_ids = tuple(input_binding.values())
@@ -259,6 +282,33 @@ def _instantiate_transformation(
             )
             complete_instances.append(
                 (complete_mapping, activation, f"{output_index}.{bound_outputs}")
+            )
+            state_predicates = ()
+            if transformation.state_mode == "guard":
+                state_predicates = tuple(
+                    GuardPredicateInstance(
+                        state=requirement.state,
+                        cycle=EventField(
+                            complete_mapping[requirement.at], "cycle", INT
+                        ),
+                        op=requirement.op,
+                        expected=substitute_event_ids(
+                            requirement.value, complete_mapping
+                        ),
+                    )
+                    for requirement in transformation.state_requirements
+                )
+            activations.append(
+                TransformationActivationInstance(
+                    name=(
+                        f"transformation.{transformation.name}.activation."
+                        f"{input_index}.{output_index}"
+                    ),
+                    transformation=transformation.name,
+                    binding=dict(complete_mapping),
+                    expression=activation,
+                    state_predicates=state_predicates,
+                )
             )
 
         bound_inputs = ",".join(input_ids) if input_ids else "global"
@@ -442,6 +492,7 @@ def _instantiate_transformation(
         updates=tuple(updates),
         guarded_forwards=tuple(guarded_forwards),
         guarded_supports=tuple(guarded_supports),
+        activations=tuple(activations),
     )
 
 

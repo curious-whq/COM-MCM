@@ -1,0 +1,15 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: translation-fault, expected: FEASIBLE}
+events:
+- id: store_fault_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SFAULT, hart: 0, program_index: 2, rob_idx: 2, mem_kind: store, vaddr: 196608, write_value: 9, size: 8, byte_mask: 255, sq_idx: 2, vector: false, tlb_instance: sttlb, vpn: 48, asid: 1, vmid: 0, translation_stage: s1}
+- id: store_fault_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: SFAULT, hart: 0, tlb_instance: sttlb, vaddr: 196608, vpn: 48, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 0, hit_level: fault, replay: false, fault: true, cause: store_page_fault}
+constraints: []

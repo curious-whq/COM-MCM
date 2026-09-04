@@ -1,0 +1,24 @@
+schema_version: umcm.module.v0.15.0
+name: load_queue
+metadata:
+  version: 0.1.0
+  stage: 1
+  status: interface-only
+  source: VirtualLoadQueue, LoadQueueRAR, LoadQueueRAW and LoadQueueReplay
+ports:
+- {name: memory_issue, direction: input, event_type: Core.MemoryIssue}
+- {name: memory_commit, direction: input, event_type: Core.MemoryCommit}
+- {name: redirect, direction: input, event_type: Core.Redirect}
+- {name: pipeline_update, direction: input, event_type: Load.PipelineUpdate}
+- {name: release_notice, direction: input, event_type: L1.ReleaseNotice}
+- {name: replay_issue, direction: output, event_type: Load.ReplayIssue}
+- {name: memory_violation, direction: output, event_type: Core.MemoryViolation}
+internal_events:
+- LQ.Allocate
+- LQ.RARViolation
+- LQ.RAWViolation
+- LQ.ReplayEnqueue
+slots: []
+state_variables: []
+transformations: []
+constraints: []

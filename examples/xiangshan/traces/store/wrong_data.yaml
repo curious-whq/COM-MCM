@@ -1,0 +1,20 @@
+schema_version: umcm.trace.v0.13.0
+partial: true
+metadata: {stage: 8, case: wrong-data, expected: INFEASIBLE}
+events:
+- id: wrong_data_issue
+  type: Core.MemoryIssue
+  occurs: true
+  cycle: 0
+  fields: {op_id: SWD, hart: 0, program_index: 4, rob_idx: 4, mem_kind: store, vaddr: 327680, write_value: 13, size: 8, byte_mask: 255, sq_idx: 4, vector: false, tlb_instance: sttlb, vpn: 80, asid: 1, vmid: 0, translation_stage: s1}
+- id: wrong_data_translation
+  type: MMU.TranslateResponse
+  occurs: true
+  cycle: 6
+  fields: {op_id: SWD, hart: 0, tlb_instance: sttlb, vaddr: 327680, vpn: 80, attempt: 0, access_kind: store, asid: 1, vmid: 0, translation_stage: s1, paddr: 20480, hit_level: l1, replay: false, fault: false, cause: none}
+- id: forbidden_wrong_data
+  type: Store.DataReady
+  occurs: true
+  cycle: 4
+  fields: {op_id: SWD, sq_idx: 4, value: 99, byte_mask: 255}
+constraints: []
